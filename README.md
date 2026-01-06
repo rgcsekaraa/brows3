@@ -1,0 +1,101 @@
+# Brows3 🚀
+
+[![Release](https://img.shields.io/github/v/release/rgcsekaraa/brows3)](https://github.com/rgcsekaraa/brows3/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build](https://github.com/rgcsekaraa/brows3/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/rgcsekaraa/brows3/actions/workflows/release.yml)
+
+**Brows3** is a high-performance, open-source Amazon S3 desktop client designed for developers who demand speed. Built with a **Rust** core and a **Tauri**-powered frontend, Brows3 solves the "slow listing" problem of traditional S3 browsers through its unique prefix-indexed caching architecture.
+
+Navigating through buckets with millions of objects is now as fast as browsing your local file system.
+
+## ✨ Why Brows3?
+
+Traditional S3 tools often suffer from latency when navigating deep folder structures or listing large numbers of objects. Brows3 rethinks the browsing experience:
+
+- **⚡ Instant Navigation**: After an initial index, folder traversal happens in **O(1)** time. No more waiting for "Loading..." spinners when clicking through directories.
+- **🔍 Deep Search**: Perform instant, localized searches across your entire bucket. Find any file in milliseconds, even in massive datasets.
+- **📦 Intelligent Background Indexing**: Brows3 populates its local cache in the background while you work, ensuring your view is always synchronized without blocking your interaction.
+- **♾️ Hyper-Virtuoso Table**: Our custom-tuned virtualization engine handles lists of 100,000+ items with silky-smooth scrolling at 60fps.
+
+## 🛠️ Feature Deep Dive
+
+### 📂 File Management
+- **Breadcrumb Navigation**: Path-based navigation for rapid traversal of complex hierarchies.
+- **Bulk Operations**: Upload, download, and delete multiple files or recursive folders at once.
+- **Mixed Content Support**: Seamlessly handle folders and files in a single drag-and-drop operation.
+- **Copy-to-Clipboard**: Quick copy of S3 Paths, Keys, and Object URLs.
+
+### 📄 Rich Previews & Editing
+- **Built-in Editor**: Powered by **Monaco (VS Code's Engine)**. Edit text, JSON, and code files directly in S3.
+- **Media Previews**: Native support for **high-resolution images**, **videos**, and **PDFs**.
+- **Rendering Indicators**: Clear visual feedback for large image rendering states.
+
+### 🛡️ Security & Privacy
+- **Local Credentials**: Brows3 uses your local AWS configuration and system keychain. Your secrets never leave your machine.
+- **Memory-First Design**: The object cache is ephemeral and clears on program exit, keeping your temporary data transient.
+
+## 🏗️ Technical Architecture
+
+Brows3 leverages a tiered data strategy to achieve its performance:
+
+1. **Rust Core (The Muscle)**: Handles all heavy-lift S3 networking, credential management, and local indexing using high-speed concurrency.
+2. **Prefix-Indexed Tree**: An in-memory data structure that organizes S3's flat object list into a hierarchical tree, enabling instant directory lookup.
+3. **Paginated IPC Bridge**: Data is transferred between Rust and the React frontend over a high-speed, paginated IPC channel, preventing UI hangs during large data transfers.
+4. **SSG React (The UI)**: A Next.js-based frontend exported as a static site, providing the smallest possible memory footprint.
+
+## 🚀 Installation
+
+Brows3 is available for all major desktop platforms. Download the latest version from the [Releases](https://github.com/rgcsekaraa/brows3/releases) page.
+
+| Platform | Installer Type |
+| :--- | :--- |
+| **macOS** | `.dmg` (Silicon/Intel), `.app.tar.gz` |
+| **Windows** | `.msi`, `.exe` |
+| **Linux** | `.deb`, `.AppImage` |
+
+### Manual Build
+
+If you prefer building from source:
+
+```bash
+# 1. Clone
+git clone https://github.com/rgcsekaraa/brows3.git
+cd brows3
+
+# 2. Install Deps
+pnpm install
+
+# 3. Dev Mode
+pnpm tauri dev
+
+# 4. Release Build
+pnpm tauri build
+```
+
+## 👥 Contributors
+
+We welcome contributions from the community! Whether you are a Rustacean, a React developer, or as a technical writer, your help is appreciated.
+
+- **Founder & Maintainer**: [rgcsekaraa](https://www.linkedin.com/in/rgcsekaraa/)
+- **Core Engineering**: Brows3 Open Source Team
+
+Want to become a contributor? Check out our [Contributing Guide](https://github.com/rgcsekaraa/brows3/blob/main/CONTRIBUTING.md) and join us in building the world's fastest S3 browser!
+
+## 🤝 How to Contribute
+
+1. **Check the Issues**: Look for "good first issue" labels.
+2. **Standard Workflow**: Fork -> Branch -> Commit -> Pull Request.
+3. **Code Quality**: Ensure Rust code is formatted with `cargo fmt` and TS code with `pnpm lint`.
+
+## 📈 Roadmap
+- [ ] Multi-Account Support (Profiles)
+- [ ] S3-Compatible Storage support (MinIO, R2, etc.)
+- [ ] Sync Folders (Local <-> S3)
+- [ ] Dark Mode / Custom Themes
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+Created by [rgcsekaraa](https://www.linkedin.com/in/rgcsekaraa/). Built for the community.

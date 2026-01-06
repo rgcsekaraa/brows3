@@ -1,0 +1,536 @@
+'use client';
+
+import { memo, useMemo, useCallback } from 'react';
+import {
+  Box,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Checkbox,
+  IconButton,
+  Typography,
+  Skeleton,
+  Tooltip,
+  Stack,
+  Divider,
+  Chip,
+  CircularProgress,
+} from '@mui/material';
+import {
+  Folder as FolderIcon,
+  Image as ImageIcon,
+  VideoFile as VideoIcon,
+  AudioFile as AudioIcon,
+  PictureAsPdf as PdfIcon,
+  Code as CodeIcon,
+  DataObject as JsonIcon,
+  TextSnippet as TextIcon,
+  InsertDriveFile as FileIcon,
+  Archive as ArchiveIcon,
+  Download as DownloadIcon,
+  Delete as DeleteIcon,
+  Visibility as PreviewIcon,
+  Edit as EditIcon,
+  ContentCopy as CopyIcon,
+  MoreVert as MoreVertIcon,
+  OpenInNew as OpenIcon,
+} from '@mui/icons-material';
+import { TableVirtuoso, type TableComponents } from 'react-virtuoso';
+import { S3Object } from '@/lib/tauri';
+
+// Format bytes - memoized outside component
+const formatSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+};
+
+// Get extension - simple and fast
+const getExt = (name: string): string => {
+  const i = name.lastIndexOf('.');
+  return i > 0 ? name.slice(i + 1).toLowerCase() : '';
+};
+
+// File icon lookup - static map for performance
+const ICON_MAP: Record<string, React.ReactNode> = {};
+const getIcon = (name: string, isFolder: boolean): React.ReactNode => {
+  if (isFolder) return <FolderIcon sx={{ color: '#FFB74D', fontSize: 20 }} />;
+  
+  const ext = getExt(name);
+  if (ICON_MAP[ext]) return ICON_MAP[ext];
+  
+  // Images
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico'].includes(ext)) {
+    return <ImageIcon sx={{ color: '#4CAF50', fontSize: 18 }} />;
+  }
+  // Videos
+  if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
+    return <VideoIcon sx={{ color: '#9C27B0', fontSize: 18 }} />;
+  }
+  // Audio
+  if (['mp3', 'wav', 'ogg', 'flac', 'aac'].includes(ext)) {
+    return <AudioIcon sx={{ color: '#FF5722', fontSize: 18 }} />;
+  }
+  // PDF
+  if (ext === 'pdf') return <PdfIcon sx={{ color: '#F44336', fontSize: 18 }} />;
+  // JSON
+  if (ext === 'json') return <JsonIcon sx={{ color: '#FFC107', fontSize: 18 }} />;
+  // Code
+  if (['js', 'ts', 'jsx', 'tsx', 'py', 'go', 'rs', 'java', 'cpp', 'c'].includes(ext)) {
+    return <CodeIcon sx={{ color: '#2196F3', fontSize: 18 }} />;
+  }
+  // Text
+  if (['txt', 'md', 'log', 'csv', 'xml', 'html', 'css', 'yaml', 'yml'].includes(ext)) {
+    return <TextIcon sx={{ color: '#607D8B', fontSize: 18 }} />;
+  }
+  // Archive
+  if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext)) {
+    return <ArchiveIcon sx={{ color: '#795548', fontSize: 18 }} />;
+  }
+  
+  return <FileIcon sx={{ color: '#9E9E9E', fontSize: 18 }} />;
+};
+
+// Previewable extensions
+const PREVIEW_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'log', 'csv', 'yaml', 'yml']);
+const EDIT_EXTS = new Set(['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'yaml', 'yml', 'log', 'csv']);
+
+// Row data type
+interface RowData {
+  key: string;
+  name: string;
+  isFolder: boolean;
+  size: number;
+  modified: string;
+}
+
+interface Props {
+  folders: string[];
+  objects: S3Object[];
+  selectedKeys: Set<string>;
+  sortField: 'name' | 'size' | 'date' | 'class';
+  sortDirection: 'asc' | 'desc';
+  isLoading: boolean;
+  onNavigate: (prefix: string) => void;
+  onSelect: (key: string, checked: boolean) => void;
+  onSelectAll: (checked: boolean) => void;
+  onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
+  onSortChange: (field: 'name' | 'size' | 'date' | 'class') => void;
+  onDownload?: (key: string) => void;
+  onDelete?: (key: string) => void;
+  onPreview?: (key: string) => void;
+  onEdit?: (key: string) => void;
+  onCopyPath?: (key: string) => void;
+  onEndReached?: () => void;
+  totalCount?: number;
+  folderTotalCount?: number;
+  isBackgroundLoading?: boolean;
+}
+
+// Lightweight table components - no Paper wrapper, minimal styling
+const VirtuosoComponents: TableComponents<RowData> = {
+  Scroller: memo(({ style, ...props }: any) => (
+    <Box 
+      {...props} 
+      style={style}
+      sx={{ 
+        '&::-webkit-scrollbar': { width: 6 },
+        '&::-webkit-scrollbar-thumb': { bgcolor: 'grey.600', borderRadius: 3 },
+      }} 
+    />
+  )),
+  Table: memo((props: any) => (
+    <Table {...props} size="small" sx={{ tableLayout: 'fixed' }} />
+  )),
+  TableHead: memo((props: any) => <TableHead {...props} />),
+  TableRow: memo(({ item, ...props }: any) => <TableRow hover {...props} />),
+  TableBody: memo((props: any) => <TableBody {...props} />),
+};
+
+// Memoized row component for maximum performance
+const RowContent = memo(function RowContent({
+  row,
+  isSelected,
+  onSelect,
+  onNavigate,
+  onDownload,
+  onDelete,
+  onPreview,
+  onEdit,
+  onCopyPath,
+  onMenuOpen,
+}: {
+  row: RowData;
+  isSelected: boolean;
+  onSelect: (key: string, checked: boolean) => void;
+  onNavigate: (prefix: string) => void;
+  onDownload?: (key: string) => void;
+  onDelete?: (key: string) => void;
+  onPreview?: (key: string) => void;
+  onEdit?: (key: string) => void;
+  onCopyPath?: (key: string) => void;
+  onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
+}) {
+  const ext = getExt(row.name);
+  const canPreview = !row.isFolder && PREVIEW_EXTS.has(ext);
+  const canEdit = !row.isFolder && EDIT_EXTS.has(ext);
+
+  return (
+    <>
+      <TableCell padding="checkbox" sx={{ width: 40, py: 0 }}>
+        <Checkbox
+          checked={isSelected}
+          onChange={(e) => onSelect(row.key, e.target.checked)}
+          size="small"
+          sx={{ p: 0.5 }}
+        />
+      </TableCell>
+      <TableCell sx={{ width: 32, py: 0.5 }}>
+        {getIcon(row.name, row.isFolder)}
+      </TableCell>
+      <TableCell 
+        sx={{ 
+          py: 0.5,
+          cursor: row.isFolder ? 'pointer' : 'default',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        onClick={row.isFolder ? () => onNavigate(row.key) : undefined}
+      >
+        <Typography 
+          variant="body2" 
+          component="span"
+          sx={{ fontWeight: row.isFolder ? 600 : 400 }}
+        >
+          {row.name}{row.isFolder ? '/' : ''}
+        </Typography>
+        {ext && !row.isFolder && (
+          <Typography 
+            component="span" 
+            sx={{ 
+              ml: 1, 
+              px: 0.5, 
+              py: 0.1,
+              fontSize: '0.65rem', 
+              bgcolor: 'action.hover', 
+              borderRadius: 0.5,
+              fontWeight: 600,
+            }}
+          >
+            {ext.toUpperCase()}
+          </Typography>
+        )}
+      </TableCell>
+      <TableCell align="right" sx={{ width: 80, py: 0.5, fontFamily: 'monospace', fontSize: '0.75rem' }}>
+        {row.isFolder ? '—' : formatSize(row.size)}
+      </TableCell>
+      <TableCell align="right" sx={{ width: 100, py: 0.5, fontSize: '0.75rem', color: 'text.secondary' }}>
+        {row.modified || '—'}
+      </TableCell>
+      <TableCell sx={{ width: 120, py: 0.25 }}>
+        <Box sx={{ display: 'flex', opacity: 0.7, '&:hover': { opacity: 1 } }}>
+          {row.isFolder ? (
+            <IconButton size="small" onClick={() => onNavigate(row.key)} sx={{ p: 0.5 }}>
+              <OpenIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          ) : (
+            <>
+              {canPreview && onPreview && (
+                <IconButton size="small" onClick={() => onPreview(row.key)} sx={{ p: 0.5 }}>
+                  <PreviewIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              )}
+              {canEdit && onEdit && (
+                <IconButton size="small" onClick={() => onEdit(row.key)} sx={{ p: 0.5 }}>
+                  <EditIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              )}
+              {onDownload && (
+                <IconButton size="small" onClick={() => onDownload(row.key)} sx={{ p: 0.5 }}>
+                  <DownloadIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              )}
+            </>
+          )}
+          {onDelete && (
+            <IconButton size="small" onClick={() => onDelete(row.key)} sx={{ p: 0.5 }}>
+              <DeleteIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          )}
+          <IconButton size="small" onClick={(e) => onMenuOpen(e, row.key, row.isFolder)} sx={{ p: 0.5 }}>
+            <MoreVertIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+        </Box>
+      </TableCell>
+    </>
+  );
+});
+
+export default function VirtualizedObjectTable({
+  folders,
+  objects,
+  selectedKeys,
+  sortField,
+  sortDirection,
+  isLoading,
+  onNavigate,
+  onSelect,
+  onSelectAll,
+  onMenuOpen,
+  onSortChange,
+  onDownload,
+  onDelete,
+  onPreview,
+  onEdit,
+  onCopyPath,
+  onEndReached,
+  totalCount = 0,
+  folderTotalCount = 0,
+  isBackgroundLoading = false,
+}: Props) {
+  // Build rows - highly optimized
+  const rows = useMemo<RowData[]>(() => {
+    const result: RowData[] = [];
+    
+    // Add folders
+    for (const prefix of folders) {
+      const parts = prefix.split('/').filter(Boolean);
+      result.push({
+        key: prefix,
+        name: parts[parts.length - 1] || prefix,
+        isFolder: true,
+        size: 0,
+        modified: '',
+      });
+    }
+    
+    // Add files
+    for (const obj of objects) {
+      const parts = obj.key.split('/');
+      result.push({
+        key: obj.key,
+        name: parts[parts.length - 1] || obj.key,
+        isFolder: false,
+        size: obj.size,
+        modified: obj.last_modified ? new Date(obj.last_modified).toLocaleDateString() : '',
+      });
+    }
+    
+    // Sort - folders first, then by field
+    result.sort((a, b) => {
+      if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+      
+      let cmp = 0;
+      if (sortField === 'name') cmp = a.name.localeCompare(b.name);
+      else if (sortField === 'size') cmp = a.size - b.size;
+      else if (sortField === 'date') cmp = a.modified.localeCompare(b.modified);
+      
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+    
+    return result;
+  }, [folders, objects, sortField, sortDirection]);
+
+  const allSelected = rows.length > 0 && selectedKeys.size === rows.length;
+  const someSelected = selectedKeys.size > 0 && selectedKeys.size < rows.length;
+
+  // Fixed header
+  const headerContent = useCallback(() => (
+    <TableRow sx={{ bgcolor: 'background.default' }}>
+      <TableCell padding="checkbox" sx={{ width: 40, bgcolor: 'background.default' }}>
+        <Checkbox
+          indeterminate={someSelected}
+          checked={allSelected}
+          onChange={(e) => onSelectAll(e.target.checked)}
+          size="small"
+          sx={{ p: 0.5 }}
+        />
+      </TableCell>
+      <TableCell sx={{ width: 32, bgcolor: 'background.default' }} />
+      <TableCell 
+        sx={{ bgcolor: 'background.default', cursor: 'pointer', fontWeight: 600 }}
+        onClick={() => onSortChange('name')}
+      >
+        Name {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
+      </TableCell>
+      <TableCell 
+        align="right"
+        sx={{ width: 80, bgcolor: 'background.default', cursor: 'pointer', fontWeight: 600 }}
+        onClick={() => onSortChange('size')}
+      >
+        Size {sortField === 'size' && (sortDirection === 'asc' ? '↑' : '↓')}
+      </TableCell>
+      <TableCell 
+        align="right"
+        sx={{ width: 100, bgcolor: 'background.default', cursor: 'pointer', fontWeight: 600 }}
+        onClick={() => onSortChange('date')}
+      >
+        Modified {sortField === 'date' && (sortDirection === 'asc' ? '↑' : '↓')}
+      </TableCell>
+      <TableCell sx={{ width: 120, bgcolor: 'background.default' }}>Actions</TableCell>
+    </TableRow>
+  ), [allSelected, someSelected, sortField, sortDirection, onSelectAll, onSortChange]);
+
+  // Row renderer - returns memoized component
+  const rowContent = useCallback((_index: number, row: RowData) => (
+    <RowContent
+      row={row}
+      isSelected={selectedKeys.has(row.key)}
+      onSelect={onSelect}
+      onNavigate={onNavigate}
+      onDownload={onDownload}
+      onDelete={onDelete}
+      onPreview={onPreview}
+      onEdit={onEdit}
+      onCopyPath={onCopyPath}
+      onMenuOpen={onMenuOpen}
+    />
+  ), [selectedKeys, onSelect, onNavigate, onDownload, onDelete, onPreview, onEdit, onCopyPath, onMenuOpen]);
+
+  return (
+    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+      {/* Table Body Area */}
+      <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+        {isLoading && (
+          <Box sx={{ p: 0, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2, bgcolor: 'background.default' }}>
+            <Table size="small">
+              <TableHead>{headerContent()}</TableHead>
+              <TableBody>
+                {Array.from({ length: 15 }, (_, i) => (
+                  <TableRow key={i}>
+                    <TableCell padding="checkbox"><Skeleton width={18} height={18} /></TableCell>
+                    <TableCell><Skeleton variant="circular" width={18} height={18} /></TableCell>
+                    <TableCell><Skeleton width="60%" /></TableCell>
+                    <TableCell><Skeleton width={40} /></TableCell>
+                    <TableCell><Skeleton width={60} /></TableCell>
+                    <TableCell><Skeleton width={80} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
+        )}
+
+        {!isLoading && rows.length === 0 ? (
+          <Box sx={{ flex: 1 }}>
+            <Table size="small">
+              <TableHead>{headerContent()}</TableHead>
+              <TableBody>
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                    <Typography color="text.secondary">Empty folder</Typography>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </Box>
+        ) : (
+          <TableVirtuoso
+            data={rows}
+            components={VirtuosoComponents}
+            fixedHeaderContent={headerContent}
+            itemContent={rowContent}
+            style={{ height: '100%' }}
+            overscan={50}
+            increaseViewportBy={{ top: 200, bottom: 200 }}
+            endReached={onEndReached}
+          />
+        )}
+      </Box>
+
+      {/* Persistent Footer */}
+      <Box sx={{ 
+        px: 2, 
+        py: 0.75, 
+        borderTop: 1, 
+        borderColor: 'divider', 
+        bgcolor: 'background.paper',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        minHeight: 32
+      }}>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Typography variant="caption" fontWeight={700} color="text.primary">
+              {rows.length.toLocaleString()}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              visible
+            </Typography>
+            
+            {folderTotalCount > 0 && (
+              <>
+                <Typography variant="caption" color="text.secondary" sx={{ mx: 0.5 }}>/</Typography>
+                <Typography variant="caption" fontWeight={700} color="text.primary">
+                  {folderTotalCount.toLocaleString()}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  items in this folder
+                </Typography>
+              </>
+            )}
+
+            {totalCount > 0 && (
+              <>
+                <Divider orientation="vertical" flexItem sx={{ height: 12, mx: 1.5, my: 'auto' }} />
+                <Typography variant="caption" fontWeight={700} color="text.primary">
+                  {totalCount.toLocaleString()}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  total files in the bucket
+                </Typography>
+              </>
+            )}
+          </Stack>
+
+          <Divider orientation="vertical" flexItem sx={{ height: 12, my: 'auto' }} />
+          
+          <Stack direction="row" spacing={1.5}>
+            <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box component="span" fontWeight={600} color="text.secondary">{folders.length.toLocaleString()}</Box>
+              <Box component="span" color="text.secondary">folders</Box>
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box component="span" fontWeight={600} color="text.secondary">{objects.length.toLocaleString()}</Box>
+              <Box component="span" color="text.secondary">files</Box>
+            </Typography>
+          </Stack>
+
+          {isBackgroundLoading && (
+            <>
+              <Divider orientation="vertical" flexItem sx={{ height: 12, my: 'auto' }} />
+              <Stack direction="row" spacing={1} alignItems="center">
+                <CircularProgress size={12} thickness={5} sx={{ color: 'primary.main' }} />
+                <Typography variant="caption" fontWeight={600} color="primary.main" sx={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                  Indexing...
+                </Typography>
+              </Stack>
+            </>
+          )}
+        </Stack>
+
+        <Stack direction="row" spacing={2} alignItems="center">
+          {selectedKeys.size > 0 && (
+            <Chip 
+              label={`${selectedKeys.size} selected`} 
+              size="small" 
+              color="primary" 
+              sx={{ height: 18, fontSize: '0.65rem', fontWeight: 700, borderRadius: 0.5 }}
+            />
+          )}
+          {onEndReached && rows.length < (totalCount || Infinity) && (
+            <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', fontSize: '0.7rem' }}>
+              Scroll for more
+            </Typography>
+          )}
+        </Stack>
+      </Box>
+    </Box>
+  );
+}
