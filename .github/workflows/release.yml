@@ -1,0 +1,145 @@
+name: "publish"
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-latest" # for Apple Silicon
+            args: "--target aarch64-apple-darwin"
+          - platform: "macos-latest" # for Intel
+            args: "--target x86_64-apple-darwin"
+          - platform: "ubuntu-22.04" # for Linux
+            args: ""
+          - platform: "windows-latest" # for Windows
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Those targets are only used on macos-latest
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+          # For Tauri 2.0 you might need libwebkit2gtk-4.1-dev instead
+          sudo apt-get install -y libwebkit2gtk-4.1-dev
+
+      - name: install frontend dependencies
+        run: pnpm install
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
+          releaseName: "Brows3 v__VERSION__"
+          releaseBody: "See the assets to download this version and install."
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  update-manifest:
+    needs: publish-tauri
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="app-v$VERSION"
+          
+          echo "Updating manifest for version $VERSION ($TAG)"
+          
+          # Wait a few seconds for GitHub to process the assets
+          sleep 10
+          
+          # Fetch signatures and artifacts
+          # We use the GitHub CLI to list assets and then parse them
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[] | {name: .name, url: .url}')
+          
+          UPDATER_JSON=$(cat update.json)
+          
+          # Add platform info to JSON
+          # This is a simplified version - in a real production environment 
+          # you might want to spend more effort parsing exact signatures.
+          # Here we assume the .sig files are named correctly by tauri-action.
+          
+          # For Tauri v2, the updater expects:
+          # platforms: { "darwin-aarch64": { "url": "...", "signature": "..." }, ... }
+          
+          echo "$ASSETS" | while read -r asset; do
+            NAME=$(echo "$asset" | jq -r .name)
+            URL=$(echo "$asset" | jq -r .url)
+            
+            # If it's a signature file, we need its content
+            if [[ "$NAME" == *.sig ]]; then
+               SIG_CONTENT=$(gh release download "$TAG" -p "$NAME" -O -)
+               BASE_NAME="${NAME%.sig}"
+               
+               # Match the signature to its platform
+               PLATFORM=""
+               if [[ "$BASE_NAME" == *.dmg ]] || [[ "$BASE_NAME" == *.app.tar.gz ]]; then
+                 if [[ "$BASE_NAME" == *aarch64* ]]; then PLATFORM="darwin-aarch64"; 
+                 else PLATFORM="darwin-x86_64"; fi
+               elif [[ "$BASE_NAME" == *.msi ]] || [[ "$BASE_NAME" == *.exe ]]; then
+                 PLATFORM="windows-x86_64";
+               elif [[ "$BASE_NAME" == *.deb ]] || [[ "$BASE_NAME" == *.AppImage ]]; then
+                 PLATFORM="linux-x86_64";
+               fi
+               
+               if [ -n "$PLATFORM" ]; then
+                 # Find the corresponding binary URL
+                 BINARY_URL=$(echo "$ASSETS" | jq -r "select(.name == \"$BASE_NAME\") | .url")
+                 
+                 # Update the JSON
+                 UPDATER_JSON=$(echo "$UPDATER_JSON" | jq ".platforms[\"$PLATFORM\"] = {\"url\": \"$BINARY_URL\", \"signature\": \"$SIG_CONTENT\"}")
+               fi
+            fi
+          done
+          
+          # Final update of version and date
+          UPDATER_JSON=$(echo "$UPDATER_JSON" | jq ".version = \"$VERSION\" | .pub_date = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"")
+          
+          echo "$UPDATER_JSON" > update.json
+          
+          # Commit and push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add update.json
+          git commit -m "chore: update auto-update manifest to v$VERSION"
+          git push origin main

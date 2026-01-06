@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Brows3",
+  "version": "0.1.0",
+  "identifier": "com.brows3",
+  "build": {
+    "frontendDist": "../out",
+    "devUrl": "http://localhost:3001",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Brows3 - S3 Explorer",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis", "deb", "appimage", "dmg", "app"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "© 2024 Brows3",
+    "category": "Utility",
+    "shortDescription": "Cross-platform S3 Browser Desktop Application",
+    "longDescription": "Brows3 is a powerful, cross-platform desktop application for browsing and managing Amazon S3 buckets and S3-compatible storage services."
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://raw.githubusercontent.com/rgcsekaraa/brows3/main/update.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4NDUwQzZCNDFERjFCNjMKUldSakc5OUJhd3hGT0pJcW10cWdZZG93VytkQkYwMVBCZjcrZmd3MHlwTTRFUDIzUU5vdGxiWVYK"
+    },
+    "shell": {
+      "scope": [
+        {
+          "name": "git",
+          "cmd": "git",
+          "args": true
+        }
+      ]
+    }
+  }
+}
