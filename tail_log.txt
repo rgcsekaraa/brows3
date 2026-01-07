@@ -1,0 +1,418 @@
+publish-tauri (windows-latest)	Set up job	﻿2026-01-07T13:50:14.5540115Z Current runner version: '2.330.0'
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5599600Z ##[group]Runner Image Provisioner
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5600797Z Hosted Compute Agent
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5601570Z Version: 20251211.462
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5602903Z Commit: 6cbad8c2bb55d58165063d031ccabf57e2d2db61
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5604008Z Build Date: 2025-12-11T16:28:49Z
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5605055Z Worker ID: {fc96e8e5-bf63-4fc2-814a-b37edf9aa75e}
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5606111Z ##[endgroup]
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5607004Z ##[group]Operating System
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5607926Z Microsoft Windows Server 2025
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5608745Z 10.0.26100
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5609555Z Datacenter
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5610257Z ##[endgroup]
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5611036Z ##[group]Runner Image
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5611873Z Image: windows-2025
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5612645Z Version: 20251216.149.1
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5614327Z Included Software: https://github.com/actions/runner-images/blob/win25/20251216.149/images/windows/Windows2025-Readme.md
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5617895Z Image Release: https://github.com/actions/runner-images/releases/tag/win25%2F20251216.149
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5619424Z ##[endgroup]
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5621217Z ##[group]GITHUB_TOKEN Permissions
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5624157Z Contents: write
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5624953Z Metadata: read
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5625718Z ##[endgroup]
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5628295Z Secret source: Actions
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.5629323Z Prepare workflow directory
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.6020944Z Prepare all required actions
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.6058523Z Getting action download info
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:14.9739817Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:15.1200195Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:15.3518859Z Download action repository 'pnpm/action-setup@v2' (SHA:eae0cfeb286e66ffb5155f1a79b90583a127a68b)
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:15.8469947Z Download action repository 'dtolnay/rust-toolchain@stable' (SHA:4be9e76fd7c4901c61fb841f559994984270fce7)
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:16.0523720Z Download action repository 'tauri-apps/tauri-action@v0' (SHA:73fb865345c54760d875b94642314f8c0c894afa)
+publish-tauri (windows-latest)	Set up job	2026-01-07T13:50:16.6812382Z Complete job name: publish-tauri (windows-latest)
+publish-tauri (windows-latest)	Run actions/checkout@v4	﻿2026-01-07T13:50:16.8242852Z ##[group]Run actions/checkout@v4
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8244609Z with:
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8245519Z   repository: rgcsekaraa/brows3
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8247404Z   token: ***
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8248324Z   ssh-strict: true
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8249269Z   ssh-user: git
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8250225Z   persist-credentials: true
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8251298Z   clean: true
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8252258Z   sparse-checkout-cone-mode: true
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8253203Z   fetch-depth: 1
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8253983Z   fetch-tags: false
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8254728Z   show-progress: true
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8255574Z   lfs: false
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8256305Z   submodules: false
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8257117Z   set-safe-directory: true
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.8258221Z ##[endgroup]
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.9920217Z Syncing repository: rgcsekaraa/brows3
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.9922658Z ##[group]Getting Git version info
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:16.9924196Z Working directory is 'D:\a\brows3\brows3'
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.0915110Z [command]"C:\Program Files\Git\bin\git.exe" version
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.4477661Z git version 2.52.0.windows.1
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.4529524Z ##[endgroup]
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.4549418Z Temporarily overriding HOME='D:\a\_temp\9787f582-2e4a-4601-8317-74219550e9f7' before making global git config changes
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.4550754Z Adding repository directory to the temporary git global config as a safe directory
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.4560512Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\brows3\brows3
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.5115678Z Deleting the contents of 'D:\a\brows3\brows3'
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.5122241Z ##[group]Initializing the repository
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.5131612Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\brows3\brows3
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.6094594Z Initialized empty Git repository in D:/a/brows3/brows3/.git/
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.6149272Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/rgcsekaraa/brows3
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.6724636Z ##[endgroup]
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.6725526Z ##[group]Disabling automatic garbage collection
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.6735835Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.7029711Z ##[endgroup]
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.7030369Z ##[group]Setting up auth
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.7044893Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:17.7331075Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:19.1745592Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:19.2030942Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:19.6950765Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:19.7240639Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:20.2196737Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:20.2482292Z ##[endgroup]
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:20.2483118Z ##[group]Fetching the repository
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:20.2502444Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +83c044dedb81b10104ba36ac3006fa0eb16cb750:refs/remotes/origin/main
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.2053073Z From https://github.com/rgcsekaraa/brows3
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.2053940Z  * [new ref]         83c044dedb81b10104ba36ac3006fa0eb16cb750 -> origin/main
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.2307947Z ##[endgroup]
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.2394416Z ##[group]Determining the checkout info
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.2395867Z ##[endgroup]
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.2397768Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.2790066Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.3065041Z ##[group]Checking out the ref
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.3075440Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force -B main refs/remotes/origin/main
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.3996522Z branch 'main' set up to track 'origin/main'.
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.4004404Z Switched to a new branch 'main'
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.4041696Z ##[endgroup]
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.4406877Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+publish-tauri (windows-latest)	Run actions/checkout@v4	2026-01-07T13:50:21.4702180Z 83c044dedb81b10104ba36ac3006fa0eb16cb750
+publish-tauri (windows-latest)	setup node	﻿2026-01-07T13:50:21.5122582Z ##[group]Run actions/setup-node@v4
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:21.5122916Z with:
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:21.5123089Z   node-version: 20
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:21.5123282Z   always-auth: false
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:21.5123470Z   check-latest: false
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:21.5123786Z   token: ***
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:21.5123952Z ##[endgroup]
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:21.7724612Z Found in cache @ C:\hostedtoolcache\windows\node\20.19.6\x64
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:21.7734426Z ##[group]Environment details
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:38.2661927Z node: v20.19.6
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:38.2662329Z npm: 10.8.2
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:38.2662568Z yarn: 1.22.22
+publish-tauri (windows-latest)	setup node	2026-01-07T13:50:38.2664556Z ##[endgroup]
+publish-tauri (windows-latest)	install pnpm	﻿2026-01-07T13:50:38.2924012Z ##[group]Run pnpm/action-setup@v2
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:38.2924326Z with:
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:38.2925200Z   version: latest
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:38.2925378Z   dest: ~/setup-pnpm
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:38.2925553Z   run_install: null
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:38.2925740Z   package_json_file: package.json
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:38.2925948Z   standalone: false
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:38.2926116Z ##[endgroup]
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:38.4326595Z ##[group]Running self-installer...
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:39.1091658Z Progress: resolved 1, reused 0, downloaded 0, added 0
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:39.1198323Z Packages: +1
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:39.1198616Z +
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:40.6668057Z Progress: resolved 1, reused 0, downloaded 1, added 0
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.5255273Z Packages are hard linked from the content-addressable store to the virtual store.
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.5256072Z   Content-addressable store is at: C:\Users\runneradmin\AppData\Local\pnpm\store\v3
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.5256525Z   Virtual store is at:             node_modules/.pnpm
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.5885904Z 
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.5886466Z dependencies:
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.5887068Z + pnpm 10.27.0
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.5887296Z 
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.5987837Z Done in 2.9s
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.6687339Z Progress: resolved 1, reused 0, downloaded 1, added 1, done
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.6891271Z ##[endgroup]
+publish-tauri (windows-latest)	install pnpm	2026-01-07T13:50:41.6899040Z Installation Completed!
+publish-tauri (windows-latest)	install Rust stable	﻿2026-01-07T13:50:41.7228293Z ##[group]Run dtolnay/rust-toolchain@stable
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7228625Z with:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7228780Z   toolchain: stable
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7228948Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7229173Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7229472Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7432312Z ##[group]Run : parse toolchain version
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7432645Z [36;1m: parse toolchain version[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7432897Z [36;1mif [[ -z $toolchain ]]; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7433342Z [36;1m  # GitHub does not enforce `required: true` inputs itself. https://github.com/actions/runner/issues/1070[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7433812Z [36;1m  echo "'toolchain' is a required input" >&2[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7434079Z [36;1m  exit 1[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7434345Z [36;1melif [[ $toolchain =~ ^stable' '[0-9]+' '(year|month|week|day)s?' 'ago$ ]]; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7434685Z [36;1m  if [[ Windows == macOS ]]; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7435095Z [36;1m    echo "toolchain=1.$((($(date -v-$(sed 's/stable \([0-9]*\) \(.\).*/\1\2/' <<< $toolchain) +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7435512Z [36;1m  else[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7435838Z [36;1m    echo "toolchain=1.$((($(date --date "${toolchain#stable }" +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7436207Z [36;1m  fi[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7436445Z [36;1melif [[ $toolchain =~ ^stable' 'minus' '[0-9]+' 'releases?$ ]]; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7436883Z [36;1m  echo "toolchain=1.$((($(date +%s)/60/60/24-16569)/7/6-${toolchain//[^0-9]/}))" >> $GITHUB_OUTPUT[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7437252Z [36;1melif [[ $toolchain =~ ^1\.[0-9]+$ ]]; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7437676Z [36;1m  echo "toolchain=1.$((i=${toolchain#1.}, c=($(date +%s)/60/60/24-16569)/7/6, i+9*i*(10*i<=c)+90*i*(100*i<=c)))" >> $GITHUB_OUTPUT[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7438065Z [36;1melse[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7438257Z [36;1m  echo "toolchain=$toolchain" >> $GITHUB_OUTPUT[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7438501Z [36;1mfi[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7455253Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7455614Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7455834Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7456120Z   toolchain: stable
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.7456286Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9258851Z ##[group]Run : construct rustup command line
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9259160Z [36;1m: construct rustup command line[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9259540Z [36;1mecho "targets=$(for t in ${targets//,/ }; do echo -n ' --target' $t; done)" >> $GITHUB_OUTPUT[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9260062Z [36;1mecho "components=$(for c in ${components//,/ }; do echo -n ' --component' $c; done)" >> $GITHUB_OUTPUT[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9260627Z [36;1mecho "downgrade=" >> $GITHUB_OUTPUT[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9274353Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9274705Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9274940Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9275222Z   targets: 
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9275372Z   components: 
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:41.9275523Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0032324Z ##[group]Run : set $CARGO_HOME
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0032567Z [36;1m: set $CARGO_HOME[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0032918Z [36;1mecho CARGO_HOME=${CARGO_HOME:-"$USERPROFILE\.cargo"} >> $GITHUB_ENV[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0046651Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0047006Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0047238Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0047523Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0564172Z ##[group]Run : install rustup if needed on windows
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0564496Z [36;1m: install rustup if needed on windows[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0564768Z [36;1mif ! command -v rustup &>/dev/null; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0565421Z [36;1m  curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://win.rustup.rs/x86_64 --output 'D:\a\_temp\rustup-init.exe'[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0567965Z [36;1m  'D:\a\_temp\rustup-init.exe' --default-toolchain none --no-modify-path -y[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0568342Z [36;1m  echo "$CARGO_HOME\bin" >> $GITHUB_PATH[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0568573Z [36;1mfi[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0582054Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0582391Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0582619Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0582932Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.0583178Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.1195335Z ##[group]Run rustup toolchain install stable --profile minimal --no-self-update
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.1195841Z [36;1mrustup toolchain install stable --profile minimal --no-self-update[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.1209380Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.1209746Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.1209966Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.1210266Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.1210495Z   RUSTUP_PERMIT_COPY_RENAME: 1
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:42.1210692Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:49.1869628Z info: syncing channel updates for 'stable-x86_64-pc-windows-msvc'
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.2804335Z 
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.3004026Z   stable-x86_64-pc-windows-msvc unchanged - rustc 1.92.0 (ded5c06cf 2025-12-08)
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.3004754Z 
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.3210445Z ##[group]Run rustup default stable
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.3210718Z [36;1mrustup default stable[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.3223989Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.3224385Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.3224609Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.3224938Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.3225160Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.4044464Z info: using existing install for 'stable-x86_64-pc-windows-msvc'
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.4748101Z info: default toolchain set to 'stable-x86_64-pc-windows-msvc'
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.4748712Z 
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.4957751Z   stable-x86_64-pc-windows-msvc unchanged - rustc 1.92.0 (ded5c06cf 2025-12-08)
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.4958334Z 
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5150243Z ##[group]Run : create cachekey
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5150484Z [36;1m: create cachekey[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5150902Z [36;1mDATE=$(rustc +stable --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5151616Z [36;1mHASH=$(rustc +stable --version --verbose | sed -ne 's/^commit-hash: //p')[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5152041Z [36;1mecho "cachekey=$(echo $DATE$HASH | head -c12)" >> $GITHUB_OUTPUT[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5165477Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5165827Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5166060Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5166374Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:50.5166595Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5769794Z ##[group]Run : disable incremental compilation
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5770121Z [36;1m: disable incremental compilation[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5770394Z [36;1mif [ -z "${CARGO_INCREMENTAL+set}" ]; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5770672Z [36;1m  echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5770899Z [36;1mfi[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5784528Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5784882Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5785110Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5785414Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.5785629Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6273888Z ##[group]Run : enable colors in Cargo output
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6274194Z [36;1m: enable colors in Cargo output[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6274477Z [36;1mif [ -z "${CARGO_TERM_COLOR+set}" ]; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6274803Z [36;1m  echo CARGO_TERM_COLOR=always >> $GITHUB_ENV[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6275056Z [36;1mfi[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6288357Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6288712Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6288953Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6289263Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6289496Z   CARGO_INCREMENTAL: 0
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6289675Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6805939Z ##[group]Run : enable Cargo sparse registry
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6806413Z [36;1m: enable Cargo sparse registry[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6806937Z [36;1m# implemented in 1.66, stabilized in 1.68, made default in 1.70[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6807917Z [36;1mif [ -z "${CARGO_REGISTRIES_CRATES_IO_PROTOCOL+set}" -o -f "D:\a\_temp"/.implicit_cargo_registries_crates_io_protocol ]; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6808905Z [36;1m  if rustc +stable --version --verbose | grep -q '^release: 1\.6[89]\.'; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6809659Z [36;1m    touch "D:\a\_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6810376Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse >> $GITHUB_ENV[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6811104Z [36;1m  elif rustc +stable --version --verbose | grep -q '^release: 1\.6[67]\.'; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6811862Z [36;1m    touch "D:\a\_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6812563Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=git >> $GITHUB_ENV[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6813067Z [36;1m  fi[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6813320Z [36;1mfi[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6833428Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6834439Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6834828Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6835375Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6835791Z   CARGO_INCREMENTAL: 0
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6836108Z   CARGO_TERM_COLOR: always
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.6836419Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9082481Z ##[group]Run : work around spurious network errors in curl 8.0
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9082864Z [36;1m: work around spurious network errors in curl 8.0[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9083336Z [36;1m# https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9083871Z [36;1mif rustc +stable --version --verbose | grep -q '^release: 1\.7[01]\.'; then[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9084998Z [36;1m  echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9085263Z [36;1mfi[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9098562Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9098933Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9099163Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9099510Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9099738Z   CARGO_INCREMENTAL: 0
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9099921Z   CARGO_TERM_COLOR: always
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:51.9100104Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.0548914Z ##[group]Run rustc +stable --version --verbose
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.0549288Z [36;1mrustc +stable --version --verbose[0m
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.0562775Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.0563118Z env:
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.0563354Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.0563665Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.0563905Z   CARGO_INCREMENTAL: 0
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.0564097Z   CARGO_TERM_COLOR: always
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.0564289Z ##[endgroup]
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.1375401Z rustc 1.92.0 (ded5c06cf 2025-12-08)
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.1376115Z binary: rustc
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.1376486Z commit-hash: ded5c06cf21d2b93bffd5d884aa6e96934ee4234
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.1376873Z commit-date: 2025-12-08
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.1377177Z host: x86_64-pc-windows-msvc
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.1377545Z release: 1.92.0
+publish-tauri (windows-latest)	install Rust stable	2026-01-07T13:50:52.1377907Z LLVM version: 21.1.3
+publish-tauri (windows-latest)	install WiX v4 (windows only)	﻿2026-01-07T13:50:52.1632665Z ##[group]Run dotnet tool install --global wix
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:50:52.1633041Z [36;1mdotnet tool install --global wix[0m
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:50:52.2330701Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:50:52.2331107Z env:
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:50:52.2331394Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:50:52.2331851Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:50:52.2332255Z   CARGO_INCREMENTAL: 0
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:50:52.2332487Z   CARGO_TERM_COLOR: always
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:50:52.2332718Z ##[endgroup]
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:51:03.8666490Z You can invoke the tool using the following command: wix
+publish-tauri (windows-latest)	install WiX v4 (windows only)	2026-01-07T13:51:03.8667420Z Tool 'wix' (version '6.0.2') was successfully installed.
+publish-tauri (windows-latest)	install frontend dependencies	﻿2026-01-07T13:51:04.5544342Z ##[group]Run pnpm install
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:04.5544652Z [36;1mpnpm install[0m
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:04.5603592Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:04.5603901Z env:
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:04.5604128Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:04.5604424Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:04.5604669Z   CARGO_INCREMENTAL: 0
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:04.5604851Z   CARGO_TERM_COLOR: always
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:04.5605037Z ##[endgroup]
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:06.4475403Z Lockfile is up to date, resolution step is skipped
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:06.4990560Z Progress: resolved 1, reused 0, downloaded 0, added 0
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:06.6279048Z Packages: +392
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:06.6281910Z ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:07.4989928Z Progress: resolved 392, reused 0, downloaded 10, added 0
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:08.5087670Z Progress: resolved 392, reused 0, downloaded 74, added 21
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:09.5197929Z Progress: resolved 392, reused 0, downloaded 79, added 25
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:10.5223591Z Progress: resolved 392, reused 0, downloaded 98, added 29
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:11.5295744Z Progress: resolved 392, reused 0, downloaded 121, added 37
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:12.6971951Z Progress: resolved 392, reused 0, downloaded 122, added 37
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:13.7000026Z Progress: resolved 392, reused 0, downloaded 178, added 60
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:14.7009254Z Progress: resolved 392, reused 0, downloaded 216, added 73
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:15.7020773Z Progress: resolved 392, reused 0, downloaded 234, added 79
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:16.7080792Z Progress: resolved 392, reused 0, downloaded 266, added 90
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:17.7121315Z Progress: resolved 392, reused 0, downloaded 338, added 112
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:18.7129413Z Progress: resolved 392, reused 0, downloaded 369, added 122
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:19.7240944Z Progress: resolved 392, reused 0, downloaded 391, added 279
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:20.7255420Z Progress: resolved 392, reused 0, downloaded 391, added 321
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:21.7252973Z Progress: resolved 392, reused 0, downloaded 391, added 380
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:22.7288510Z Progress: resolved 392, reused 0, downloaded 391, added 391
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:23.7366019Z Progress: resolved 392, reused 0, downloaded 392, added 391
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:36.5730023Z Progress: resolved 392, reused 0, downloaded 392, added 392
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:36.5740745Z Progress: resolved 392, reused 0, downloaded 392, added 392, done
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0272902Z 
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0273337Z dependencies:
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0273645Z + @emotion/react 11.14.0
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0273872Z + @emotion/styled 11.14.1
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0274102Z + @monaco-editor/react 4.7.0
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0274320Z + @mui/icons-material 7.3.6
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0274535Z + @mui/material 7.3.6
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0274742Z + @tauri-apps/api 2.9.1
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0274981Z + @tauri-apps/plugin-dialog 2.4.2
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0275257Z + @tauri-apps/plugin-process 2.3.1
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0275534Z + @tauri-apps/plugin-updater 2.9.0
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0275769Z + next 16.1.1
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0275983Z + react 19.2.3
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0276194Z + react-dom 19.2.3
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0276781Z + react-virtuoso 4.18.1
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0277130Z + zustand 5.0.9
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0277333Z 
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0277474Z devDependencies:
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0277844Z + @tauri-apps/cli 2.9.6
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0278269Z + @types/node 20.19.27
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0278685Z + @types/react 19.2.7
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0279089Z + @types/react-dom 19.2.3
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0279480Z + eslint 9.39.2
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0280253Z + eslint-config-next 16.1.1
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0280708Z + typescript 5.9.3
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0280947Z 
+publish-tauri (windows-latest)	install frontend dependencies	2026-01-07T13:51:37.0669442Z Done in 32.1s using pnpm v10.27.0
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	﻿2026-01-07T13:51:37.1877974Z ##[group]Run tauri-apps/tauri-action@v0
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1878300Z with:
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1878477Z   tagName: app-v__VERSION__
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1878692Z   releaseName: Brows3 v__VERSION__
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1878997Z   releaseBody: See the assets to download this version and install.
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1879312Z   releaseDraft: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1879489Z   prerelease: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1879670Z   projectPath: .
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1879835Z   includeDebug: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880011Z   includeRelease: true
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880194Z   includeUpdaterJson: true
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880429Z   updaterJsonKeepUniversal: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880643Z   isGitea: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880840Z   uploadPlainBinary: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881042Z   generateReleaseNotes: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881230Z env:
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881443Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881736Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881989Z   CARGO_INCREMENTAL: 0
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1882171Z   CARGO_TERM_COLOR: always
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1882810Z   GITHUB_TOKEN: ***
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1882999Z   TAURI_SIGNING_PRIVATE_KEY: 
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1883221Z   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1883434Z ##[endgroup]
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.3676697Z running pnpm [ 'tauri', 'build' ]
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8676723Z 
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8677361Z > brows3@0.1.1 tauri D:\a\brows3\brows3
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8680425Z > PATH="$HOME/.cargo/bin:$PATH" tauri "build"
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8680894Z 
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8954872Z Looking for artifacts in:
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8955691Z D:\a\brows3\brows3\src-tauri\target\release\bundle\msi\Brows3_0.1.1_x64_en-US.msi
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8957073Z D:\a\brows3\brows3\src-tauri\target\release\bundle\msi\Brows3_0.1.1_x64_en-US.msi.sig
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8958501Z D:\a\brows3\brows3\src-tauri\target\release\bundle\msi\Brows3_0.1.1_x64_en-US.msi.zip
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8959735Z D:\a\brows3\brows3\src-tauri\target\release\bundle\msi\Brows3_0.1.1_x64_en-US.msi.zip.sig
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8960774Z D:\a\brows3\brows3\src-tauri\target\release\bundle\nsis\Brows3_0.1.1_x64-setup.exe
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8961780Z D:\a\brows3\brows3\src-tauri\target\release\bundle\nsis\Brows3_0.1.1_x64-setup.exe.sig
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8962748Z D:\a\brows3\brows3\src-tauri\target\release\bundle\nsis\Brows3_0.1.1_x64-setup.nsis.zip
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8964095Z D:\a\brows3\brows3\src-tauri\target\release\bundle\nsis\Brows3_0.1.1_x64-setup.nsis.zip.sig
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8989088Z ##[error]No artifacts were found.
+publish-tauri (windows-latest)	Post install pnpm	﻿2026-01-07T13:51:37.9228714Z Post job cleanup.
+publish-tauri (windows-latest)	Post install pnpm	2026-01-07T13:51:38.0462134Z Pruning is unnecessary.
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	﻿2026-01-07T13:51:38.0716979Z Post job cleanup.
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.2879774Z [command]"C:\Program Files\Git\bin\git.exe" version
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3148526Z git version 2.52.0.windows.1
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3231897Z Temporarily overriding HOME='D:\a\_temp\70d3d128-cb47-404b-92c7-afb7f7f289fc' before making global git config changes
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3233176Z Adding repository directory to the temporary git global config as a safe directory
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3243407Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\brows3\brows3
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3566654Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3848305Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.9122923Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.9373019Z http.https://github.com/.extraheader
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.9423171Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.9723153Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:39.4782308Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:39.5062711Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+publish-tauri (windows-latest)	Complete job	﻿2026-01-07T13:51:40.0016781Z Cleaning up orphan processes

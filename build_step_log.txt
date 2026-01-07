@@ -1,0 +1,56 @@
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	﻿2026-01-07T13:51:37.1877974Z ##[group]Run tauri-apps/tauri-action@v0
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1878300Z with:
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1878477Z   tagName: app-v__VERSION__
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1878692Z   releaseName: Brows3 v__VERSION__
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1878997Z   releaseBody: See the assets to download this version and install.
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1879312Z   releaseDraft: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1879489Z   prerelease: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1879670Z   projectPath: .
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1879835Z   includeDebug: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880011Z   includeRelease: true
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880194Z   includeUpdaterJson: true
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880429Z   updaterJsonKeepUniversal: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880643Z   isGitea: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1880840Z   uploadPlainBinary: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881042Z   generateReleaseNotes: false
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881230Z env:
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881443Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881736Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1881989Z   CARGO_INCREMENTAL: 0
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1882171Z   CARGO_TERM_COLOR: always
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1882810Z   GITHUB_TOKEN: ***
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1882999Z   TAURI_SIGNING_PRIVATE_KEY: 
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1883221Z   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.1883434Z ##[endgroup]
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.3676697Z running pnpm [ 'tauri', 'build' ]
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8676723Z 
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8677361Z > brows3@0.1.1 tauri D:\a\brows3\brows3
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8680425Z > PATH="$HOME/.cargo/bin:$PATH" tauri "build"
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8680894Z 
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8954872Z Looking for artifacts in:
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8955691Z D:\a\brows3\brows3\src-tauri\target\release\bundle\msi\Brows3_0.1.1_x64_en-US.msi
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8957073Z D:\a\brows3\brows3\src-tauri\target\release\bundle\msi\Brows3_0.1.1_x64_en-US.msi.sig
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8958501Z D:\a\brows3\brows3\src-tauri\target\release\bundle\msi\Brows3_0.1.1_x64_en-US.msi.zip
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8959735Z D:\a\brows3\brows3\src-tauri\target\release\bundle\msi\Brows3_0.1.1_x64_en-US.msi.zip.sig
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8960774Z D:\a\brows3\brows3\src-tauri\target\release\bundle\nsis\Brows3_0.1.1_x64-setup.exe
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8961780Z D:\a\brows3\brows3\src-tauri\target\release\bundle\nsis\Brows3_0.1.1_x64-setup.exe.sig
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8962748Z D:\a\brows3\brows3\src-tauri\target\release\bundle\nsis\Brows3_0.1.1_x64-setup.nsis.zip
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8964095Z D:\a\brows3\brows3\src-tauri\target\release\bundle\nsis\Brows3_0.1.1_x64-setup.nsis.zip.sig
+publish-tauri (windows-latest)	Run tauri-apps/tauri-action@v0	2026-01-07T13:51:37.8989088Z ##[error]No artifacts were found.
+publish-tauri (windows-latest)	Post install pnpm	﻿2026-01-07T13:51:37.9228714Z Post job cleanup.
+publish-tauri (windows-latest)	Post install pnpm	2026-01-07T13:51:38.0462134Z Pruning is unnecessary.
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	﻿2026-01-07T13:51:38.0716979Z Post job cleanup.
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.2879774Z [command]"C:\Program Files\Git\bin\git.exe" version
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3148526Z git version 2.52.0.windows.1
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3231897Z Temporarily overriding HOME='D:\a\_temp\70d3d128-cb47-404b-92c7-afb7f7f289fc' before making global git config changes
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3233176Z Adding repository directory to the temporary git global config as a safe directory
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3243407Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\brows3\brows3
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3566654Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.3848305Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.9122923Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.9373019Z http.https://github.com/.extraheader
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.9423171Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:38.9723153Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:39.4782308Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+publish-tauri (windows-latest)	Post Run actions/checkout@v4	2026-01-07T13:51:39.5062711Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+publish-tauri (windows-latest)	Complete job	﻿2026-01-07T13:51:40.0016781Z Cleaning up orphan processes
