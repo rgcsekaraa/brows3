@@ -30,7 +30,6 @@ import { TransferPanel } from '@/components/transfer/TransferPanel';
 import { useProfileStore } from '@/store/profileStore';
 import ProfileDialog from '@/components/profile/ProfileDialog';
 import ToastContainer from '@/components/common/ToastContainer';
-import { check } from '@tauri-apps/plugin-updater';
 
 const drawerWidth = 260; 
 
@@ -70,12 +69,26 @@ export default function AppShell({ children }: AppShellProps) {
   // Listen for global transfer events
   useTransferEvents();
 
-  // Check for updates on load
+  // Check for updates on load (with safety checks)
   useEffect(() => {
     const checkForUpdates = async () => {
+      // Skip in development or SSR
       if (process.env.NODE_ENV === 'development') return;
+      if (typeof window === 'undefined') return;
+      
+      // Check if we're in a Tauri environment
+      // @ts-expect-error - __TAURI__ is injected by Tauri
+      if (!window.__TAURI__) {
+        console.log('Not running in Tauri environment, skipping update check');
+        return;
+      }
+      
+      // Add a small delay to let the app fully initialize
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       try {
+        // Dynamic import to avoid SSR issues
+        const { check } = await import('@tauri-apps/plugin-updater');
         const update = await check();
         if (update) {
           console.log(`Found update ${update.version} from ${update.date}`);
@@ -84,7 +97,8 @@ export default function AppShell({ children }: AppShellProps) {
           await update.downloadAndInstall();
         }
       } catch (error) {
-        console.error('Failed to check for updates:', error);
+        // Silently fail - don't crash the app if update check fails
+        console.warn('Update check failed (non-critical):', error);
       }
     };
     
