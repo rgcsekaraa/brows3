@@ -55,20 +55,80 @@ Brows3 is available for all major desktop platforms. Download the latest version
 
 ### Manual Build
 
-If you prefer building from source:
+If you prefer building from source, follow the instructions for your platform:
+
+#### Prerequisites (All Platforms)
+- **Node.js** v20+ and **pnpm** (install via `npm install -g pnpm`)
+- **Rust** (see platform-specific instructions below)
+
+#### 🪟 Windows Setup
+
+1. **Install Rust**:
+   - Download and run the installer from [rustup.rs](https://rustup.rs)
+   - Or run in PowerShell: `winget install Rustlang.Rustup`
+   
+2. **Restart your terminal** to refresh the PATH
+
+3. **Verify installation**:
+   ```powershell
+   cargo --version
+   rustc --version
+   ```
+
+4. **Clone and run**:
+   ```powershell
+   git clone https://github.com/rgcsekaraa/brows3.git
+   cd brows3
+   pnpm install
+   pnpm tauri dev
+   ```
+
+#### 🍎 macOS Setup
+
+1. **Install Rust**:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source ~/.cargo/env
+   ```
+
+2. **Install Xcode Command Line Tools** (if not already installed):
+   ```bash
+   xcode-select --install
+   ```
+
+3. **Clone and run**:
+   ```bash
+   git clone https://github.com/rgcsekaraa/brows3.git
+   cd brows3
+   pnpm install
+   pnpm tauri dev
+   ```
+
+#### 🐧 Linux Setup
+
+1. **Install Rust**:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source ~/.cargo/env
+   ```
+
+2. **Install system dependencies** (Debian/Ubuntu):
+   ```bash
+   sudo apt update
+   sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+   ```
+
+3. **Clone and run**:
+   ```bash
+   git clone https://github.com/rgcsekaraa/brows3.git
+   cd brows3
+   pnpm install
+   pnpm tauri dev
+   ```
+
+#### Release Build (All Platforms)
 
 ```bash
-# 1. Clone
-git clone https://github.com/rgcsekaraa/brows3.git
-cd brows3
-
-# 2. Install Deps
-pnpm install
-
-# 3. Dev Mode
-pnpm tauri dev
-
-# 4. Release Build
 pnpm tauri build
 ```
 
