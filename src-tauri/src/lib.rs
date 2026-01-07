@@ -20,14 +20,15 @@ pub fn run() {
         .manage(Arc::new(RwLock::new(TransferManager::new())))
         .setup(|app| {
             
-            // Initialize logging
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            // Initialize logging for both debug and release builds
+            // This helps diagnose issues on Windows where crashes are silent
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .build(),
+            )?;
+            
+            log::info!("Brows3 starting up...");
             
             // Initialize credentials manager
             let app_handle = app.handle().clone();
@@ -78,5 +79,8 @@ pub fn run() {
             transfer_cmd::queue_folder_upload,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            log::error!("Error while running Tauri application: {}", e);
+            eprintln!("Error while running Tauri application: {}", e);
+        });
 }
