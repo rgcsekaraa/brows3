@@ -216,6 +216,7 @@ export default function AppShell({ children }: AppShellProps) {
             flexGrow: 1, 
             overflow: 'auto', 
             pb: 6, // Space for footer
+            px: 2, // Horizontal padding for breathing room
             bgcolor: 'background.default'
           }}>
             {!mounted || (useProfileStore.getState().isLoading && profiles.length === 0) ? (
