@@ -27,6 +27,7 @@ interface HistoryState {
   addFavorite: (item: RecentItem) => void;
   removeFavorite: (key: string) => void;
   isFavorite: (key: string) => boolean;
+  clearFavorites: () => void;
 }
 
 export const useHistoryStore = create<HistoryState>()(
@@ -58,6 +59,8 @@ export const useHistoryStore = create<HistoryState>()(
       })),
       
       isFavorite: (key) => get().favorites.some(i => i.key === key),
+      
+      clearFavorites: () => set({ favorites: [] }),
 
       clearHistory: () => set({ recentPaths: [], recentItems: [] }),
     }),
