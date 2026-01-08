@@ -17,8 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Copy Filename**: Copies just the filename with extension (e.g., `file.txt`)
   - **Copy Key**: Copies the S3 key path (e.g., `folder/subfolder/file.txt`)
   - **Copy S3 URI**: Copies full S3 URI (e.g., `s3://bucket-name/folder/file.txt`)
+- **Page Scrolling**: Fixed overflow and scrolling issues in Recent and Favorites pages
 
 ### Changed
+- **Layout Consistency**: Unified spacing across all pages:
+  - Recent, Favorites, Downloads, Uploads now use full width (removed 800px maxWidth)
+  - Reduced padding from `3` to `1` with top margin for consistency
+  - All pages now have icon + title header layout (added StorageIcon to Buckets page)
+  - Fixed scrolling behavior with proper flex and overflow properties
+- **Main Content Spacing**: Added horizontal padding (px: 2) to main content area for better breathing room
 - **PathBar UI**: Reduced search bar width (600px → 450px) and improved centering in navbar with balanced spacing
 
 ## [0.2.1] - 2026-01-08
