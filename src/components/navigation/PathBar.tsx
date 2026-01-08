@@ -72,29 +72,26 @@ export default function PathBar() {
     
     if (!parsed) {
       toast.error('Invalid S3 Path', 'Please enter a valid bucket name (e.g. "my-bucket" or "s3://my-bucket/folder")');
-      return;
+      return; // Exit early - don't navigate anywhere
     }
 
     const { bucket, prefix } = parsed;
-    const fullPath = prefix ? `/${bucket}/${prefix}/` : `/${bucket}/`;
+    
+    // Build the correct URL path
+    const urlPath = `/bucket?name=${bucket}&region=us-east-1${prefix ? `&prefix=${encodeURIComponent(prefix + '/')}` : ''}`;
     
     // Save to history
     addPath(`s3://${bucket}/${prefix ? prefix + '/' : ''}`);
 
-    // Navigate logic
-    const homeTab = tabs.find(t => t.id === 'home');
-    if (homeTab) {
-        // Reuse home tab if available
-        setActiveTab('home');
-        router.push(fullPath);
-    } else {
-        addTab({
-            title: bucket,
-            path: fullPath,
-            icon: 'bucket'
-        });
-        router.push(fullPath);
-    }
+    // Navigate using the URL path
+    addTab({
+      title: bucket,
+      path: urlPath,
+      icon: 'bucket'
+    });
+    router.push(urlPath);
+    
+    setInputValue(''); // Clear input after successful navigation
     setIsOpen(false);
     // Blur to hide keyboard/dropdown
     inputRef.current?.blur();
@@ -118,14 +115,17 @@ export default function PathBar() {
       onChange={(_, value) => {
         if (value) handleNavigate(value);
       }}
-      renderOption={(props, option) => (
-        <Box component="li" {...props} key={option}>
+      renderOption={(props, option) => {
+        const { key, ...otherProps } = props;
+        return (
+          <Box component="li" key={key} {...otherProps}>
             <HistoryIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} />
             <Box>
-                <Typography variant="body2">{option}</Typography>
+              <Typography variant="body2">{option}</Typography>
             </Box>
-        </Box>
-      )}
+          </Box>
+        );
+      }}
       renderInput={(params) => (
         <TextField
           {...params}

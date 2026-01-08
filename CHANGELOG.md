@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.2.2] - 2026-01-08
+
+### Fixed
+- **PathBar Navigation**: Fixed invalid URL handling - now shows error toast and prevents navigation instead of loading existing buckets
+- **Bucket Error Handling**: Added graceful error UI when bucket is not found, with helpful actions ("Back to Home" and "Try Again")
+- **React Key Warnings**: Resolved React key prop warnings in PathBar autocomplete component
+- **Console Logging**: Reduced console noise - fetch errors now only log in development mode with cleaner formatting
+- **Copy Options**: Properly separated copy menu items:
+  - **Copy Filename**: Copies just the filename with extension (e.g., `file.txt`)
+  - **Copy Key**: Copies the S3 key path (e.g., `folder/subfolder/file.txt`)
+  - **Copy S3 URI**: Copies full S3 URI (e.g., `s3://bucket-name/folder/file.txt`)
+
 ## [0.2.1] - 2026-01-08
 
 ### Fixed

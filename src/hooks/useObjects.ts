@@ -63,14 +63,18 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
       }
       return result;
     } catch (err: any) {
-      console.error('Fetch error:', err);
+      // Only log detailed errors in development
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`Failed to load bucket "${bucketName}" with prefix "${prefix}":`, err);
+      }
+      
       let msg = 'Failed to load objects';
       if (err instanceof Error) {
         msg = err.message;
       } else if (typeof err === 'string') {
         msg = err;
       } else if (typeof err === 'object' && err !== null) {
-        msg = err.message || err.error || JSON.stringify(err);
+        msg = err.message || err.error || 'Bucket access failed';
       }
       setError(msg);
       return null;

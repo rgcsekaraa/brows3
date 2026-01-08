@@ -651,6 +651,50 @@ function BucketContent() {
     );
   }
 
+  // Show error state if bucket failed to load
+  if (initialError && !isLoading) {
+    return (
+      <Box sx={{ 
+        p: 6, 
+        textAlign: 'center', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center',
+        gap: 2,
+        maxWidth: 600,
+        mx: 'auto',
+        mt: 8
+      }}>
+        <StorageIcon sx={{ fontSize: 80, color: 'text.disabled' }} />
+        <Typography variant="h5" fontWeight={600} gutterBottom>
+          Bucket Not Found
+        </Typography>
+        <Typography color="text.secondary" variant="body1">
+          {initialError}
+        </Typography>
+        <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
+          This bucket may not exist, or you might not have permission to access it.
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
+          <Button 
+            variant="contained" 
+            startIcon={<HomeIcon />}
+            onClick={() => router.push('/')}
+          >
+            Back to Home
+          </Button>
+          <Button 
+            variant="outlined" 
+            startIcon={<RefreshIcon />}
+            onClick={() => refresh()}
+          >
+            Try Again
+          </Button>
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ p: 1, mt: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header & Breadcrumbs */}
@@ -947,17 +991,6 @@ function BucketContent() {
         <Divider />
         <MenuItem onClick={() => {
           if (selectedObject) {
-            const s3Uri = `s3://${bucketName}/${selectedObject.key}`;
-            navigator.clipboard.writeText(s3Uri);
-            displaySuccess(`Copied: ${s3Uri}`);
-          }
-          handleMenuClose();
-        }}>
-          <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
-          Copy Key
-        </MenuItem>
-        <MenuItem onClick={() => {
-          if (selectedObject) {
             const filename = selectedObject.key.split('/').filter(Boolean).pop() || selectedObject.key;
             navigator.clipboard.writeText(filename);
             displaySuccess(`Copied filename: ${filename}`);
@@ -966,6 +999,27 @@ function BucketContent() {
         }}>
           <ListItemIcon><FilePresentIcon fontSize="small" /></ListItemIcon>
           Copy Filename
+        </MenuItem>
+        <MenuItem onClick={() => {
+          if (selectedObject) {
+            navigator.clipboard.writeText(selectedObject.key);
+            displaySuccess(`Copied key: ${selectedObject.key}`);
+          }
+          handleMenuClose();
+        }}>
+          <ListItemIcon><FileCopyIcon fontSize="small" /></ListItemIcon>
+          Copy Key
+        </MenuItem>
+        <MenuItem onClick={() => {
+          if (selectedObject) {
+            const s3Uri = `s3://${bucketName}/${selectedObject.key}`;
+            navigator.clipboard.writeText(s3Uri);
+            displaySuccess(`Copied S3 URI: ${s3Uri}`);
+          }
+          handleMenuClose();
+        }}>
+          <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
+          Copy S3 URI
         </MenuItem>
         <Divider />
         <MenuItem onClick={handleRenamePrompt}>
