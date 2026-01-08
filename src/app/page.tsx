@@ -208,14 +208,17 @@ export default function Home() {
   
   return (
     <Box sx={{ p: 1, mt: 1 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-        <Box>
-          <Typography variant="h4" fontWeight={700}>
-            Buckets
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {activeProfile.name} • {filteredBuckets.length} buckets
-          </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <StorageIcon color="primary" sx={{ fontSize: 40 }} />
+          <Box>
+            <Typography variant="h4" fontWeight={700}>
+              Buckets
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {activeProfile.name} • {filteredBuckets.length} buckets
+            </Typography>
+          </Box>
         </Box>
         
         <Box sx={{ display: 'flex', gap: 2 }}>
