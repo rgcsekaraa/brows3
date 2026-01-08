@@ -231,14 +231,6 @@ export default function AppShell({ children }: AppShellProps) {
                     >
                       Connect Account
                     </Button>
-                    <Button 
-                      variant="outlined" 
-                      size="large"
-                      startIcon={<SettingsIcon />}
-                      sx={{ borderRadius: 100, px: 4, py: 1.5, fontWeight: 700 }}
-                    >
-                      Settings
-                    </Button>
                   </Box>
                 </Box>
               </Box>

@@ -121,9 +121,14 @@ export default function Home() {
           <Typography variant="h6" color="text.secondary" gutterBottom>
             No Buckets Found
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 400, mx: 'auto', mb: 3 }}>
-            This profile doesn't seem to have any buckets, or we couldn't list them.
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 450, mx: 'auto', mb: 2 }}>
+            This profile doesn't have permission to list buckets, or there are no buckets available.
           </Typography>
+          <Alert severity="info" sx={{ maxWidth: 450, mx: 'auto', mb: 3, textAlign: 'left' }}>
+            <Typography variant="body2">
+              <strong>Tip:</strong> If you have access to specific buckets, use the <strong>path bar</strong> in the navbar to navigate directly. Type a bucket name or S3 URI like <code>s3://my-bucket/</code>
+            </Typography>
+          </Alert>
           <IconButton onClick={() => refresh()} color="primary">
             <RefreshIcon />
           </IconButton>

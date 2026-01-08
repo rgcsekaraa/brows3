@@ -12,17 +12,17 @@ import {
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
   SettingsBrightness as AutoModeIcon,
-  Refresh as RefreshIcon,
   Cloud as CloudIcon,
 } from '@mui/icons-material';
 import { Divider } from '@mui/material';
 import { useAppStore } from '@/store/appStore';
-import { useBuckets } from '@/hooks/useBuckets';
 import ProfileSelector from '../profile/ProfileSelector';
+import PathBar from '../navigation/PathBar';
+import { useProfileStore } from '@/store/profileStore';
 
 export default function TopBar() {
   const { themeMode, setThemeMode } = useAppStore();
-  const { refresh, isLoading } = useBuckets();
+  const { activeProfileId } = useProfileStore();
   
   const handleThemeToggle = () => {
     const modes: Array<'light' | 'dark' | 'system'> = ['light', 'dark', 'system'];
@@ -41,7 +41,7 @@ export default function TopBar() {
   
   return (
     <Toolbar variant="dense" sx={{ minHeight: 48, px: { xs: 1, sm: 2 } }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 0, mr: 4 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 0, mr: 2 }}>
         <CloudIcon sx={{ color: '#FF9900', mr: 1, fontSize: 24 }} />
         <Typography
           variant="h6"
@@ -57,6 +57,9 @@ export default function TopBar() {
         </Typography>
       </Box>
       
+      {/* Path Bar for Direct Bucket Access */}
+      {activeProfileId && <PathBar />}
+      
       {/* Spacer */}
       <Box sx={{ flexGrow: 1 }} />
       
@@ -67,20 +70,6 @@ export default function TopBar() {
         
         {/* Actions */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Tooltip title="Refresh">
-            <IconButton 
-              color="inherit" 
-              size="small" 
-              onClick={() => refresh()}
-              disabled={isLoading}
-              sx={{ color: 'text.secondary' }}
-            >
-              <RefreshIcon fontSize="small" className={isLoading ? 'spin-animation' : ''} />
-            </IconButton>
-          </Tooltip>
-          
-          <Divider orientation="vertical" flexItem sx={{ mx: 1, height: 20, my: 'auto' }} />
-          
           <Tooltip title="Theme Settings">
             <IconButton 
               color="inherit" 
@@ -101,3 +90,4 @@ export default function TopBar() {
     </Toolbar>
   );
 }
+

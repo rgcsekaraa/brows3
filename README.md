@@ -8,6 +8,7 @@
 
 Navigating through buckets with millions of objects is now as fast as browsing your local file system.
 
+
 ## ✨ Why Brows3?
 
 Traditional S3 tools often suffer from latency when navigating deep folder structures or listing large numbers of objects. Brows3 rethinks the browsing experience:
@@ -33,6 +34,12 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 ### 🛡️ Security & Privacy
 - **Local Credentials**: Brows3 uses your local AWS configuration and system keychain. Your secrets never leave your machine.
 - **Memory-First Design**: The object cache is ephemeral and clears on program exit, keeping your temporary data transient.
+
+### 🔐 Enterprise & Restricted Access
+- **Direct Bucket Access**: Users without `s3:ListBuckets` permission can still use Brows3! Simply type bucket names or S3 URIs in the **path bar** to navigate directly.
+- **Smart Caching**: 30-minute cache TTL reduces API calls and costs. Hover over the footer to see cache status.
+- **Cost Awareness**: Footer displays API cost notices to help you stay informed about S3 charges.
+- **Auto-Updates**: Built-in update system ensures all users stay on the latest version automatically.
 
 ## 🏗️ Technical Architecture
 
