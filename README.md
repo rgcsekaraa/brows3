@@ -31,15 +31,28 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 - **Media Previews**: Native support for **high-resolution images**, **videos**, and **PDFs**.
 - **Rendering Indicators**: Clear visual feedback for large image rendering states.
 
-### 🛡️ Security & Privacy
-- **Local Credentials**: Brows3 uses your local AWS configuration and system keychain. Your secrets never leave your machine.
-- **Memory-First Design**: The object cache is ephemeral and clears on program exit, keeping your temporary data transient.
+### Feature Deep Dive
 
-### 🔐 Enterprise & Restricted Access
-- **Direct Bucket Access**: Users without `s3:ListBuckets` permission can still use Brows3! Simply type bucket names or S3 URIs in the **path bar** to navigate directly.
-- **Smart Caching**: 30-minute cache TTL reduces API calls and costs. Hover over the footer to see cache status.
-- **Cost Awareness**: Footer displays API cost notices to help you stay informed about S3 charges.
-- **Auto-Updates**: Built-in update system ensures all users stay on the latest version automatically.
+#### 🚀 **Speed & Performance**
+- **Rust-Powered Backend**: Core logic is written in Rust for near-instant operations.
+- **Smart In-Memory Caching**: 
+  - Sub-millisecond navigation for recently visited folders.
+  - **Auto-Invalidation**: Cache automatically refreshes after you upload, delete, or modify files.
+  - **30-Minute TTL**: Stale data (from external sources) is automatically purged.
+- **Lazy Loading**: Efficiently handles buckets with millions of objects.
+
+#### �️ **Enterprise & Restricted Access**
+- **Direct Bucket Access**: Instantly navigate to specific buckets (e.g., `s3://my-secure-bucket`) even if you don't have `s3:ListBuckets` permission.
+- **Profile-Gated Access**: Create isolated profiles for different AWS accounts or environments.
+- **Cost Awareness**: UI indicators for cached data help you manage S3 API costs.
+
+#### ⚙️ **Control & Customization**
+- **Enhanced Settings**: 
+  - Manage application data, clear cache, and check for updates manually.
+  - One-click theme switching (Dark/Light/System).
+  - Configure default regions and concurrency limits.
+- **Auto-Updates**: Seamless background updates ensure you're always on the latest secure version.
+test version automatically.
 
 ## 🏗️ Technical Architecture
 

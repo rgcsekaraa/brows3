@@ -9,6 +9,7 @@ use s3::S3ClientManager;
 use transfer::TransferManager;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,6 +38,12 @@ pub fn run() {
                     log::error!("Failed to initialize credentials manager: {}", e);
                 }
             });
+            
+            // Show the main window after initialization to prevent white flash
+            // Window starts hidden (visible: false in config)
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+            }
             
             Ok(())
         })

@@ -74,7 +74,7 @@ export default function Footer() {
 
       {/* Cost Awareness Notice */}
       {activeProfile && (
-        <Tooltip title="S3 ListBucket and ListObjects API calls incur charges. Data is cached for 30 minutes to reduce costs.">
+        <Tooltip title="S3 API calls incur charges. Cache auto-refreshes after uploads/deletes within the app.">
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.disabled', cursor: 'help' }}>
             <InfoIcon sx={{ fontSize: 12 }} />
             <Typography variant="caption" sx={{ fontSize: '0.65rem' }}>
@@ -121,7 +121,7 @@ export default function Footer() {
 
       {/* Production Version */}
       <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1 }}>
-        Brows3 v0.1.8
+        Brows3 v0.1.9
       </Typography>
     </Box>
   );

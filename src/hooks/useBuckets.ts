@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { BucketWithRegion, bucketApi, isTauri } from '@/lib/tauri';
+import { BucketWithRegion, bucketApi, isTauri, setCacheInvalidator } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
 
 interface UseBucketsResult {
@@ -44,6 +44,14 @@ export function useBuckets(): UseBucketsResult {
   const { activeProfileId } = useProfileStore();
   const fetchInProgress = useRef(false);
   const mountedRef = useRef(true);
+
+  // Connect the cache invalidator so write operations trigger a refresh
+  useEffect(() => {
+    setCacheInvalidator(() => {
+      invalidateBucketCache();
+      setCacheTimestamp(null); // Reset UI cache state
+    });
+  }, []);
 
   const fetchBuckets = useCallback(async (skipCache = false) => {
     if (!activeProfileId) {

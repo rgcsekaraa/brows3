@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 
+// Cache invalidation helper - will be imported in hook, defined here for API layer
+let cacheInvalidator: (() => void) | null = null;
+export const setCacheInvalidator = (fn: () => void) => { cacheInvalidator = fn; };
+const invalidateCache = () => { if (cacheInvalidator) cacheInvalidator(); };
+
 // Profile types matching Rust backend
 export type CredentialType = 
   | { type: 'Environment' }
@@ -163,7 +168,8 @@ export const objectApi = {
 
 export const operationsApi = {
   async putObject(bucketName: string, bucketRegion: string | undefined, key: string, localPath?: string): Promise<void> {
-    return invoke<void>('put_object', { bucketName, bucketRegion, key, localPath });
+    await invoke<void>('put_object', { bucketName, bucketRegion, key, localPath });
+    invalidateCache(); // Auto-refresh after upload
   },
 
   async getObject(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string): Promise<void> {
@@ -171,19 +177,23 @@ export const operationsApi = {
   },
 
   async deleteObject(bucketName: string, bucketRegion: string | undefined, key: string): Promise<void> {
-    return invoke<void>('delete_object', { bucketName, bucketRegion, key });
+    await invoke<void>('delete_object', { bucketName, bucketRegion, key });
+    invalidateCache(); // Auto-refresh after delete
   },
 
   async copyObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string): Promise<void> {
-    return invoke<void>('copy_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey });
+    await invoke<void>('copy_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey });
+    invalidateCache(); // Auto-refresh after copy
   },
 
   async moveObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string): Promise<void> {
-    return invoke<void>('move_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey });
+    await invoke<void>('move_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey });
+    invalidateCache(); // Auto-refresh after move
   },
 
   async deleteObjects(bucketName: string, bucketRegion: string | undefined, keys: string[]): Promise<void> {
-    return invoke<void>('delete_objects', { bucketName, bucketRegion, keys });
+    await invoke<void>('delete_objects', { bucketName, bucketRegion, keys });
+    invalidateCache(); // Auto-refresh after bulk delete
   },
 
   async getObjectMetadata(bucketName: string, bucketRegion: string | undefined, key: string): Promise<ObjectMetadata> {

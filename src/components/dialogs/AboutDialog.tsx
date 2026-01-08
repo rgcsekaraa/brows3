@@ -1,13 +1,14 @@
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  Button,
+  IconButton,
   Typography,
   Box,
   Link,
+  Chip,
+  Divider,
 } from '@mui/material';
+import { Close as CloseIcon, Cloud as CloudIcon, GitHub as GitHubIcon } from '@mui/icons-material';
 import { getVersion } from '@tauri-apps/api/app';
 import { useState, useEffect } from 'react';
 
@@ -17,36 +18,100 @@ interface AboutDialogProps {
 }
 
 export default function AboutDialog({ open, onClose }: AboutDialogProps) {
-  const [version, setVersion] = useState<string>('Unknown');
+  const [version, setVersion] = useState<string>('...');
 
   useEffect(() => {
-    getVersion().then(setVersion).catch(console.error);
-  }, []);
+    if (open) {
+      getVersion().then(setVersion).catch(() => setVersion('Unknown'));
+    }
+  }, [open]);
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ textAlign: 'center' }}>
-            Brows3 S3 Explorer
-        </DialogTitle>
-        <DialogContent>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 2 }}>
-                <Typography variant="body1">
-                    A modern, fast, and secure S3 file manager.
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                    Version: {version}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" align="center">
-                    Built with Tauri, Next.js, and Rust.
-                </Typography>
-                <Link href="https://github.com/google-deepmind" target="_blank" rel="noopener">
-                    GitHub Repository
-                </Link>
-            </Box>
-        </DialogContent>
-        <DialogActions>
-            <Button onClick={onClose}>Close</Button>
-        </DialogActions>
+    <Dialog 
+      open={open} 
+      onClose={onClose} 
+      maxWidth="xs" 
+      fullWidth
+      PaperProps={{
+        sx: { borderRadius: 3, overflow: 'hidden' }
+      }}
+    >
+      <IconButton
+        onClick={onClose}
+        sx={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }}
+      >
+        <CloseIcon fontSize="small" />
+      </IconButton>
+      
+      <DialogContent sx={{ textAlign: 'center', py: 4, px: 3 }}>
+        {/* Logo */}
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: 2,
+              bgcolor: 'action.hover',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <CloudIcon sx={{ fontSize: 40, color: '#FF9900' }} />
+          </Box>
+        </Box>
+        
+        {/* Title */}
+        <Typography variant="h5" fontWeight={700} gutterBottom>
+          Brows3
+        </Typography>
+        
+        <Chip 
+          label={`v${version}`} 
+          size="small" 
+          variant="outlined"
+          sx={{ mb: 2 }}
+        />
+        
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          A high-performance, open-source Amazon S3 desktop client designed for developers who demand speed.
+        </Typography>
+        
+        <Divider sx={{ my: 2 }} />
+        
+        {/* Links */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <Link 
+            href="https://github.com/rgcsekaraa/brows3" 
+            target="_blank" 
+            rel="noopener"
+            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}
+          >
+            <GitHubIcon fontSize="small" />
+            View on GitHub
+          </Link>
+          <Link 
+            href="https://github.com/rgcsekaraa/brows3/issues" 
+            target="_blank" 
+            rel="noopener"
+            color="text.secondary"
+            sx={{ fontSize: '0.875rem' }}
+          >
+            Report an Issue
+          </Link>
+        </Box>
+        
+        <Divider sx={{ my: 2 }} />
+        
+        {/* Tech Stack */}
+        <Typography variant="caption" color="text.disabled" display="block">
+          Built with Tauri • React • Rust
+        </Typography>
+        <Typography variant="caption" color="text.disabled">
+          MIT License © 2026
+        </Typography>
+      </DialogContent>
     </Dialog>
   );
 }
+

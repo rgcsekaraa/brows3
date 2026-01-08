@@ -187,10 +187,21 @@ export default function Sidebar() {
         </Box>
       </Box>
       
-      {/* About at bottom (always enabled) */}
+      {/* Settings & About at bottom (always enabled) */}
       <Box sx={{ flexShrink: 0, pb: 4 }}>
         <Divider sx={{ mx: 2 }} />
         <List dense>
+          <ListItem disablePadding>
+            <ListItemButton 
+              onClick={() => router.push('/settings')} 
+              sx={{ borderRadius: 1, mx: 1 }}
+            >
+              <ListItemIcon sx={{ minWidth: 32 }}>
+                <SettingsIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Settings" primaryTypographyProps={{ variant: 'body2' }} />
+            </ListItemButton>
+          </ListItem>
           <ListItem disablePadding>
             <ListItemButton onClick={() => setAboutOpen(true)} sx={{ borderRadius: 1, mx: 1 }}>
               <ListItemIcon sx={{ minWidth: 32 }}>
