@@ -91,8 +91,8 @@ export default function RecentPage() {
           </Typography>
         </Paper>
       ) : (
-        <Paper variant="outlined">
-          <List dense>
+        <Paper variant="outlined" sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <List dense sx={{ flex: 1, overflow: 'auto' }}>
             {recentItems.map((item, index) => (
               <ListItem
                 key={`${item.bucket}-${item.key}-${index}`}
