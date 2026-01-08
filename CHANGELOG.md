@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Copy Key**: Copies the S3 key path (e.g., `folder/subfolder/file.txt`)
   - **Copy S3 URI**: Copies full S3 URI (e.g., `s3://bucket-name/folder/file.txt`)
 
+### Changed
+- **PathBar UI**: Reduced search bar width (600px → 450px) and improved centering in navbar with balanced spacing
+
 ## [0.2.1] - 2026-01-08
 
 ### Fixed

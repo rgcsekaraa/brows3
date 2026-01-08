@@ -139,7 +139,7 @@ export default function PathBar() {
             '& .MuiOutlinedInput-root': {
               bgcolor: 'background.paper',
               borderRadius: 2,
-              pr: 1,
+              pr: 0.5,
               '& fieldset': { borderColor: 'divider' },
               '&:hover fieldset': { borderColor: 'text.secondary' },
               '&.Mui-focused fieldset': { borderColor: 'primary.main', borderWidth: 2 },
@@ -158,6 +158,7 @@ export default function PathBar() {
                   size="small" 
                   onClick={() => handleNavigate(inputValue)}
                   edge="end"
+                  sx={{ mr: 0.8 }}
                 >
                   <GoIcon fontSize="small" />
                 </IconButton>
