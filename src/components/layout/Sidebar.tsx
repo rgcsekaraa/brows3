@@ -12,6 +12,7 @@ import {
   TextField,
   InputAdornment,
   Skeleton,
+  Tooltip,
 } from '@mui/material';
 import {
   Cloud as CloudIcon,
@@ -25,6 +26,7 @@ import {
   Info as InfoIcon,
   Storage as StorageIcon,
   Search as SearchIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { useRouter, usePathname } from 'next/navigation';
 import AboutDialog from '@/components/dialogs/AboutDialog';
@@ -47,35 +49,49 @@ export default function Sidebar() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [bucketSearch, setBucketSearch] = useState('');
   
-  const { activeProfileId } = useProfileStore();
+  const { activeProfileId, profiles } = useProfileStore();
   const { buckets, isLoading } = useBuckets();
   const { addTab } = useAppStore();
+
+  // Check if any profiles exist - this gates most UI
+  const hasProfiles = profiles.length > 0;
+  const hasActiveProfile = !!activeProfileId;
 
   const filteredBuckets = useMemo(() => {
     return buckets.filter(b => b.name.toLowerCase().includes(bucketSearch.toLowerCase()));
   }, [buckets, bucketSearch]);
 
   const handleBucketClick = (bucketName: string, region: string) => {
+    if (!hasActiveProfile) return;
     const path = `/bucket?name=${bucketName}&region=${region}`;
     addTab({ title: bucketName, path, icon: 'bucket' });
     router.push(path);
   };
 
   const handleNavClick = (item: typeof navItems[0]) => {
+    if (!hasProfiles) return;
     addTab({ title: item.label, path: item.path, icon: item.label.toLowerCase() });
     router.push(item.path);
   };
 
+  // Disabled item styles
+  const disabledStyles = {
+    opacity: 0.4,
+    pointerEvents: 'none' as const,
+    cursor: 'not-allowed',
+  };
+
   return (
     <Box sx={{ overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Search Buckets */}
-      <Box sx={{ p: 2, pb: 1 }}>
+      {/* Search Buckets - disabled without profile */}
+      <Box sx={{ p: 2, pb: 1, ...((!hasProfiles) && disabledStyles) }}>
         <TextField
           size="small"
           fullWidth
           placeholder="Filter buckets..."
           value={bucketSearch}
           onChange={(e) => setBucketSearch(e.target.value)}
+          disabled={!hasProfiles}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -91,85 +107,90 @@ export default function Sidebar() {
       </Box>
 
       <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-        {/* Main Navigation */}
+        {/* Main Navigation - disabled without profile */}
         <List dense>
           {navItems.map((item) => (
-            <ListItem key={item.label} disablePadding>
-              <ListItemButton 
-                onClick={() => handleNavClick(item)}
-                selected={pathname === item.path}
-                sx={{ borderRadius: 1, mx: 1, my: 0.2 }}
-              >
-                <ListItemIcon sx={{ minWidth: 32, color: pathname === item.path ? 'primary.main' : 'inherit' }}>
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText 
-                    primary={item.label} 
-                    primaryTypographyProps={{ variant: 'body2', fontWeight: pathname === item.path ? 600 : 400 }} 
-                />
-              </ListItemButton>
-            </ListItem>
+            <Tooltip 
+              key={item.label} 
+              title={!hasProfiles ? "Create a profile first" : ""} 
+              placement="right"
+            >
+              <ListItem disablePadding sx={!hasProfiles ? disabledStyles : {}}>
+                <ListItemButton 
+                  onClick={() => handleNavClick(item)}
+                  selected={pathname === item.path}
+                  disabled={!hasProfiles}
+                  sx={{ borderRadius: 1, mx: 1, my: 0.2 }}
+                >
+                  <ListItemIcon sx={{ minWidth: 32, color: pathname === item.path ? 'primary.main' : 'inherit' }}>
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText 
+                      primary={item.label} 
+                      primaryTypographyProps={{ variant: 'body2', fontWeight: pathname === item.path ? 600 : 400 }} 
+                  />
+                </ListItemButton>
+              </ListItem>
+            </Tooltip>
           ))}
         </List>
         
         <Divider sx={{ mx: 2, my: 1 }} />
         
-        {/* Dynamic Buckets Section */}
-        <Typography
-          variant="overline"
-          sx={{ px: 2, pt: 1, display: 'block', color: 'text.secondary', fontWeight: 700 }}
-        >
-          Buckets ({filteredBuckets.length})
-        </Typography>
-        
-        <List dense>
-          {isLoading ? (
-             [1,2,3].map(i => (
-                <ListItem key={i} sx={{ px: 2, py: 0.5 }}>
-                    <Skeleton variant="text" width="100%" />
+        {/* Dynamic Buckets Section - disabled without active profile */}
+        <Box sx={!hasActiveProfile ? disabledStyles : {}}>
+          <Typography
+            variant="overline"
+            sx={{ px: 2, pt: 1, display: 'block', color: 'text.secondary', fontWeight: 700 }}
+          >
+            Buckets ({hasActiveProfile ? filteredBuckets.length : 0})
+          </Typography>
+          
+          <List dense>
+            {!hasActiveProfile ? (
+              <Typography variant="caption" sx={{ px: 2, color: 'text.disabled' }}>
+                Select a profile to view buckets
+              </Typography>
+            ) : isLoading ? (
+               [1,2,3].map(i => (
+                  <ListItem key={i} sx={{ px: 2, py: 0.5 }}>
+                      <Skeleton variant="text" width="100%" />
+                  </ListItem>
+               ))
+            ) : filteredBuckets.length > 0 ? (
+              filteredBuckets.map((bucket) => (
+                <ListItem key={bucket.name} disablePadding>
+                  <ListItemButton 
+                      onClick={() => handleBucketClick(bucket.name, bucket.region || 'us-east-1')}
+                      sx={{ borderRadius: 1, mx: 1, my: 0.1 }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 32 }}>
+                      <StorageIcon fontSize="small" sx={{ color: 'primary.main', opacity: 0.7 }} />
+                    </ListItemIcon>
+                    <ListItemText 
+                      primary={bucket.name} 
+                      primaryTypographyProps={{ 
+                          variant: 'body2', 
+                          noWrap: true,
+                          title: bucket.name
+                      }} 
+                    />
+                  </ListItemButton>
                 </ListItem>
-             ))
-          ) : filteredBuckets.length > 0 ? (
-            filteredBuckets.map((bucket) => (
-              <ListItem key={bucket.name} disablePadding>
-                <ListItemButton 
-                    onClick={() => handleBucketClick(bucket.name, bucket.region || 'us-east-1')}
-                    sx={{ borderRadius: 1, mx: 1, my: 0.1 }}
-                >
-                  <ListItemIcon sx={{ minWidth: 32 }}>
-                    <StorageIcon fontSize="small" sx={{ color: 'primary.main', opacity: 0.7 }} />
-                  </ListItemIcon>
-                  <ListItemText 
-                    primary={bucket.name} 
-                    primaryTypographyProps={{ 
-                        variant: 'body2', 
-                        noWrap: true,
-                        title: bucket.name
-                    }} 
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))
-          ) : (
-            <Typography variant="caption" sx={{ px: 2, color: 'text.disabled' }}>
-              No buckets found
-            </Typography>
-          )}
-        </List>
+              ))
+            ) : (
+              <Typography variant="caption" sx={{ px: 2, color: 'text.disabled' }}>
+                No buckets found
+              </Typography>
+            )}
+          </List>
+        </Box>
       </Box>
       
-      {/* Settings at bottom */}
+      {/* About at bottom (always enabled) */}
       <Box sx={{ flexShrink: 0, pb: 4 }}>
         <Divider sx={{ mx: 2 }} />
         <List dense>
-          <ListItem disablePadding>
-            <ListItemButton onClick={() => router.push('/settings')} sx={{ borderRadius: 1, mx: 1 }}>
-              <ListItemIcon sx={{ minWidth: 32 }}>
-                <SettingsIcon fontSize="small" color={pathname === '/settings' ? 'primary' : 'inherit'} />
-              </ListItemIcon>
-              <ListItemText primary="Settings" primaryTypographyProps={{ variant: 'body2' }} />
-            </ListItemButton>
-          </ListItem>
           <ListItem disablePadding>
             <ListItemButton onClick={() => setAboutOpen(true)} sx={{ borderRadius: 1, mx: 1 }}>
               <ListItemIcon sx={{ minWidth: 32 }}>
@@ -185,3 +206,4 @@ export default function Sidebar() {
     </Box>
   );
 }
+

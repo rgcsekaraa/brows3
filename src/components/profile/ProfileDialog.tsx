@@ -60,7 +60,7 @@ interface ProfileDialogProps {
 }
 
 export default function ProfileDialog({ open, onClose, editProfile }: ProfileDialogProps) {
-  const { profiles, setProfiles, addProfile, updateProfile, removeProfile } = useProfileStore();
+  const { profiles, setProfiles, addProfile, updateProfile, removeProfile, setActiveProfileId } = useProfileStore();
   
   const [mode, setMode] = useState<'list' | 'add' | 'edit'>('list');
   const [formData, setFormData] = useState({
@@ -220,6 +220,11 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         // But better to let the backend validation handle it.
         const created = await profileApi.addProfile(profileData as Profile);
         addProfile(created);
+        
+        // Auto-select first profile: if this is the first profile created, activate it
+        if (profiles.length === 0) {
+          setActiveProfileId(created.id);
+        }
       }
       
       setMode('list');
