@@ -1,150 +1,171 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
-  Box, 
-  TextField, 
-  InputAdornment, 
-  IconButton, 
-  Tooltip,
+  Paper, 
   Autocomplete,
+  TextField,
+  InputAdornment, 
+  IconButton,
+  Typography,
+  Box,
 } from '@mui/material';
 import { 
-  Search as SearchIcon,
+  Search as SearchIcon, 
   ArrowForward as GoIcon,
+  DataObject as ObjectIcon,
   Storage as BucketIcon,
+  History as HistoryIcon,
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/store/appStore';
+import { useHistoryStore } from '@/store/historyStore';
+import { toast } from '@/store/toastStore';
 
-interface PathBarProps {
-  onNavigate?: (bucket: string, prefix?: string) => void;
-}
-
-// Parse S3 URI or bucket name
-function parseS3Path(input: string): { bucket: string; prefix: string } | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  
-  // Handle s3:// URIs
-  if (trimmed.startsWith('s3://')) {
-    const path = trimmed.slice(5);
-    const slashIndex = path.indexOf('/');
-    if (slashIndex === -1) {
-      return { bucket: path, prefix: '' };
-    }
-    return { 
-      bucket: path.slice(0, slashIndex), 
-      prefix: path.slice(slashIndex + 1) 
-    };
-  }
-  
-  // Handle plain bucket/path format
-  const slashIndex = trimmed.indexOf('/');
-  if (slashIndex === -1) {
-    return { bucket: trimmed, prefix: '' };
-  }
-  return { 
-    bucket: trimmed.slice(0, slashIndex), 
-    prefix: trimmed.slice(slashIndex + 1) 
-  };
-}
-
-export default function PathBar({ onNavigate }: PathBarProps) {
-  const [value, setValue] = useState('');
-  const [error, setError] = useState<string | null>(null);
+export default function PathBar() {
   const router = useRouter();
-  const { addTab } = useAppStore();
+  const { addTab, setActiveTab, tabs } = useAppStore();
+  const { recentPaths, addPath } = useHistoryStore();
+  
+  const [inputValue, setInputValue] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleNavigate = useCallback(() => {
-    setError(null);
-    const parsed = parseS3Path(value);
+  // Global Shortcut: Ctrl+Shift+P (or Cmd+Shift+P)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        inputRef.current?.focus();
+        setIsOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const validateAndParsePath = (path: string) => {
+    // 1. Remove optional s3:// prefix
+    let cleanPath = path.replace(/^s3:\/\//, '');
+    
+    // 2. Remove trailing slash
+    if (cleanPath.endsWith('/')) {
+      cleanPath = cleanPath.slice(0, -1);
+    }
+    
+    if (!cleanPath) return null;
+    
+    // 3. Split bucket and prefix
+    const parts = cleanPath.split('/');
+    const bucket = parts[0];
+    const prefix = parts.slice(1).join('/');
+    
+    // Bucket name validation (basic)
+    if (!bucket || bucket.length < 3) return null;
+    
+    return { bucket, prefix };
+  };
+
+  const handleNavigate = (path: string) => {
+    const parsed = validateAndParsePath(path);
     
     if (!parsed) {
-      setError('Enter a bucket name or S3 URI');
+      toast.error('Invalid S3 Path', 'Please enter a valid bucket name (e.g. "my-bucket" or "s3://my-bucket/folder")');
       return;
     }
+
+    const { bucket, prefix } = parsed;
+    const fullPath = prefix ? `/${bucket}/${prefix}/` : `/${bucket}/`;
     
-    if (!parsed.bucket) {
-      setError('Invalid bucket name');
-      return;
+    // Save to history
+    addPath(`s3://${bucket}/${prefix ? prefix + '/' : ''}`);
+
+    // Navigate logic
+    const homeTab = tabs.find(t => t.id === 'home');
+    if (homeTab) {
+        // Reuse home tab if available
+        setActiveTab('home');
+        router.push(fullPath);
+    } else {
+        addTab({
+            title: bucket,
+            path: fullPath,
+            icon: 'bucket'
+        });
+        router.push(fullPath);
     }
-    
-    // Validate bucket name format (basic check)
-    if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(parsed.bucket) && 
-        !/^[a-z0-9]{3,63}$/.test(parsed.bucket)) {
-      setError('Invalid bucket name format');
-      return;
-    }
-    
-    // Navigate to bucket
-    const path = `/bucket?name=${encodeURIComponent(parsed.bucket)}&region=auto${parsed.prefix ? `&prefix=${encodeURIComponent(parsed.prefix)}` : ''}`;
-    addTab({ title: parsed.bucket, path, icon: 'bucket' });
-    router.push(path);
-    
-    if (onNavigate) {
-      onNavigate(parsed.bucket, parsed.prefix);
-    }
-    
-    setValue('');
-  }, [value, router, addTab, onNavigate]);
+    setIsOpen(false);
+    // Blur to hide keyboard/dropdown
+    inputRef.current?.blur();
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      handleNavigate();
+      handleNavigate(inputValue);
     }
   };
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', flex: 1, mx: 2 }}>
-      <TextField
-        size="small"
-        fullWidth
-        placeholder="Type bucket name or s3://bucket/path..."
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          setError(null);
-        }}
-        onKeyDown={handleKeyDown}
-        error={!!error}
-        helperText={error}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <BucketIcon fontSize="small" sx={{ color: 'text.disabled' }} />
-            </InputAdornment>
-          ),
-          endAdornment: value && (
-            <InputAdornment position="end">
-              <Tooltip title="Go to bucket">
+    <Autocomplete
+      freeSolo
+      open={isOpen}
+      onOpen={() => setIsOpen(true)}
+      onClose={() => setIsOpen(false)}
+      inputValue={inputValue}
+      onInputChange={(_, newVal) => setInputValue(newVal)}
+      options={recentPaths}
+      onChange={(_, value) => {
+        if (value) handleNavigate(value);
+      }}
+      renderOption={(props, option) => (
+        <Box component="li" {...props} key={option}>
+            <HistoryIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} />
+            <Box>
+                <Typography variant="body2">{option}</Typography>
+            </Box>
+        </Box>
+      )}
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          inputRef={inputRef}
+          placeholder="Go to bucket (e.g. s3://my-bucket)..."
+          variant="outlined"
+          size="small"
+          fullWidth
+          onKeyDown={handleKeyDown}
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              bgcolor: 'background.paper',
+              borderRadius: 2,
+              pr: 1,
+              '& fieldset': { borderColor: 'divider' },
+              '&:hover fieldset': { borderColor: 'text.secondary' },
+              '&.Mui-focused fieldset': { borderColor: 'primary.main', borderWidth: 2 },
+            }
+          }}
+          InputProps={{
+            ...params.InputProps,
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon color="action" fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment: (
+              <InputAdornment position="end">
                 <IconButton 
                   size="small" 
-                  onClick={handleNavigate}
+                  onClick={() => handleNavigate(inputValue)}
                   edge="end"
-                  color="primary"
                 >
                   <GoIcon fontSize="small" />
                 </IconButton>
-              </Tooltip>
-            </InputAdornment>
-          ),
-        }}
-        sx={{ 
-          maxWidth: 400,
-          '& .MuiOutlinedInput-root': { 
-            borderRadius: 2, 
-            bgcolor: 'action.hover',
-            '& fieldset': { borderColor: 'transparent' },
-            '&:hover fieldset': { borderColor: 'divider' },
-            '&.Mui-focused fieldset': { borderColor: 'primary.main' },
-          },
-          '& .MuiFormHelperText-root': {
-            position: 'absolute',
-            bottom: -20,
-          }
-        }}
-      />
-    </Box>
+              </InputAdornment>
+            )
+          }}
+        />
+      )}
+    />
   );
 }

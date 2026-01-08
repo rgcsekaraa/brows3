@@ -96,7 +96,7 @@ const getIcon = (name: string, isFolder: boolean): React.ReactNode => {
 };
 
 // Previewable extensions
-const PREVIEW_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'log', 'csv', 'yaml', 'yml']);
+const PREVIEW_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'log', 'csv', 'yaml', 'yml', 'pdf']);
 const EDIT_EXTS = new Set(['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'yaml', 'yml', 'log', 'csv']);
 
 // Row data type
@@ -138,13 +138,13 @@ const VirtuosoComponents: TableComponents<RowData> = {
       {...props} 
       style={style}
       sx={{ 
-        '&::-webkit-scrollbar': { width: 6 },
+        '&::-webkit-scrollbar': { width: 6, height: 6 },
         '&::-webkit-scrollbar-thumb': { bgcolor: 'grey.600', borderRadius: 3 },
       }} 
     />
   )),
   Table: memo((props: any) => (
-    <Table {...props} size="small" sx={{ tableLayout: 'fixed' }} />
+    <Table {...props} size="small" sx={{ tableLayout: 'fixed', minWidth: '100%' }} />
   )),
   TableHead: memo((props: any) => <TableHead {...props} />),
   TableRow: memo(({ item, ...props }: any) => <TableRow hover {...props} />),
@@ -226,14 +226,14 @@ const RowContent = memo(function RowContent({
           </Typography>
         )}
       </TableCell>
-      <TableCell align="right" sx={{ width: 80, py: 0.5, fontFamily: 'monospace', fontSize: '0.75rem' }}>
+      <TableCell align="right" sx={{ width: 80, py: 0.5, fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
         {row.isFolder ? '—' : formatSize(row.size)}
       </TableCell>
       <TableCell align="right" sx={{ width: 100, py: 0.5, fontSize: '0.75rem', color: 'text.secondary' }}>
         {row.modified || '—'}
       </TableCell>
-      <TableCell sx={{ width: 120, py: 0.25 }}>
-        <Box sx={{ display: 'flex', opacity: 0.7, '&:hover': { opacity: 1 } }}>
+      <TableCell sx={{ width: 80, py: 0.25 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', opacity: 0.7, '&:hover': { opacity: 1 } }}>
           {row.isFolder ? (
             <IconButton size="small" onClick={() => onNavigate(row.key)} sx={{ p: 0.5 }}>
               <OpenIcon sx={{ fontSize: 16 }} />
@@ -241,26 +241,11 @@ const RowContent = memo(function RowContent({
           ) : (
             <>
               {canPreview && onPreview && (
-                <IconButton size="small" onClick={() => onPreview(row.key)} sx={{ p: 0.5 }}>
+                <IconButton size="small" onClick={() => onPreview(row.key)} sx={{ p: 0.5 }} title="Preview">
                   <PreviewIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               )}
-              {canEdit && onEdit && (
-                <IconButton size="small" onClick={() => onEdit(row.key)} sx={{ p: 0.5 }}>
-                  <EditIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              )}
-              {onDownload && (
-                <IconButton size="small" onClick={() => onDownload(row.key)} sx={{ p: 0.5 }}>
-                  <DownloadIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              )}
             </>
-          )}
-          {onDelete && (
-            <IconButton size="small" onClick={() => onDelete(row.key)} sx={{ p: 0.5 }}>
-              <DeleteIcon sx={{ fontSize: 16 }} />
-            </IconButton>
           )}
           <IconButton size="small" onClick={(e) => onMenuOpen(e, row.key, row.isFolder)} sx={{ p: 0.5 }}>
             <MoreVertIcon sx={{ fontSize: 16 }} />
@@ -367,12 +352,12 @@ export default function VirtualizedObjectTable({
       </TableCell>
       <TableCell 
         align="right"
-        sx={{ width: 100, bgcolor: 'background.default', cursor: 'pointer', fontWeight: 600 }}
+        sx={{ width: 140, bgcolor: 'background.default', cursor: 'pointer', fontWeight: 600 }}
         onClick={() => onSortChange('date')}
       >
         Modified {sortField === 'date' && (sortDirection === 'asc' ? '↑' : '↓')}
       </TableCell>
-      <TableCell sx={{ width: 120, bgcolor: 'background.default' }}>Actions</TableCell>
+      <TableCell sx={{ width: 80, bgcolor: 'background.default', textAlign: 'right' }}>Actions</TableCell>
     </TableRow>
   ), [allSelected, someSelected, sortField, sortDirection, onSelectAll, onSortChange]);
 

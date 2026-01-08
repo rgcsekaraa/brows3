@@ -8,6 +8,7 @@ import {
   List, 
   ListItem, 
   ListItemText, 
+  ListItemIcon,
   ListItemSecondaryAction, 
   Select, 
   MenuItem, 
@@ -24,9 +25,15 @@ import {
   Update as UpdateIcon,
   Folder as FolderIcon,
   DeleteSweep as ClearIcon,
+  MonitorHeart as MonitorIcon,
+  BugReport as BugIcon,
+  CheckCircle as SuccessIcon,
+  ErrorOutline as ErrorIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useAppStore } from '@/store/appStore';
+import { useMonitorStore } from '@/store/monitorStore';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
 import { toast } from '@/store/toastStore';
 
@@ -171,17 +178,17 @@ export default function SettingsPage() {
         </Box>
         <List>
           <ListItem>
+            <ListItemIcon>
+              <FolderIcon color="action" />
+            </ListItemIcon>
             <ListItemText 
               primary="App Data Location" 
               secondary={appDataDir}
               secondaryTypographyProps={{ 
                 component: 'code', 
-                sx: { fontSize: '0.75rem', bgcolor: 'action.hover', px: 1, py: 0.5, borderRadius: 1 } 
+                sx: { fontSize: '0.75rem', bgcolor: 'action.hover', px: 1, py: 0.5, borderRadius: 1, display: 'inline-block', mt: 0.5 } 
               }}
             />
-            <ListItemSecondaryAction>
-              <FolderIcon color="action" />
-            </ListItemSecondaryAction>
           </ListItem>
           <Divider />
           <ListItem>
@@ -204,7 +211,7 @@ export default function SettingsPage() {
       </Paper>
 
       {/* Updates Section */}
-      <Paper variant="outlined">
+      <Paper variant="outlined" sx={{ mb: 3 }}>
         <Box sx={{ p: 2, bgcolor: 'action.hover', borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="subtitle1" fontWeight={600}>Updates</Typography>
         </Box>
@@ -231,7 +238,76 @@ export default function SettingsPage() {
           Brows3 automatically checks for updates on startup. Updates are signed and verified before installation.
         </Alert>
       </Paper>
+
+      {/* System Monitor Section */}
+      <SystemMonitor />
     </Container>
+  );
+}
+
+function SystemMonitor() {
+  const { logs, metrics, clearLogs } = useMonitorStore();
+  
+  return (
+    <Paper variant="outlined">
+        <Box sx={{ p: 2, bgcolor: 'action.hover', borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <MonitorIcon color="primary" />
+            <Typography variant="subtitle1" fontWeight={600}>System Monitor</Typography>
+          </Box>
+          <Button size="small" onClick={clearLogs} startIcon={<ClearIcon />}>Clear Logs</Button>
+        </Box>
+        
+        <Box sx={{ p: 2, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+            <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                <Typography variant="h4" color="primary">{metrics.totalRequests}</Typography>
+                <Typography variant="caption" color="text.secondary">Total Requests</Typography>
+            </Paper>
+            <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                <Typography variant="h4" color={metrics.failedRequests > 0 ? "error" : "text.secondary"}>
+                    {metrics.failedRequests}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">Failed Requests</Typography>
+            </Paper>
+        </Box>
+
+        <Box sx={{ maxHeight: 300, overflow: 'auto', borderTop: 1, borderColor: 'divider' }}>
+            {logs.length === 0 ? (
+                <Typography sx={{ p: 4, textAlign: 'center', color: 'text.secondary' }}>No logs yet</Typography>
+            ) : (
+                <List dense>
+                    {logs.map((log) => (
+                        <ListItem key={log.id} divider>
+                            <ListItemIcon sx={{ minWidth: 36 }}>
+                                {log.type === 'error' ? <ErrorIcon color="error" fontSize="small" /> : 
+                                 log.type === 'success' ? <SuccessIcon color="success" fontSize="small" /> :
+                                 <InfoIcon color="info" fontSize="small" />}
+                            </ListItemIcon>
+                            <ListItemText 
+                                primary={
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <Typography variant="body2" component="span" sx={{ fontFamily: 'monospace' }}>{log.message}</Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {new Date(log.timestamp).toLocaleTimeString()}
+                                        </Typography>
+                                    </Box>
+                                }
+                                secondary={log.details}
+                                secondaryTypographyProps={{ 
+                                    sx: { 
+                                        color: 'error.main', 
+                                        fontFamily: 'monospace', 
+                                        fontSize: '0.75rem',
+                                        mt: 0.5 
+                                    } 
+                                }}
+                            />
+                        </ListItem>
+                    ))}
+                </List>
+            )}
+        </Box>
+    </Paper>
   );
 }
 

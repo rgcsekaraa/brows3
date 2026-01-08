@@ -30,6 +30,9 @@ import { TransferPanel } from '@/components/transfer/TransferPanel';
 import { useProfileStore } from '@/store/profileStore';
 import ProfileDialog from '@/components/profile/ProfileDialog';
 import ToastContainer from '@/components/common/ToastContainer';
+import { check } from '@tauri-apps/plugin-updater';
+import { toast } from '@/store/toastStore';
+import { profileApi } from '@/lib/tauri';
 
 const drawerWidth = 260; 
 
@@ -39,9 +42,10 @@ interface AppShellProps {
 
 export default function AppShell({ children }: AppShellProps) {
   const { themeMode, sidebarOpen, setSidebarOpen, toggleSidebar } = useAppStore();
-  const { profiles } = useProfileStore();
+  const { profiles, setProfiles, setActiveProfileId } = useProfileStore();
   const [mounted, setMounted] = useState(false);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [isUpdateavailable, setIsUpdateAvailable] = useState(false);
   
   // Determine if we should use dark mode
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
@@ -69,6 +73,39 @@ export default function AppShell({ children }: AppShellProps) {
   // Listen for global transfer events
   useTransferEvents();
 
+  // Load profiles on mount (Persistence Fix)
+  useEffect(() => {
+    const initProfiles = async () => {
+      // Only run in Tauri environment
+      if (typeof window !== 'undefined' && !('__TAURI__' in window)) {
+         return;
+      }
+      
+      try {
+        const [loadedProfiles, activeProfile] = await Promise.all([
+          profileApi.listProfiles(),
+          profileApi.getActiveProfile()
+        ]);
+        
+        if (loadedProfiles.length > 0) {
+          setProfiles(loadedProfiles);
+          if (activeProfile) {
+            setActiveProfileId(activeProfile.id);
+          } else if (loadedProfiles.length === 1) {
+             // Auto-select if only one profile exists
+             setActiveProfileId(loadedProfiles[0].id);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to hydrate profiles on init", err);
+      }
+    };
+
+    if (mounted) {
+      initProfiles();
+    }
+  }, [mounted, setProfiles, setActiveProfileId]);
+
   // Check for updates on load (with safety checks)
   useEffect(() => {
     const checkForUpdates = async () => {
@@ -90,10 +127,11 @@ export default function AppShell({ children }: AppShellProps) {
         // Dynamic import to avoid SSR issues
         const { check } = await import('@tauri-apps/plugin-updater');
         const update = await check();
-        if (update) {
-          console.log(`Found update ${update.version} from ${update.date}`);
-          // If "dialog: true" is set in tauri.conf.json, this will show the built-in dialog
-          // and handle download, install, and relaunch automatically.
+        if (update?.available) {
+          setIsUpdateAvailable(true);
+          toast.info("Update Available", `Version ${update.version} is ready to install.`);
+           // If "dialog: true" is set in tauri.conf.json, this will show the built-in dialog
+           // and handle download, install, and relaunch automatically.
           await update.downloadAndInstall();
         }
       } catch (error) {

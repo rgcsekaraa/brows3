@@ -28,7 +28,7 @@ import {
   Search as SearchIcon,
   Lock as LockIcon,
 } from '@mui/icons-material';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import AboutDialog from '@/components/dialogs/AboutDialog';
 import { useState, useMemo } from 'react';
 import { useProfileStore } from '@/store/profileStore';
@@ -46,6 +46,9 @@ const navItems = [
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeBucketName = searchParams.get('name');
+  
   const [aboutOpen, setAboutOpen] = useState(false);
   const [bucketSearch, setBucketSearch] = useState('');
   
@@ -118,7 +121,15 @@ export default function Sidebar() {
               <ListItem disablePadding sx={!hasProfiles ? disabledStyles : {}}>
                 <ListItemButton 
                   onClick={() => handleNavClick(item)}
-                  selected={pathname === item.path}
+                  selected={
+                    // Selected if path matches exactly
+                    pathname === item.path 
+                    // OR if it's Root and we are in a bucket BUT NOT viewing a specific bucket name (which would select the bucket item instead)
+                    // Actually simplier: "All Buckets" is selected if we are at root OR if we are in /bucket but NO bucket name (shouldn't happen)
+                    // The user wants 'All Buckets' NOT selected if a bucket is selected.
+                    // So revert the 'startsWith' logic. 
+                    // Let's keep it clean: All Buckets = exact match.
+                  }
                   disabled={!hasProfiles}
                   sx={{ borderRadius: 1, mx: 1, my: 0.2 }}
                 >
@@ -162,6 +173,7 @@ export default function Sidebar() {
                 <ListItem key={bucket.name} disablePadding>
                   <ListItemButton 
                       onClick={() => handleBucketClick(bucket.name, bucket.region || 'us-east-1')}
+                      selected={pathname === '/bucket' && activeBucketName === bucket.name}
                       sx={{ borderRadius: 1, mx: 1, my: 0.1 }}
                   >
                     <ListItemIcon sx={{ minWidth: 32 }}>

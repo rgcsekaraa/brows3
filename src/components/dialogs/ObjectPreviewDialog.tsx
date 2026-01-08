@@ -114,6 +114,7 @@ export default function ObjectPreviewDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isImageRendering, setIsImageRendering] = useState(false);
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
   const editorRef = useRef<any>(null);
 
   const filename = objectKey.split('/').pop() || objectKey;
@@ -137,7 +138,13 @@ export default function ObjectPreviewDialog({
       try {
         if (isImageFile || isVideoFile || isPdfFile) {
           // Get presigned URL for preview
-          setIsImageRendering(true);
+          if (isImageFile) setIsImageRendering(true);
+          if (isPdfFile) {
+             setIsPdfLoading(true);
+             // Safety timeout: invalidating loading state after 5s if onLoad doesn't fire
+             // This is because iframe onLoad for PDFs is sometimes unreliable in certain browsers/network conditions
+             setTimeout(() => setIsPdfLoading(false), 5000); 
+          }
           const url = await objectApi.getPresignedUrl(bucketName, bucketRegion, objectKey, 3600);
           setPresignedUrl(url);
         } else if (isText) {
@@ -288,14 +295,28 @@ export default function ObjectPreviewDialog({
         )}
 
         {/* PDF Preview */}
+        {/* PDF Preview */}
         {!isLoading && !error && isPdfFile && presignedUrl && (
-             <Box sx={{ flex: 1, width: '100%', height: '100%' }}>
-                <iframe 
-                    src={`${presignedUrl}#view=FitH`} 
+             <Box sx={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
+                {isPdfLoading && (
+                    <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default', zIndex: 1, gap: 2 }}>
+                        <CircularProgress size={32} />
+                        <Typography variant="caption" color="text.secondary">Loading PDF...</Typography>
+                    </Box>
+                )}
+                {/* Fallback frame error message isn't easy to catch cross-origin, but we can offer a download link if it looks stuck or user wants external view */}
+                <embed 
+                    src={`${presignedUrl}#toolbar=0&navpanes=0&view=FitH`} 
                     title={filename}
                     width="100%" 
                     height="100%" 
+                    type="application/pdf"
                     style={{ border: 'none' }} 
+                    onLoad={() => setIsPdfLoading(false)}
+                    onError={() => {
+                        setIsPdfLoading(false);
+                        setError("Failed to load PDF preview.");
+                    }}
                 />
              </Box>
         )}

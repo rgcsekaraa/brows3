@@ -7,6 +7,8 @@
   ],
   "permissions": [
     "core:default",
+    "core:menu:default",
+    "shell:allow-open",
     "dialog:allow-save",
     "dialog:allow-open",
     "dialog:allow-message",

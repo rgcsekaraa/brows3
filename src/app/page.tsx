@@ -4,9 +4,13 @@ import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Box,
-  Card,
-  CardContent,
-  Grid,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Skeleton,
   Typography,
   TextField,
@@ -22,6 +26,7 @@ import {
   Storage as StorageIcon,
   Refresh as RefreshIcon,
   FolderOpen as FolderOpenIcon,
+  ChevronRight as ChevronRightIcon,
 } from '@mui/icons-material';
 import { useProfileStore } from '@/store/profileStore';
 import { useBuckets } from '@/hooks/useBuckets';
@@ -77,27 +82,35 @@ export default function Home() {
   const renderContent = () => {
     if (isLoading && buckets.length === 0) {
       return (
-        <Grid container spacing={2}>
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={i}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                    <Skeleton variant="circular" width={40} height={40} />
-                    <Box sx={{ flex: 1 }}>
-                      <Skeleton variant="text" width="80%" height={28} />
-                      <Skeleton variant="text" width="40%" height={20} />
+        <TableContainer component={Paper} variant="outlined">
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell width={120}>Region</TableCell>
+                <TableCell width={150}>Created</TableCell>
+                <TableCell width={100} align="right">Size</TableCell>
+                <TableCell width={50}></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <TableRow key={i}>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Skeleton variant="circular" width={32} height={32} />
+                      <Skeleton variant="text" width={200} />
                     </Box>
-                  </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Skeleton variant="text" width="30%" />
-                    <Skeleton variant="text" width="30%" />
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+                  </TableCell>
+                  <TableCell><Skeleton variant="text" width={80} /></TableCell>
+                  <TableCell><Skeleton variant="text" width={100} /></TableCell>
+                  <TableCell align="right"><Skeleton variant="text" width={60} /></TableCell>
+                  <TableCell><Skeleton variant="circular" width={24} height={24} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       );
     }
     
@@ -137,70 +150,67 @@ export default function Home() {
     }
     
     return (
-      <Grid container spacing={2}>
-        {filteredBuckets.map((bucket) => (
-          <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={bucket.name}>
-            <Card
-              variant="outlined"
-              onClick={() => router.push(`/bucket?name=${bucket.name}&region=${bucket.region}`)}
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                  transform: 'translateY(-2px)',
-                  boxShadow: 4,
-                  borderColor: 'primary.main',
-                },
-              }}
-            >
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, mb: 2 }}>
-                  <StorageIcon color="primary" sx={{ fontSize: 32 }} />
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography 
-                      variant="subtitle1" 
-                      title={bucket.name}
-                      sx={{ 
-                        fontWeight: 600, 
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
+      <TableContainer component={Paper} variant="outlined" sx={{ mb: 4 }}>
+        <Table sx={{ minWidth: 650 }} aria-label="buckets table">
+          <TableHead>
+            <TableRow sx={{ bgcolor: 'background.default' }}>
+              <TableCell sx={{ fontWeight: 600 }}>Bucket Name</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} width={140}>Region</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} width={180}>Created</TableCell>
+              <TableCell sx={{ fontWeight: 600 }} align="right" width={120}>Total Size</TableCell>
+              <TableCell width={60}></TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filteredBuckets.map((bucket) => (
+              <TableRow
+                key={bucket.name}
+                hover
+                onClick={() => router.push(`/bucket?name=${bucket.name}&region=${bucket.region}`)}
+                sx={{ 
+                  cursor: 'pointer',
+                  '&:last-child td, &:last-child th': { border: 0 },
+                  transition: 'background-color 0.2s',
+                }}
+              >
+                <TableCell component="th" scope="row">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <StorageIcon color="primary" sx={{ fontSize: 24, opacity: 0.8 }} />
+                    <Typography variant="body1" fontWeight={500}>
                       {bucket.name}
                     </Typography>
-                    <Chip 
-                      label={bucket.region} 
-                      size="small" 
-                      variant="outlined"
-                      sx={{ mt: 0.5, height: 20, fontSize: '0.7rem' }}
-                    />
                   </Box>
-                </Box>
-                
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary', fontSize: '0.8125rem' }}>
-                  <Typography variant="body2" component="span">
-                    {bucket.creation_date ? new Date(bucket.creation_date).toLocaleDateString() : 'Unknown date'}
-                  </Typography>
-                  {bucket.total_size_formatted && (
-                    <Typography variant="body2" component="span" fontWeight={500}>
-                      {bucket.total_size_formatted}
-                    </Typography>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+                </TableCell>
+                <TableCell>
+                  <Chip 
+                    label={bucket.region} 
+                    size="small" 
+                    variant="outlined" 
+                    sx={{ height: 24, fontSize: '0.75rem', borderColor: 'divider' }} 
+                  />
+                </TableCell>
+                <TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
+                  {bucket.creation_date ? new Date(bucket.creation_date).toLocaleDateString() : '—'}
+                </TableCell>
+                <TableCell align="right" sx={{ color: 'text.secondary', fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                    {bucket.total_size_formatted || '—'}
+                </TableCell>
+                <TableCell align="right">
+                    <ChevronRightIcon color="action" fontSize="small" />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
     );
   };
   
   return (
-    <Box sx={{ p: 1 }}>
+    <Box sx={{ p: 1, mt: 1 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>
+          <Typography variant="h4" fontWeight={700}>
             Buckets
           </Typography>
           <Typography variant="body2" color="text.secondary">

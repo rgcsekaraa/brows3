@@ -20,6 +20,11 @@ pub fn run() {
         .manage(Arc::new(RwLock::new(S3ClientManager::new())))
         .manage(Arc::new(RwLock::new(TransferManager::new())))
         .setup(|app| {
+            // Add default menu on macOS to enable Copy/Paste/Cut/SelectAll
+            #[cfg(target_os = "macos")]
+            if let Err(e) = app.set_menu(tauri::menu::Menu::default(app.handle())?) {
+                log::error!("Error setting menu: {}", e);
+            }
             
             // Initialize logging for both debug and release builds
             // This helps diagnose issues on Windows where crashes are silent

@@ -57,8 +57,14 @@ export default function TopBar() {
         </Typography>
       </Box>
       
-      {/* Path Bar for Direct Bucket Access */}
-      {activeProfileId && <PathBar />}
+      
+      {/* Spacer to center PathBar */}
+      <Box sx={{ flexGrow: 1 }} />
+      
+      {/* Path Bar for Direct Bucket Access (Centered) */}
+      <Box sx={{ width: '100%', maxWidth: 600, mx: 2 }}>
+        {activeProfileId && <PathBar />}
+      </Box>
       
       {/* Spacer */}
       <Box sx={{ flexGrow: 1 }} />

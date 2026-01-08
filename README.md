@@ -46,13 +46,15 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 - **Profile-Gated Access**: Create isolated profiles for different AWS accounts or environments.
 - **Cost Awareness**: UI indicators for cached data help you manage S3 API costs.
 
-#### ⚙️ **Control & Customization**
-- **Enhanced Settings**: 
+- **📄 In-App PDF Preview**: View PDFs directly within the application with a high-performance native renderer. Features embedded search, standard PDF navigation, and focused reading mode.
+- **⚡ Deep Recursive Search**: Instantly toggle between local filtering and server-side recursive search. Find objects buried deep in subfolders without manually navigating the hierarchy.
+- **📊 System Monitor**: Real-time visibility into application performance. Track API request success/failure rates and view live logs for debugging.
+- **🔐 Profile-Gated Access**: Create isolated profiles for different AWS accounts or environments. Switch contexts instantly with zero friction.
+- **⚙️ Enhanced Settings**:
   - Manage application data, clear cache, and check for updates manually.
   - One-click theme switching (Dark/Light/System).
   - Configure default regions and concurrency limits.
 - **Auto-Updates**: Seamless background updates ensure you're always on the latest secure version.
-test version automatically.
 
 ## 🏗️ Technical Architecture
 
@@ -168,10 +170,10 @@ Want to become a contributor? Check out our [Contributing Guide](https://github.
 3. **Code Quality**: Ensure Rust code is formatted with `cargo fmt` and TS code with `pnpm lint`.
 
 ## 📈 Roadmap
-- [ ] Multi-Account Support (Profiles)
+- [x] Multi-Account Support (Profiles) ✅
 - [ ] S3-Compatible Storage support (MinIO, R2, etc.)
 - [ ] Sync Folders (Local <-> S3)
-- [ ] Dark Mode / Custom Themes
+- [x] Dark Mode / Custom Themes ✅ (Defaults to system, toggle available)
 
 ## 📄 License
 

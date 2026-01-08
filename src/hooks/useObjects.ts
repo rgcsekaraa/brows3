@@ -62,9 +62,16 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
           setFolderTotalCount(folderTotal);
       }
       return result;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Fetch error:', err);
-      const msg = err instanceof Error ? err.message : String(err);
+      let msg = 'Failed to load objects';
+      if (err instanceof Error) {
+        msg = err.message;
+      } else if (typeof err === 'string') {
+        msg = err;
+      } else if (typeof err === 'object' && err !== null) {
+        msg = err.message || err.error || JSON.stringify(err);
+      }
       setError(msg);
       return null;
     } finally {

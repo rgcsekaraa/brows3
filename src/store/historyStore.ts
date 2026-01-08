@@ -1,88 +1,63 @@
-'use client';
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+// Recent item type for folder navigation history
 export interface RecentItem {
-  key: string;           // Full S3 key
-  name: string;          // Display name
-  bucket: string;
-  region: string;
-  isFolder: boolean;
-  accessedAt: number;    // Timestamp
-}
-
-export interface FavoriteItem {
   key: string;
   name: string;
   bucket: string;
-  region: string;
+  region?: string;
   isFolder: boolean;
-  addedAt: number;
+  timestamp?: number;
 }
 
 interface HistoryState {
-  recentItems: RecentItem[];
-  favorites: FavoriteItem[];
+  recentPaths: string[]; // For TopBar autocomplete
+  recentItems: RecentItem[]; // For inner navigation history
   
-  // Recent
-  addRecent: (item: Omit<RecentItem, 'accessedAt'>) => void;
-  clearRecent: () => void;
+  addPath: (path: string) => void;
+  addRecent: (item: RecentItem) => void; // New method for bucket/page.tsx
+  clearHistory: () => void;
   
-  // Favorites
-  addFavorite: (item: Omit<FavoriteItem, 'addedAt'>) => void;
-  removeFavorite: (key: string, bucket: string) => void;
-  isFavorite: (key: string, bucket: string) => boolean;
-  clearFavorites: () => void;
+  // Stubs for Favorites (used in page.tsx too)
+  favorites: RecentItem[];
+  addFavorite: (item: RecentItem) => void;
+  removeFavorite: (key: string) => void;
+  isFavorite: (key: string) => boolean;
 }
-
-const MAX_RECENT = 50;
 
 export const useHistoryStore = create<HistoryState>()(
   persist(
     (set, get) => ({
+      recentPaths: [],
       recentItems: [],
       favorites: [],
       
+      addPath: (path) => set((state) => {
+        // Remove duplicates and keep only last 20
+        const filtered = state.recentPaths.filter(p => p !== path);
+        return { recentPaths: [path, ...filtered].slice(0, 20) };
+      }),
+      
       addRecent: (item) => set((state) => {
-        // Remove duplicate if exists
-        const filtered = state.recentItems.filter(
-          r => !(r.key === item.key && r.bucket === item.bucket)
-        );
-        // Add to front with timestamp
-        const newRecent = [
-          { ...item, accessedAt: Date.now() },
-          ...filtered,
-        ].slice(0, MAX_RECENT);
-        
-        return { recentItems: newRecent };
+        // Similar dedupe logic for items
+        const newItem = { ...item, timestamp: Date.now() };
+        const filtered = state.recentItems.filter(i => i.key !== item.key);
+        return { recentItems: [newItem, ...filtered].slice(0, 50) };
       }),
       
-      clearRecent: () => set({ recentItems: [] }),
-      
-      addFavorite: (item) => set((state) => {
-        // Check if already exists
-        const exists = state.favorites.some(
-          f => f.key === item.key && f.bucket === item.bucket
-        );
-        if (exists) return state;
-        
-        return {
-          favorites: [{ ...item, addedAt: Date.now() }, ...state.favorites],
-        };
-      }),
-      
-      removeFavorite: (key, bucket) => set((state) => ({
-        favorites: state.favorites.filter(
-          f => !(f.key === key && f.bucket === bucket)
-        ),
+      addFavorite: (item) => set((state) => ({ 
+        favorites: [...state.favorites, item] 
       })),
       
-      isFavorite: (key, bucket) => {
-        return get().favorites.some(f => f.key === key && f.bucket === bucket);
-      },
+      removeFavorite: (key) => set((state) => ({ 
+        favorites: state.favorites.filter(i => i.key !== key) 
+      })),
       
-      clearFavorites: () => set({ favorites: [] }),
+      isFavorite: (key) => get().favorites.some(i => i.key === key),
+
+      clearHistory: () => set({ recentPaths: [], recentItems: [] }),
     }),
     {
       name: 'brows3-history',

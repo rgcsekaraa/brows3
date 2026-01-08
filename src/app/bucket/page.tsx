@@ -32,6 +32,8 @@ import {
   Stack,
   Divider,
   Skeleton,
+  InputAdornment,
+  FormControlLabel,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -56,6 +58,7 @@ import {
   Sort as SortIcon,
   Storage as StorageIcon,
   FileCopy as FileCopyIcon,
+  FilePresent as FilePresentIcon,
   Link as LinkIcon,
   Star as StarIcon,
   StarBorder as StarBorderIcon,
@@ -116,29 +119,43 @@ function BucketContent() {
   }, [initialError]);
 
   const handleSearch = async () => {
-    if (!bucketName || !searchQuery.trim()) return;
+    if (!bucketName) return;
+    
+    // If empty query, clear everything
+    if (!searchQuery.trim()) {
+        setSearchResults(null);
+        return;
+    }
     
     if (isDeepSearch) {
         setIsSearching(true);
         try {
+            // Server-side deep search (recursive)
             const results = await objectApi.searchObjects(bucketName, bucketRegion, searchQuery);
             setSearchResults(results);
         } catch (err) {
             displayError(`Search failed: ${err}`);
+            setSearchResults(null);
         } finally {
             setIsSearching(false);
         }
     } else {
-        // Local filter handled in render or simple effect?
-        // Actually, client-side filter of *current page* data is easiest
-        // But let's stick to the plan: if Local Filter -> filter current data view.
-        setSearchResults(null); // Clear server results
+        // Local search is handled by useMemo (displayData), so we just clear server results
+        setSearchResults(null); 
     }
   };
 
+  // Auto-trigger search when toggling deep search if query exists
+  useEffect(() => {
+      if (searchQuery.trim()) {
+        handleSearch();
+      }
+  }, [isDeepSearch]);
+
   // derived data for display (sorting handled by VirtualizedObjectTable)
   const displayData = useMemo(() => {
-     if (searchResults) {
+     // 1. Deep Search Results (Server-side)
+     if (isDeepSearch && searchResults) {
          return {
              common_prefixes: [],
              objects: searchResults,
@@ -148,8 +165,8 @@ function BucketContent() {
          };
      }
      
-     if (searchQuery && data) {
-         // Local filtering of current loaded data
+     // 2. Local Filtering (Client-side on current page data)
+     if (!isDeepSearch && searchQuery && data) {
          const lowerQ = searchQuery.toLowerCase();
          return {
              ...data,
@@ -158,8 +175,9 @@ function BucketContent() {
          };
      }
      
+     // 3. Default View
      return data;
-  }, [data, searchResults, searchQuery, prefix]);
+  }, [data, searchResults, searchQuery, prefix, isDeepSearch]);
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -311,7 +329,16 @@ function BucketContent() {
     
     try {
       for (const item of clipboardItems) {
-        const destKey = prefix + item.key.split('/').filter(Boolean).pop() + (item.isFolder ? '/' : '');
+        const fileName = item.key.split('/').filter(Boolean).pop();
+        let destKey = prefix + fileName + (item.isFolder ? '/' : '');
+        
+        // Check for same location paste
+        if (item.bucket === bucketName && item.region === bucketRegion && destKey === item.key) {
+           // Auto-rename
+           const namePart = fileName?.split('.').slice(0, -1).join('.') || fileName;
+           const extPart = (fileName?.split('.').length ?? 0) > 1 ? '.' + fileName?.split('.').pop() : '';
+           destKey = prefix + namePart + `-${Date.now()}` + extPart + (item.isFolder ? '/' : '');
+        }
         
         if (clipboardMode === 'copy') {
           await operationsApi.copyObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey);
@@ -625,7 +652,7 @@ function BucketContent() {
   }
 
   return (
-    <Box sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ p: 1, mt: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header & Breadcrumbs */}
       <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
         <IconButton onClick={handleBack} size="small">
@@ -675,32 +702,44 @@ function BucketContent() {
 
 
         {/* Action Buttons */}
-        <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, bgcolor: 'background.paper', borderRadius: 1, border: 1, borderColor: 'divider', px: 1 }}>
-           <SearchIcon color="action" fontSize="small" />
-           <TextField 
-             variant="standard" 
-             placeholder="Search..." 
-             size="small" 
-             InputProps={{ disableUnderline: true }}
-             sx={{ ml: 1, width: 200 }}
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+           <TextField
+             placeholder="Search current folder..."
+             size="small"
              value={searchQuery}
              onChange={(e) => setSearchQuery(e.target.value)}
              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+             InputProps={{
+               startAdornment: (
+                 <InputAdornment position="start">
+                   <SearchIcon color="action" fontSize="small" />
+                 </InputAdornment>
+               ),
+               endAdornment: (
+                   <InputAdornment position="end">
+                     {searchQuery && (
+                         <IconButton size="small" onClick={() => { setSearchQuery(''); setIsDeepSearch(false); setSearchResults(null); }} edge="end">
+                           <CloseIcon fontSize="small" />
+                         </IconButton>
+                     )}
+                   </InputAdornment>
+               )
+             }}
+             sx={{ width: 300, bgcolor: 'background.paper', '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
            />
-           {searchQuery && (
-              <IconButton size="small" onClick={() => { setSearchQuery(''); setIsDeepSearch(false); refresh(); }}>
-                <CloseIcon fontSize="small" />
-              </IconButton>
-           )}
-           <Tooltip title="Deep Search (Server-side)">
-             <Checkbox 
-               checked={isDeepSearch} 
-               onChange={(e) => setIsDeepSearch(e.target.checked)} 
-               size="small"
-               color="secondary"
-             />
-           </Tooltip>
-        </Box>
+           
+           <FormControlLabel 
+             control={
+               <Checkbox 
+                 checked={isDeepSearch} 
+                 onChange={(e) => setIsDeepSearch(e.target.checked)} 
+                 size="small"
+                 sx={{ p: 0.5 }}
+               />
+             } 
+             label={<Typography variant="body2" color="text.secondary">Deep Search</Typography>}
+             sx={{ mr: 0, ml: 0.5 }}
+           />
 
         <Button 
           variant="outlined" 
@@ -735,9 +774,12 @@ function BucketContent() {
             </MenuItem>
         </Menu>
 
-        <IconButton onClick={() => refresh()} disabled={isLoading}>
-          <RefreshIcon className={isLoading ? 'spin-animation' : ''} />
-        </IconButton>
+        <Tooltip title="Refresh">
+            <IconButton onClick={() => refresh()} disabled={isLoading} color="primary" sx={{ bgcolor: 'action.hover' }}>
+            <RefreshIcon className={isLoading ? 'spin-animation' : ''} />
+            </IconButton>
+        </Tooltip>
+        </Box>
       </Box>
 
 
@@ -879,8 +921,8 @@ function BucketContent() {
         <MenuItem onClick={() => {
           if (selectedObject && bucketName) {
             const name = selectedObject.key.split('/').filter(Boolean).pop() || selectedObject.key;
-            if (isFavorite(selectedObject.key, bucketName)) {
-              removeFavorite(selectedObject.key, bucketName);
+            if (isFavorite(selectedObject.key)) {
+              removeFavorite(selectedObject.key);
               displaySuccess('Removed from favorites');
             } else {
               addFavorite({
@@ -896,11 +938,11 @@ function BucketContent() {
           handleMenuClose();
         }}>
           <ListItemIcon>
-            {selectedObject && bucketName && isFavorite(selectedObject.key, bucketName) 
+            {selectedObject && isFavorite(selectedObject.key) 
               ? <StarIcon fontSize="small" color="warning" /> 
               : <StarBorderIcon fontSize="small" />}
           </ListItemIcon>
-          {selectedObject && bucketName && isFavorite(selectedObject.key, bucketName) ? 'Remove from Favorites' : 'Add to Favorites'}
+          {selectedObject && isFavorite(selectedObject.key) ? 'Remove from Favorites' : 'Add to Favorites'}
         </MenuItem>
         <Divider />
         <MenuItem onClick={() => {
@@ -912,17 +954,18 @@ function BucketContent() {
           handleMenuClose();
         }}>
           <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
-          Copy S3 URI
+          Copy Key
         </MenuItem>
         <MenuItem onClick={() => {
           if (selectedObject) {
-            navigator.clipboard.writeText(selectedObject.key);
-            displaySuccess(`Copied path: ${selectedObject.key}`);
+            const filename = selectedObject.key.split('/').filter(Boolean).pop() || selectedObject.key;
+            navigator.clipboard.writeText(filename);
+            displaySuccess(`Copied filename: ${filename}`);
           }
           handleMenuClose();
         }}>
-          <ListItemIcon><FileCopyIcon fontSize="small" /></ListItemIcon>
-          Copy Path
+          <ListItemIcon><FilePresentIcon fontSize="small" /></ListItemIcon>
+          Copy Filename
         </MenuItem>
         <Divider />
         <MenuItem onClick={handleRenamePrompt}>

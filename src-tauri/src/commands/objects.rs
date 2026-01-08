@@ -309,10 +309,18 @@ pub async fn get_presigned_url(
     let presigning_config = PresigningConfig::expires_in(Duration::from_secs(expires_in))
         .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
 
-    let presigned_request = client
+    let mut get_obj = client
         .get_object()
         .bucket(&bucket_name)
         .key(&key)
+        .response_content_disposition("inline");
+
+    // Force PDF content type if extension matches, ensuring browser renders it
+    if key.to_lowercase().ends_with(".pdf") {
+        get_obj = get_obj.response_content_type("application/pdf");
+    }
+
+    let presigned_request = get_obj
         .presigned(presigning_config)
         .await
         .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
