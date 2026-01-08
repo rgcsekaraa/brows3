@@ -99,7 +99,7 @@ export default function RecentPage() {
                 disablePadding
                 secondaryAction={
                   <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
-                    {formatTime(item.accessedAt)}
+                    {formatTime(item.timestamp || 0)}
                   </Typography>
                 }
               >

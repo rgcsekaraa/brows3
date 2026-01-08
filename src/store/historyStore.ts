@@ -20,12 +20,13 @@ interface HistoryState {
   
   addPath: (path: string) => void;
   addRecent: (item: RecentItem) => void; // New method for bucket/page.tsx
+  clearRecent: () => void;
   clearHistory: () => void;
   
   // Stubs for Favorites (used in page.tsx too)
   favorites: RecentItem[];
   addFavorite: (item: RecentItem) => void;
-  removeFavorite: (key: string) => void;
+  removeFavorite: (key: string, bucket?: string) => void;
   isFavorite: (key: string) => boolean;
   clearFavorites: () => void;
 }
@@ -54,13 +55,15 @@ export const useHistoryStore = create<HistoryState>()(
         favorites: [...state.favorites, item] 
       })),
       
-      removeFavorite: (key) => set((state) => ({ 
-        favorites: state.favorites.filter(i => i.key !== key) 
+      removeFavorite: (key, bucket) => set((state) => ({ 
+        favorites: state.favorites.filter(i => !(i.key === key && (bucket ? i.bucket === bucket : true))) 
       })),
       
       isFavorite: (key) => get().favorites.some(i => i.key === key),
       
       clearFavorites: () => set({ favorites: [] }),
+
+      clearRecent: () => set({ recentItems: [] }),
 
       clearHistory: () => set({ recentPaths: [], recentItems: [] }),
     }),
