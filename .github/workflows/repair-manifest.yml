@@ -55,9 +55,9 @@ jobs:
               
               # If password is set, we need to handle it.
               if [[ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]]; then
-                 echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | minisign -S -m "$asset" -s brows3.key -x "$asset.sig"
+                 echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | minisign -S -m "$asset" -s ../brows3.key -x "$asset.sig"
               else
-                 minisign -S -m "$asset" -s brows3.key -x "$asset.sig"
+                 minisign -S -m "$asset" -s ../brows3.key -x "$asset.sig"
               fi
               
               # Read signature content (the base64 line)
