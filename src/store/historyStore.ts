@@ -12,6 +12,8 @@ export interface RecentItem {
   timestamp?: number;
 }
 
+export type FavoriteItem = RecentItem;
+
 interface HistoryState {
   recentPaths: string[]; // For TopBar autocomplete
   recentItems: RecentItem[]; // For inner navigation history
