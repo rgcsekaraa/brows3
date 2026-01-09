@@ -38,7 +38,12 @@ impl TransferManager {
         let mut queue = self.queue.lock().await;
         queue.push(job.id.clone());
         
-        // Emit initial event
+        // Emit added event
+        if let Some(app) = &self.app_handle {
+            let _ = app.emit("transfer-added", job.clone());
+        }
+        
+        // Emit initial status update
         self.emit_update(&job);
     }
     
@@ -52,6 +57,76 @@ impl TransferManager {
         let mut list: Vec<TransferJob> = jobs.values().cloned().collect();
         list.sort_by(|a, b| b.created_at.cmp(&a.created_at)); // Newest first
         list
+    }
+    
+    /// Cancel a transfer job
+    pub async fn cancel_job(&self, id: &str) -> bool {
+        let mut jobs = self.jobs.write().await;
+        if let Some(job) = jobs.get_mut(id) {
+            // Can only cancel Pending or InProgress jobs
+            match job.status {
+                TransferStatus::Pending | TransferStatus::InProgress => {
+                    job.status = TransferStatus::Cancelled;
+                    let job_clone = job.clone();
+                    drop(jobs);
+                    self.emit_update(&job_clone);
+                    return true;
+                }
+                _ => return false,
+            }
+        }
+        false
+    }
+    
+    /// Remove a specific transfer job from history
+    pub async fn remove_job(&self, id: &str) -> bool {
+        let mut jobs = self.jobs.write().await;
+        jobs.remove(id).is_some()
+    }
+    
+    /// Clear all completed/failed/cancelled transfers
+    pub async fn clear_completed(&self) -> usize {
+        let mut jobs = self.jobs.write().await;
+        let initial_count = jobs.len();
+        jobs.retain(|_, job| {
+            matches!(job.status, TransferStatus::Pending | TransferStatus::InProgress)
+        });
+        initial_count - jobs.len()
+    }
+    
+    /// Retry a failed transfer
+    pub async fn retry_job(&self, id: &str) -> Option<String> {
+        let jobs = self.jobs.read().await;
+        if let Some(job) = jobs.get(id) {
+            // Can only retry Failed or Cancelled jobs
+            match &job.status {
+                TransferStatus::Failed(_) | TransferStatus::Cancelled => {
+                    // Create a new job with same details
+                    let mut new_job = TransferJob::new(
+                        job.transfer_type.clone(),
+                        job.bucket.clone(),
+                        job.bucket_region.clone(),
+                        job.key.clone(),
+                        std::path::PathBuf::from(&job.local_path),
+                        job.total_bytes,
+                    );
+                    
+                    // Preserve grouping info
+                    new_job.parent_group_id = job.parent_group_id.clone();
+                    new_job.group_name = job.group_name.clone();
+                    new_job.is_group_root = job.is_group_root;
+                    
+                    let new_id = new_job.id.clone();
+                    drop(jobs);
+                    
+                    // Add the new job to queue
+                    self.add_job(new_job).await;
+                    return Some(new_id);
+                }
+                _ => return None,
+            }
+        }
+        None
     }
 
     fn emit_update(&self, job: &TransferJob) {

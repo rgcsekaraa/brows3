@@ -113,15 +113,15 @@ export default function Footer() {
 
         <Tooltip title={`${activeTransfers.length} Active Transfers`}>
            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-             <TransferIcon sx={{ fontSize: 14, color: activeTransfers.length > 0 ? 'primary.main' : 'inherit' }} />
-             <Typography variant="caption">{activeTransfers.length}</Typography>
+             <TransferIcon sx={{ fontSize: 13, color: activeTransfers.length > 0 ? 'primary.main' : 'inherit' }} />
+             <Typography variant="caption" sx={{ fontSize: '0.7rem' }}>{activeTransfers.length}</Typography>
            </Box>
         </Tooltip>
       </Box>
 
       {/* Production Version */}
-      <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1 }}>
-        Brows3 v0.1.9
+      <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1, fontSize: '0.65rem' }}>
+        Brows3 v0.2.1
       </Typography>
     </Box>
   );

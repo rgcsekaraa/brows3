@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-01-09
+
+### Fixed
+- **Bucket Refresh**: Fixed refresh button not showing loading state. Now clears data immediately and properly refreshes from S3.
+- **Backend Cache Invalidation**: Implemented `remove_bucket_cache` in Rust backend to properly clear stale data on refresh.
+
+### Changed
+- **UI Polish - Less Rounding**: Reduced border-radius across the app for a cleaner look:
+  - Buttons: 8px → 6px with smaller padding
+  - Inputs: 8px → 6px
+  - Dropdown menus: 8px with compact items (8px 12px padding)
+- **Navbar Dropdown**: Added visible outlined border to Profile Selector dropdown trigger.
+- **Dropdown Styling**: Fixed invisible dropdown issue, added proper shadows and borders.
+- **Compact Fonts**: Reduced font sizes across dropdowns and buttons (0.8125rem).
+
 
 ## [0.2.2] - 2026-01-08
 

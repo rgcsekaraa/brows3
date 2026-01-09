@@ -41,7 +41,7 @@ export const useAppStore = create<AppState>()(
       sidebarOpen: true,
       sidebarWidth: 280,
       
-      tabs: [{ id: 'home', title: 'Buckets', path: '/', icon: 'cloud' }],
+      tabs: [{ id: 'home', title: 'Explorer', path: '/', icon: 'cloud' }],
       activeTabId: 'home',
       
       setThemeMode: (themeMode) => set({ themeMode }),
@@ -54,14 +54,21 @@ export const useAppStore = create<AppState>()(
       
       addTab: (tab) => set((state) => {
         // Check if a tab with the same path already exists (deduplicate)
-        const existingTab = state.tabs.find(t => t.path === tab.path);
+        // EXCEPT for the root path '/' which we allow multiples of (like "New Tab" in browsers)
+        const existingTab = tab.path !== '/' && state.tabs.find(t => t.path === tab.path);
         if (existingTab) {
           // Just switch to existing tab, don't create duplicate
           return { activeTabId: existingTab.id };
         }
         
+        // If it's a discovery path, ensure title is "Buckets"
+        let finalTab = { ...tab };
+        if (tab.path.includes('view=discovery')) {
+          finalTab.title = 'Buckets';
+        }
+        
         const id = Math.random().toString(36).substring(7);
-        const newTab = { ...tab, id };
+        const newTab = { ...finalTab, id };
         return {
           tabs: [...state.tabs, newTab],
           activeTabId: id,

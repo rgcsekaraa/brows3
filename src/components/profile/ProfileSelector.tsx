@@ -103,18 +103,16 @@ export default function ProfileSelector() {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <FormControl 
-        variant="standard" 
+        variant="outlined" 
         size="small" 
         sx={{ 
-            minWidth: 160,
-            '& .MuiInput-underline:before, & .MuiInput-underline:after': { border: 'none' }
+            minWidth: 140,
         }}
       >
         <Select
           value={activeProfileId || ''}
           onChange={handleProfileChange}
           displayEmpty
-          disableUnderline
           renderValue={(selected) => {
             if (!selected) {
               return <Typography variant="body2" color="text.secondary">Select Profile</Typography>;
@@ -122,17 +120,22 @@ export default function ProfileSelector() {
             const profile = profiles.find((p) => p.id === selected);
             return (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <ConnectedIcon sx={{ fontSize: 16, color: 'success.main' }} />
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{profile?.name}</Typography>
+                <ConnectedIcon sx={{ fontSize: 14, color: 'success.main' }} />
+                <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8125rem' }}>{profile?.name}</Typography>
               </Box>
             );
           }}
           sx={{
-            bgcolor: 'action.hover',
-            px: 1,
-            py: 0.5,
+            minWidth: 140,
             borderRadius: 1,
-            '& .MuiSelect-select': { py: 0, display: 'flex', alignItems: 'center' }
+            '& .MuiSelect-select': { py: 0.75, px: 1.5, display: 'flex', alignItems: 'center' },
+            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
+            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'text.secondary' },
+          }}
+          MenuProps={{
+            PaperProps: {
+              sx: { minWidth: 180 }
+            }
           }}
         >
           {profiles.map((profile) => (

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Box,
   Paper,
@@ -19,6 +19,9 @@ import {
   IconButton,
   Alert,
   Tooltip,
+  Button,
+  Container,
+  Grid,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -27,20 +30,34 @@ import {
   Refresh as RefreshIcon,
   FolderOpen as FolderOpenIcon,
   ChevronRight as ChevronRightIcon,
+  ArrowForward as GoIcon,
+  History as HistoryIcon,
+  Explore as ExploreIcon,
+  Star as StarIcon,
 } from '@mui/icons-material';
 import { useProfileStore } from '@/store/profileStore';
 import { useBuckets } from '@/hooks/useBuckets';
+import { useHistoryStore } from '@/store/historyStore';
+import { useAppStore } from '@/store/appStore';
 import { toast } from '@/store/toastStore';
-import { useEffect } from 'react';
 
 export default function Home() {
   const router = useRouter();
   const { activeProfileId, profiles } = useProfileStore();
-  const { buckets, isLoading, error, refresh } = useBuckets();
+  const { recentPaths, addPath } = useHistoryStore();
+  const { addTab } = useAppStore();
+  
+  // Use query parameter to toggle view instead of local state
+  const searchParams = useSearchParams();
+  const showBuckets = searchParams.get('view') === 'discovery';
+  const { buckets, isLoading, error, refresh, fetchBuckets } = useBuckets({ enabled: showBuckets });
+  
   const [searchQuery, setSearchQuery] = useState('');
+  const [s3UriInput, setS3UriInput] = useState('');
   
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
   
+
   const filteredBuckets = useMemo(() => {
     if (!searchQuery.trim()) return buckets;
     const query = searchQuery.toLowerCase();
@@ -50,12 +67,47 @@ export default function Home() {
     );
   }, [buckets, searchQuery]);
 
+  const handleFetchBuckets = () => {
+    router.push('/?view=discovery');
+  };
+
+  const validateAndParsePath = (path: string): { bucket: string; prefix: string } | null => {
+    const trimmedPath = path.trim();
+    if (!trimmedPath.startsWith('s3://')) return null;
+    const s3UriMatch = trimmedPath.match(/^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(\/.*)?$/i);
+    if (s3UriMatch) {
+      const bucket = s3UriMatch[1];
+      let prefix = s3UriMatch[2] || '';
+      prefix = prefix.replace(/^\//, '').replace(/\/$/, '');
+      return { bucket, prefix };
+    }
+    return null;
+  };
+
+  const handleNavigate = (path: string) => {
+    const trimmedPath = path.trim();
+    if (!trimmedPath) {
+      toast.error('Enter S3 URI', 'Please enter a valid S3 URI.');
+      return;
+    }
+    const parsed = validateAndParsePath(trimmedPath);
+    if (!parsed) {
+      toast.error('Invalid S3 URI', 'Path must start with s3://bucket-name/');
+      return;
+    }
+    const { bucket, prefix } = parsed;
+    const urlPath = `/bucket?name=${bucket}&region=us-east-1${prefix ? `&prefix=${encodeURIComponent(prefix + '/')}` : ''}`;
+    addPath(`s3://${bucket}/${prefix ? prefix + '/' : ''}`);
+    addTab({ title: bucket, path: urlPath, icon: 'bucket' });
+    router.push(urlPath);
+  };
+
   // Show error as toast
   useEffect(() => {
-    if (error) {
+    if (error && showBuckets) {
       toast.error('Failed to load buckets', error);
     }
-  }, [error]);
+  }, [error, showBuckets]);
   
   if (!activeProfile) {
     return (
@@ -79,17 +131,17 @@ export default function Home() {
     );
   }
   
-  const renderContent = () => {
+  const renderBucketList = () => {
     if (isLoading && buckets.length === 0) {
       return (
-        <TableContainer component={Paper} variant="outlined">
+        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 1.5 }}>
           <Table>
             <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell width={120}>Region</TableCell>
-                <TableCell width={150}>Created</TableCell>
-                <TableCell width={100} align="right">Size</TableCell>
+              <TableRow sx={{ bgcolor: 'action.hover' }}>
+                <TableCell sx={{ fontWeight: 600 }}>Name</TableCell>
+                <TableCell width={120} sx={{ fontWeight: 600 }}>Region</TableCell>
+                <TableCell width={150} sx={{ fontWeight: 600 }}>Created</TableCell>
+                <TableCell width={100} align="right" sx={{ fontWeight: 600 }}>Size</TableCell>
                 <TableCell width={50}></TableCell>
               </TableRow>
             </TableHead>
@@ -115,136 +167,245 @@ export default function Home() {
     }
     
     if (filteredBuckets.length === 0) {
-      if (searchQuery) {
-        return (
-          <Box sx={{ textAlign: 'center', py: 8 }}>
-            <Typography variant="h6" color="text.secondary">
-              No buckets match your search
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Try adjusting your filter or search term
-            </Typography>
-          </Box>
-        );
-      }
-      
       return (
-        <Box sx={{ textAlign: 'center', py: 8 }}>
-          <FolderOpenIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 2, opacity: 0.5 }} />
-          <Typography variant="h6" color="text.secondary" gutterBottom>
-            No Buckets Found
+        <Box sx={{ textAlign: 'center', py: 8, bgcolor: 'action.hover', borderRadius: 2, border: '1px dashed', borderColor: 'divider' }}>
+          <FolderOpenIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2, opacity: 0.5 }} />
+          <Typography variant="h6" color="text.secondary">
+            {searchQuery ? 'No buckets match your search' : 'No Buckets Found'}
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 450, mx: 'auto', mb: 2 }}>
-            This profile doesn't have permission to list buckets, or there are no buckets available.
-          </Typography>
-          <Alert severity="info" sx={{ maxWidth: 450, mx: 'auto', mb: 3, textAlign: 'left' }}>
-            <Typography variant="body2">
-              <strong>Tip:</strong> If you have access to specific buckets, use the <strong>path bar</strong> in the navbar to navigate directly. Type a bucket name or S3 URI like <code>s3://my-bucket/</code>
-            </Typography>
-          </Alert>
-          <IconButton onClick={() => refresh()} color="primary">
-            <RefreshIcon />
-          </IconButton>
+          <Button 
+            startIcon={<RefreshIcon />} 
+            onClick={() => refresh()} 
+            sx={{ mt: 2 }}
+          >
+            Refresh List
+          </Button>
         </Box>
       );
     }
     
-    return (
-      <TableContainer component={Paper} variant="outlined" sx={{ mb: 4 }}>
-        <Table sx={{ minWidth: 650 }} aria-label="buckets table">
-          <TableHead>
-            <TableRow sx={{ bgcolor: 'background.default' }}>
-              <TableCell sx={{ fontWeight: 600 }}>Bucket Name</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} width={140}>Region</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} width={180}>Created</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="right" width={120}>Total Size</TableCell>
-              <TableCell width={60}></TableCell>
+  return (
+    <TableContainer component={Paper} variant="outlined" sx={{ mb: 4, borderRadius: 1.5, overflow: 'hidden' }}>
+      <Table sx={{ minWidth: 650 }} aria-label="buckets table">
+        <TableHead>
+          <TableRow sx={{ bgcolor: 'action.hover' }}>
+            <TableCell sx={{ fontWeight: 600 }}>Bucket Name</TableCell>
+            <TableCell sx={{ fontWeight: 600 }} width={140}>Region</TableCell>
+            <TableCell sx={{ fontWeight: 600 }} width={180}>Created</TableCell>
+            <TableCell sx={{ fontWeight: 600 }} align="right" width={120}>Total Size</TableCell>
+            <TableCell width={60}></TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {filteredBuckets.map((bucket) => (
+            <TableRow
+              key={bucket.name}
+              hover
+              onClick={() => router.push(`/bucket?name=${bucket.name}&region=${bucket.region}`)}
+              sx={{ 
+                cursor: 'pointer',
+                '&:last-child td, &:last-child th': { border: 0 },
+                transition: 'background-color 0s', // Theme standard speed
+              }}
+            >
+              <TableCell component="th" scope="row">
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <StorageIcon color="primary" sx={{ fontSize: 24, opacity: 0.8 }} />
+                  <Typography variant="body1" fontWeight={500}>
+                    {bucket.name}
+                  </Typography>
+                </Box>
+              </TableCell>
+              <TableCell>
+                <Chip 
+                  label={bucket.region} 
+                  size="small" 
+                  variant="outlined" 
+                  sx={{ height: 24, fontSize: '0.75rem', borderColor: 'divider', borderRadius: 1.5 }} 
+                />
+              </TableCell>
+              <TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
+                {bucket.creation_date ? new Date(bucket.creation_date).toLocaleDateString() : '—'}
+              </TableCell>
+              <TableCell align="right" sx={{ color: 'text.secondary', fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                  {bucket.total_size_formatted || '—'}
+              </TableCell>
+              <TableCell align="right">
+                  <ChevronRightIcon color="action" fontSize="small" />
+              </TableCell>
             </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredBuckets.map((bucket) => (
-              <TableRow
-                key={bucket.name}
-                hover
-                onClick={() => router.push(`/bucket?name=${bucket.name}&region=${bucket.region}`)}
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+};
+
+
+  const renderLanding = () => (
+    <Box sx={{ 
+      minHeight: '80vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      bgcolor: 'background.default',
+      py: 4
+    }}>
+      <Container maxWidth="sm">
+
+        <Paper 
+          variant="outlined"
+          sx={{ 
+            p: 4, 
+            borderRadius: 1.5,
+            bgcolor: 'background.paper',
+            border: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>
+            Direct Access
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, mb: 4 }}>
+            <TextField
+              fullWidth
+              variant="outlined"
+              size="small"
+              placeholder="s3://bucket/prefix/"
+              value={s3UriInput}
+              onChange={(e) => setS3UriInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleNavigate(s3UriInput)}
+              sx={{ 
+                '& .MuiOutlinedInput-root': { 
+                    borderRadius: 1.5,
+                    bgcolor: 'action.hover'
+                } 
+              }}
+            />
+            <Button 
+                variant="contained" 
+                disableElevation
+                onClick={() => handleNavigate(s3UriInput)}
+                sx={{ borderRadius: 1.5, px: 3, fontWeight: 700 }}
+            >
+                Go
+            </Button>
+          </Box>
+
+          <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 3, mb: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                Or browse all resources in your active profile
+            </Typography>
+            <Button 
+                variant="outlined" 
+                onClick={handleFetchBuckets}
+                startIcon={<StorageIcon />}
                 sx={{ 
-                  cursor: 'pointer',
-                  '&:last-child td, &:last-child th': { border: 0 },
-                  transition: 'background-color 0.2s',
+                    borderRadius: 1.5, 
+                    py: 1, 
+                    px: 4,
+                    minWidth: 200,
+                    fontWeight: 700,
+                    borderColor: 'divider',
+                    color: 'text.primary',
+                    '&:hover': { bgcolor: 'action.hover', borderColor: 'text.primary' }
                 }}
-              >
-                <TableCell component="th" scope="row">
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <StorageIcon color="primary" sx={{ fontSize: 24, opacity: 0.8 }} />
-                    <Typography variant="body1" fontWeight={500}>
-                      {bucket.name}
-                    </Typography>
-                  </Box>
-                </TableCell>
-                <TableCell>
-                  <Chip 
-                    label={bucket.region} 
-                    size="small" 
-                    variant="outlined" 
-                    sx={{ height: 24, fontSize: '0.75rem', borderColor: 'divider' }} 
-                  />
-                </TableCell>
-                <TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
-                  {bucket.creation_date ? new Date(bucket.creation_date).toLocaleDateString() : '—'}
-                </TableCell>
-                <TableCell align="right" sx={{ color: 'text.secondary', fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                    {bucket.total_size_formatted || '—'}
-                </TableCell>
-                <TableCell align="right">
-                    <ChevronRightIcon color="action" fontSize="small" />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    );
-  };
+            >
+                List All Buckets
+            </Button>
+          </Box>
+        </Paper>
+
+        {/* Recently Visited */}
+        {recentPaths.length > 0 && (
+            <Box sx={{ mt: 6, textAlign: 'center' }}>
+                <Typography variant="caption" color="text.disabled" fontWeight={700} sx={{ letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                    Recent Paths
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 1, mt: 2 }}>
+                    {recentPaths.slice(0, 3).map((path) => (
+                        <Chip
+                            key={path}
+                            label={path}
+                            onClick={() => handleNavigate(path)}
+                            variant="outlined"
+                            size="small"
+                            sx={{ 
+                                borderRadius: 1.5,
+                                fontSize: '0.75rem',
+                                color: 'text.secondary',
+                                maxWidth: '200px',
+                                transition: 'all 0.1s',
+                                '&:hover': {
+                                    bgcolor: 'action.hover',
+                                    color: 'primary.main',
+                                    borderColor: 'primary.main'
+                                }
+                            }}
+                        />
+                    ))}
+                </Box>
+            </Box>
+        )}
+      </Container>
+    </Box>
+  );
   
   return (
     <Box sx={{ p: 1, mt: 1 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <StorageIcon color="primary" sx={{ fontSize: 40 }} />
-          <Box>
-            <Typography variant="h4" fontWeight={700}>
-              Buckets
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {activeProfile.name} • {filteredBuckets.length} buckets
-            </Typography>
+      {showBuckets ? (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <IconButton onClick={() => router.push('/')} sx={{ bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}>
+                    <FolderOpenIcon />
+                </IconButton>
+              <Box>
+                <Typography variant="h4" fontWeight={800}>
+                  All Buckets
+                </Typography>
+                <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                  {activeProfile.name} • {filteredBuckets.length} buckets
+                </Typography>
+              </Box>
+            </Box>
+            
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                placeholder="Search buckets..."
+                size="small"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon color="action" fontSize="small" />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{ width: 250 }}
+              />
+              <Tooltip title="Refresh bucket list">
+                <IconButton 
+                  onClick={() => refresh()} 
+                  disabled={isLoading} 
+                  color="primary" 
+                  sx={{ 
+                    bgcolor: 'background.paper', 
+                    border: '1px solid', 
+                    borderColor: 'divider',
+                    boxShadow: 1
+                  }}
+                >
+                  <RefreshIcon className={isLoading ? 'spin-animation' : ''} />
+                </IconButton>
+              </Tooltip>
+            </Box>
           </Box>
-        </Box>
-        
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <TextField
-            placeholder="Search buckets..."
-            size="small"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon color="action" fontSize="small" />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ width: 250 }}
-          />
-          <Tooltip title="Refresh bucket list">
-            <IconButton onClick={() => refresh()} disabled={isLoading} color="primary" sx={{ bgcolor: 'action.hover' }}>
-              <RefreshIcon className={isLoading ? 'spin-animation' : ''} />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      </Box>
-      
-      {renderContent()}
+          {renderBucketList()}
+        </>
+      ) : renderLanding()}
       
       <style jsx global>{`
         @keyframes spin {

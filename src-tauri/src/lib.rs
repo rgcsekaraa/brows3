@@ -80,12 +80,24 @@ pub fn run() {
             }
             
             // Initialize logging for both debug and release builds
-            // This helps diagnose issues on Windows where crashes are silent
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Info)
                     .build(),
             )?;
+
+            // Panic Hook for silent crashes
+            let handle = app.handle().clone();
+            std::panic::set_hook(Box::new(move |info| {
+                let msg = format!("Panic: {:?}", info);
+                log::error!("{}", msg);
+                
+                // Also try to write to a file in app data just in case logger is dead
+                if let Ok(path) = handle.path().app_config_dir() {
+                     let _ = std::fs::create_dir_all(&path);
+                     let _ = std::fs::write(path.join("panic.log"), msg);
+                }
+            }));
             
             log::info!("Brows3 starting up...");
             
@@ -98,7 +110,6 @@ pub fn run() {
             });
             
             // Show the main window after initialization to prevent white flash
-            // Window starts hidden (visible: false in config)
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
             }
@@ -125,7 +136,6 @@ pub fn run() {
             // Object commands
             objects::list_objects,
             objects::search_objects,
-            objects::fetch_all_objects,
             objects::get_presigned_url,
             objects::get_object_content,
             objects::put_object_content,
@@ -142,6 +152,11 @@ pub fn run() {
             transfer_cmd::queue_download,
             transfer_cmd::list_transfers,
             transfer_cmd::queue_folder_upload,
+            transfer_cmd::queue_folder_download,
+            transfer_cmd::cancel_transfer,
+            transfer_cmd::retry_transfer,
+            transfer_cmd::remove_transfer,
+            transfer_cmd::clear_completed_transfers,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

@@ -126,9 +126,6 @@ interface Props {
   onEdit?: (key: string) => void;
   onCopyPath?: (key: string) => void;
   onEndReached?: () => void;
-  totalCount?: number;
-  folderTotalCount?: number;
-  isBackgroundLoading?: boolean;
 }
 
 // Lightweight table components - no Paper wrapper, minimal styling
@@ -256,7 +253,7 @@ const RowContent = memo(function RowContent({
   );
 });
 
-export default function VirtualizedObjectTable({
+export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   folders,
   objects,
   selectedKeys,
@@ -274,9 +271,6 @@ export default function VirtualizedObjectTable({
   onEdit,
   onCopyPath,
   onEndReached,
-  totalCount = 0,
-  folderTotalCount = 0,
-  isBackgroundLoading = false,
 }: Props) {
   // Build rows - highly optimized
   const rows = useMemo<RowData[]>(() => {
@@ -440,42 +434,14 @@ export default function VirtualizedObjectTable({
         justifyContent: 'space-between',
         minHeight: 32
       }}>
-        <Stack direction="row" spacing={2} alignItems="center">
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            <Typography variant="caption" fontWeight={700} color="text.primary">
-              {rows.length.toLocaleString()}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              visible
-            </Typography>
-            
-            {folderTotalCount > 0 && (
-              <>
-                <Typography variant="caption" color="text.secondary" sx={{ mx: 0.5 }}>/</Typography>
-                <Typography variant="caption" fontWeight={700} color="text.primary">
-                  {folderTotalCount.toLocaleString()}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  items in this folder
-                </Typography>
-              </>
-            )}
-
-            {totalCount > 0 && (
-              <>
-                <Divider orientation="vertical" flexItem sx={{ height: 12, mx: 1.5, my: 'auto' }} />
-                <Typography variant="caption" fontWeight={700} color="text.primary">
-                  {totalCount.toLocaleString()}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  total files in the bucket
-                </Typography>
-              </>
-            )}
-          </Stack>
+        <Stack direction="row" spacing={3} alignItems="center">
+          <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box component="span" fontWeight={700} color="text.primary">{rows.length.toLocaleString()}</Box>
+            <Box component="span" color="text.secondary">items visible</Box>
+          </Typography>
 
           <Divider orientation="vertical" flexItem sx={{ height: 12, my: 'auto' }} />
-          
+
           <Stack direction="row" spacing={1.5}>
             <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <Box component="span" fontWeight={600} color="text.secondary">{folders.length.toLocaleString()}</Box>
@@ -486,18 +452,6 @@ export default function VirtualizedObjectTable({
               <Box component="span" color="text.secondary">files</Box>
             </Typography>
           </Stack>
-
-          {isBackgroundLoading && (
-            <>
-              <Divider orientation="vertical" flexItem sx={{ height: 12, my: 'auto' }} />
-              <Stack direction="row" spacing={1} alignItems="center">
-                <CircularProgress size={12} thickness={5} sx={{ color: 'primary.main' }} />
-                <Typography variant="caption" fontWeight={600} color="primary.main" sx={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
-                  Indexing...
-                </Typography>
-              </Stack>
-            </>
-          )}
         </Stack>
 
         <Stack direction="row" spacing={2} alignItems="center">
@@ -509,7 +463,7 @@ export default function VirtualizedObjectTable({
               sx={{ height: 18, fontSize: '0.65rem', fontWeight: 700, borderRadius: 0.5 }}
             />
           )}
-          {onEndReached && rows.length < (totalCount || Infinity) && (
+          {onEndReached && (
             <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', fontSize: '0.7rem' }}>
               Scroll for more
             </Typography>
@@ -518,4 +472,4 @@ export default function VirtualizedObjectTable({
       </Box>
     </Box>
   );
-}
+});

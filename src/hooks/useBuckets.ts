@@ -9,6 +9,7 @@ interface UseBucketsResult {
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  fetchBuckets: (skipCache?: boolean) => Promise<void>;
   isCached: boolean;
   cacheAge: number | null; // milliseconds since cache was created
 }
@@ -36,7 +37,8 @@ export function invalidateBucketCache(profileId?: string) {
   }
 }
 
-export function useBuckets(): UseBucketsResult {
+export function useBuckets(options: { enabled?: boolean } = { enabled: true }): UseBucketsResult {
+  const enabled = options.enabled ?? true;
   const [buckets, setBuckets] = useState<BucketWithRegion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,12 +118,14 @@ export function useBuckets(): UseBucketsResult {
   // Fetch buckets when active profile changes
   useEffect(() => {
     mountedRef.current = true;
-    fetchBuckets();
+    if (enabled) {
+      fetchBuckets();
+    }
     
     return () => {
       mountedRef.current = false;
     };
-  }, [fetchBuckets]);
+  }, [fetchBuckets, enabled]);
 
   const isCached = useMemo(() => {
     return cacheTimestamp !== null && !isLoading;
@@ -132,6 +136,6 @@ export function useBuckets(): UseBucketsResult {
     return Date.now() - cacheTimestamp;
   }, [cacheTimestamp]);
 
-  return { buckets, isLoading, error, refresh, isCached, cacheAge };
+  return { buckets, isLoading, error, refresh, fetchBuckets, isCached, cacheAge };
 }
 

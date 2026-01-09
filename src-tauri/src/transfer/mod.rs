@@ -35,6 +35,10 @@ pub struct TransferJob {
     pub total_bytes: u64,
     pub processed_bytes: u64,
     pub created_at: i64, // Timestamp
+    // Grouping fields
+    pub parent_group_id: Option<String>,
+    pub group_name: Option<String>,
+    pub is_group_root: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +69,15 @@ impl TransferJob {
             total_bytes,
             processed_bytes: 0,
             created_at: Utc::now().timestamp(),
+            parent_group_id: None,
+            group_name: None,
+            is_group_root: false,
         }
+    }
+
+    pub fn with_group(mut self, group_id: String, name: String) -> Self {
+        self.parent_group_id = Some(group_id);
+        self.group_name = Some(name);
+        self
     }
 }

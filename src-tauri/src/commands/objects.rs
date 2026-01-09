@@ -1,5 +1,5 @@
 use crate::commands::profiles::ProfileState;
-use crate::s3::{self, S3State, S3Object};
+use crate::s3::{S3State, S3Object};
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -11,53 +11,6 @@ pub struct ListObjectsResult {
     pub next_continuation_token: Option<String>,
     pub is_truncated: bool,
     pub prefix: String,
-    pub folder_total_objects: usize,
-    pub folder_total_prefixes: usize,
-}
-
-#[tauri::command]
-pub async fn fetch_all_objects(
-    bucket_name: String,
-    bucket_region: Option<String>,
-    profile_state: State<'_, ProfileState>,
-    s3_state: State<'_, S3State>,
-) -> Result<usize> {
-    let profile_manager = profile_state.read().await;
-    let active_profile = profile_manager
-        .get_active_profile()
-        .await?
-        .ok_or_else(|| crate::error::AppError::ConfigError("No active profile".to_string()))?;
-    
-    drop(profile_manager);
-    
-    // Check if already cached
-    {
-        let s3_manager = s3_state.read().await;
-        if s3_manager.has_cache(&active_profile.id, &bucket_name) {
-            if let Some(objs) = s3_manager.get_cached_objects(&active_profile.id, &bucket_name) {
-                return Ok(objs.len());
-            }
-        }
-    }
-    
-    // Get client and clone it, then drop lock to allow concurrency
-    let client = {
-        let mut s3_manager = s3_state.write().await;
-        if let Some(ref region) = bucket_region {
-            s3_manager.get_client_for_region(&active_profile, region).await?.clone()
-        } else {
-            s3_manager.get_client(&active_profile).await?.clone()
-        }
-    }; // s3_manager dropped here
-
-    let objects = s3::client::list_all_objects_recursive(&client, &bucket_name).await?;
-    let count = objects.len();
-    
-    // Re-acquire lock to set cache
-    let mut s3_manager = s3_state.write().await;
-    s3_manager.set_cached_objects(&active_profile.id, &bucket_name, objects);
-    
-    Ok(count)
 }
 
 #[tauri::command]
@@ -118,8 +71,6 @@ pub async fn list_objects(
                      next_continuation_token: next_token,
                      is_truncated,
                      prefix: prefix_str,
-                     folder_total_objects: content.objects.len(),
-                     folder_total_prefixes: content.common_prefixes.len(),
                  });
             } else {
                  // If bucket is cached but prefix is not found, it's an empty folder
@@ -129,11 +80,16 @@ pub async fn list_objects(
                      next_continuation_token: None,
                      is_truncated: false,
                      prefix: prefix_str,
-                     folder_total_objects: 0,
-                     folder_total_prefixes: 0,
                  });
             }
         }
+    }
+    
+    // If bypassing cache, we should invalidate the existing cache for this bucket
+    // so subsequent load_more calls don't hit stale data.
+    if bypass_cache.unwrap_or(false) {
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.remove_bucket_cache(&active_profile.id, &bucket_name);
     }
 
     // 2. Cache miss or bypass: need Client (requires Write hold to potentially build Client)
@@ -183,19 +139,12 @@ pub async fn list_objects(
         .map(|cp| cp.prefix().unwrap_or_default().to_string())
         .collect();
 
-    // For live S3 fetches, we don't know the folder total yet without fetching everything.
-    // We return 0 to signal it's not known/authoritative.
-    let folder_total_objects = 0;
-    let folder_total_prefixes = 0;
-
     Ok(ListObjectsResult {
         objects,
         common_prefixes,
         next_continuation_token: output.next_continuation_token().map(|s| s.to_string()),
         is_truncated: output.is_truncated().unwrap_or(false),
         prefix: prefix_str,
-        folder_total_objects,
-        folder_total_prefixes,
     })
 }
 

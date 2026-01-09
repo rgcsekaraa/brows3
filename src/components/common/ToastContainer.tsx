@@ -126,7 +126,7 @@ export default function ToastContainer() {
       <Box
         sx={{
           position: 'fixed',
-          bottom: 24,
+          top: 100, // Positioned below Navbar + TabBar
           right: 24,
           zIndex: (theme) => theme.zIndex.snackbar + 1,
           pointerEvents: 'none',

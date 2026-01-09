@@ -151,8 +151,6 @@ export interface ListObjectsResult {
   next_continuation_token: string | null;
   is_truncated: boolean;
   prefix: string;
-  folder_total_objects: number;
-  folder_total_prefixes: number;
 }
 
 export const objectApi = {
@@ -169,10 +167,6 @@ export const objectApi = {
 
   async searchObjects(bucketName: string, bucketRegion: string | undefined, query: string): Promise<S3Object[]> {
     return invoke<S3Object[]>('search_objects', { bucketName, bucketRegion, query });
-  },
-
-  async fetchAllObjects(bucketName: string, bucketRegion?: string): Promise<number> {
-    return invoke<number>('fetch_all_objects', { bucketName, bucketRegion });
   },
 
   async getPresignedUrl(bucketName: string, bucketRegion: string | undefined, key: string, expiresIn: number = 3600): Promise<string> {
@@ -244,6 +238,9 @@ export interface TransferJob {
   processed_bytes: number;
   status: 'Queued' | 'InProgress' | 'Completed' | { Failed: string } | 'Paused' | 'Cancelled';
   created_at: number;
+  parent_group_id?: string;
+  group_name?: string;
+  is_group_root?: boolean;
 }
 
 export interface TransferEvent {
@@ -266,7 +263,27 @@ export const transferApi = {
     return invoke<number>('queue_folder_upload', { bucketName, bucketRegion, prefix, localPath });
   },
 
+  async queueFolderDownload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string): Promise<number> {
+    return invoke<number>('queue_folder_download', { bucketName, bucketRegion, prefix, localPath });
+  },
+
   async listTransfers(): Promise<TransferJob[]> {
     return invoke<TransferJob[]>('list_transfers');
+  },
+
+  async cancelTransfer(jobId: string): Promise<boolean> {
+    return invoke<boolean>('cancel_transfer', { jobId });
+  },
+
+  async retryTransfer(jobId: string): Promise<string | null> {
+    return invoke<string | null>('retry_transfer', { jobId });
+  },
+
+  async removeTransfer(jobId: string): Promise<boolean> {
+    return invoke<boolean>('remove_transfer', { jobId });
+  },
+
+  async clearCompletedTransfers(): Promise<number> {
+    return invoke<number>('clear_completed_transfers');
   },
 };

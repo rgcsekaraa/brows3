@@ -41,12 +41,23 @@ export default function TabBar() {
 
   const handleCloseTab = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    
+    // If we are closing the active tab, we need to navigate to the new one
+    if (id === activeTabId) {
+        const filteredTabs = tabs.filter(t => t.id !== id);
+        if (filteredTabs.length > 0) {
+            const nextTab = filteredTabs[filteredTabs.length - 1];
+            router.push(nextTab.path);
+        }
+    }
+    
     removeTab(id);
   };
 
   const handleAddTab = () => {
     if (!hasProfile) return;
-    addTab({ title: 'New Tab', path: '/', icon: 'home' });
+    addTab({ title: 'Explorer', path: '/', icon: 'cloud' });
+    router.push('/');
   };
 
   const getIcon = (iconName?: string) => {

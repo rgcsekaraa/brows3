@@ -86,10 +86,23 @@ pub struct ProfileManager {
 impl ProfileManager {
     pub fn new(config_dir: PathBuf) -> Result<Self> {
         let profiles_path = config_dir.join(PROFILES_FILE);
+        log::info!("Initializing ProfileManager. Storage path: {:?}", profiles_path);
+        
         let data = if profiles_path.exists() {
+            log::info!("Found existing profiles file.");
             let content = std::fs::read_to_string(&profiles_path)?;
-            serde_json::from_str(&content).unwrap_or_default()
+            match serde_json::from_str(&content) {
+                Ok(d) => {
+                    log::info!("Successfully loaded profiles data.");
+                    d
+                },
+                Err(e) => {
+                    log::error!("Failed to parse profiles.json: {}. Starting fresh.", e);
+                    ProfilesData::default()
+                }
+            }
         } else {
+            log::info!("No profiles file found. Creating new.");
             ProfilesData::default()
         };
         
@@ -102,6 +115,7 @@ impl ProfileManager {
     
     fn save(&self) -> Result<()> {
         let profiles_path = self.config_dir.join(PROFILES_FILE);
+        log::info!("Saving profiles to {:?}", profiles_path);
         let content = serde_json::to_string_pretty(&self.data)?;
         std::fs::write(profiles_path, content)?;
         Ok(())

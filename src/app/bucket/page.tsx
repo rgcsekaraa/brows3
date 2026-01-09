@@ -73,7 +73,7 @@ import { useClipboardStore } from '@/store/clipboardStore';
 import { useTabStore } from '@/store/tabStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
-import VirtualizedObjectTable from '@/components/common/VirtualizedObjectTable';
+import { VirtualizedObjectTable } from '@/components/common/VirtualizedObjectTable';
 import { toast } from '@/store/toastStore';
 import { useHistoryStore } from '@/store/historyStore';
 
@@ -94,10 +94,7 @@ function BucketContent() {
   const bucketRegion = searchParams.get('region') || 'us-east-1';
   const prefix = searchParams.get('prefix') || '';
   
-  const { data, isLoading, error: initialError, stats, refresh, loadMore, isLoadingMore,
-    hasMore,
-    folderTotalCount,
-  } = useObjects(bucketName || '', bucketRegion, prefix);
+  const { data, isLoading, error: initialError, stats, refresh, loadMore, isLoadingMore, hasMore } = useObjects(bucketName || '', bucketRegion, prefix);
   const { addJob } = useTransferStore();
   const { addBucket } = useTabStore();
   
@@ -111,10 +108,10 @@ function BucketContent() {
   const [searchResults, setSearchResults] = useState<S3Object[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Show initial error as toast
+  // Error handling effect
   useEffect(() => {
     if (initialError) {
-      toast.error('Failed to load objects', initialError);
+      toast.error(typeof initialError === 'string' ? initialError : 'Failed to load objects');
     }
   }, [initialError]);
 
@@ -514,19 +511,26 @@ function BucketContent() {
     let count = 0;
     try {
       for (const key of Array.from(selectedKeys)) {
-        // Find if it's an object in the current display
+        // Find if it's an object or folder in the current display
         const isSelectedObject = displayData?.objects.find(o => o.key === key);
-        if (isSelectedObject) {
+        const isSelectedFolder = displayData?.common_prefixes ? (displayData as any).common_prefixes.find((p: string) => p === key) : null;
+        
+        if (isSelectedFolder) {
+            const folderName = key.split('/').filter(Boolean).pop() || 'folder';
+            const localPath = `${downloadDir}/${folderName}`;
+            await transferApi.queueFolderDownload(bucketName || '', bucketRegion, key, localPath);
+            count++;
+        } else if (isSelectedObject) {
           const fileName = key.split('/').pop() || 'file';
           const localPath = `${downloadDir}/${fileName}`;
           await transferApi.queueDownload(bucketName || '', bucketRegion, key, localPath, isSelectedObject.size);
           count++;
         }
       }
-      setSuccess(`Queued ${count} files for download.`);
+      displaySuccess(`Queued ${count} items for download.`);
       setSelectedKeys(new Set());
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      displayError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsUploading(false);
     }
@@ -564,32 +568,36 @@ function BucketContent() {
   // Existing single actions
   const handleDownload = async () => {
     handleMenuClose();
-    if (!bucketName || !selectedObject || selectedObject.isFolder) return;
+    if (!bucketName || !selectedObject) return;
     
     try {
-      const filename = selectedObject.key.split('/').pop() || 'download';
-      const savePath = await save({
-        defaultPath: filename,
-        title: 'Save file as'
-      });
-      
-      if (savePath) {
-        // Use Transfer Queue
-        const jobId = await transferApi.queueDownload(bucketName, bucketRegion, selectedObject.key, savePath, 0);
-        displaySuccess('Download queued');
-        
-        addJob({
-           id: jobId,
-           transfer_type: 'Download',
-           bucket: bucketName,
-           bucket_region: bucketRegion,
-           key: selectedObject.key,
-           local_path: savePath,
-           total_bytes: 0,
-           processed_bytes: 0,
-           status: 'Queued',
-           created_at: Date.now()
+      if (selectedObject.isFolder) {
+        // Select directory for folder download
+        const downloadDir = await open({
+            directory: true,
+            multiple: false,
+            title: 'Select Destination Directory'
         });
+        
+        if (downloadDir) {
+            const dir = Array.isArray(downloadDir) ? downloadDir[0] : downloadDir;
+            const folderName = selectedObject.key.split('/').filter(Boolean).pop() || 'folder';
+            const localPath = `${dir}/${folderName}`;
+            await transferApi.queueFolderDownload(bucketName, bucketRegion, selectedObject.key, localPath);
+            displaySuccess('Folder download queued');
+        }
+      } else {
+        const filename = selectedObject.key.split('/').pop() || 'download';
+        const savePath = await save({
+          defaultPath: filename,
+          title: 'Save file as'
+        });
+        
+        if (savePath) {
+          // Use Transfer Queue
+          await transferApi.queueDownload(bucketName, bucketRegion, selectedObject.key, savePath, 0);
+          displaySuccess('Download queued');
+        }
       }
     } catch (err) {
       displayError(`Download failed: ${err}`);
@@ -736,23 +744,13 @@ function BucketContent() {
         
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
           <Breadcrumbs maxItems={5} itemsBeforeCollapse={2}>
-            <Link 
-              component="button"
-              underline="hover" 
-              color="inherit" 
-              onClick={() => router.push('/')}
-              sx={{ display: 'flex', alignItems: 'center' }}
-            >
-              <HomeIcon sx={{ mr: 0.5 }} fontSize="inherit" />
-              Buckets
-            </Link>
             
             <Link
               component="button" 
               underline="hover"
               color={!prefix ? 'text.primary' : 'inherit'}
-              onClick={() => handleNavigate('')}
-              fontWeight={!prefix ? 700 : 400}
+              onClick={() => bucketName && handleNavigate('')} 
+              fontWeight={!prefix ? 800 : 500}
             >
               {bucketName}
             </Link>
@@ -800,7 +798,7 @@ function BucketContent() {
                    </InputAdornment>
                )
              }}
-             sx={{ width: 300, bgcolor: 'background.paper', '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+              sx={{ width: 300, bgcolor: 'background.paper' }}
            />
            
            <FormControlLabel 
@@ -821,6 +819,7 @@ function BucketContent() {
           startIcon={<CreateNewFolderIcon />} 
           size="small"
           onClick={() => setCreateFolderOpen(true)}
+          sx={{ fontWeight: 700 }} 
         >
           New Folder
         </Button>
@@ -831,26 +830,41 @@ function BucketContent() {
           size="small" 
           disabled={isUploading}
           onClick={(e) => setUploadMenuAnchor(e.currentTarget)}
+          sx={{ fontWeight: 700 }}
         >
           Upload
         </Button>
+        {/* Premium Menu Styled globally via theme.ts */}
         <Menu
             anchorEl={uploadMenuAnchor}
             open={Boolean(uploadMenuAnchor)}
             onClose={() => setUploadMenuAnchor(null)}
+            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
         >
             <MenuItem onClick={handleUploadFiles}>
                 <ListItemIcon><FileIcon fontSize="small" /></ListItemIcon>
-                Upload Files
+                Files
             </MenuItem>
             <MenuItem onClick={handleUploadFolder}>
                 <ListItemIcon><FolderIcon fontSize="small" /></ListItemIcon>
-                Upload Folder
+                Folder
             </MenuItem>
         </Menu>
 
         <Tooltip title="Refresh">
-            <IconButton onClick={() => refresh()} disabled={isLoading} color="primary" sx={{ bgcolor: 'action.hover' }}>
+            <IconButton 
+              onClick={() => refresh()} 
+              disabled={isLoading} 
+              color="primary" 
+              sx={{ 
+                bgcolor: 'background.paper', 
+                border: '1px solid',
+                borderColor: 'divider',
+                boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
+                '&:hover': { bgcolor: 'action.hover' }
+              }}
+            >
             <RefreshIcon className={isLoading ? 'spin-animation' : ''} />
             </IconButton>
         </Tooltip>
@@ -873,9 +887,6 @@ function BucketContent() {
         onEndReached={loadMore}
         onSelectAll={handleSelectAll}
         onMenuOpen={handleMenuOpen}
-        totalCount={stats.totalCount}
-        folderTotalCount={folderTotalCount}
-        isBackgroundLoading={stats.isBackgroundLoading}
         onSortChange={(field) => {
           if (sortField === field) {
             setSortDirection(d => d === 'asc' ? 'desc' : 'asc');

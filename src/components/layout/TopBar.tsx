@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import {
   Box,
   IconButton,
@@ -13,12 +14,17 @@ import {
   LightMode as LightModeIcon,
   SettingsBrightness as AutoModeIcon,
   Cloud as CloudIcon,
+  Close as CloseIcon,
+  Remove as MinimizeIcon,
+  CropSquare as MaximizeIcon,
+  FilterNone as RestoreIcon,
 } from '@mui/icons-material';
-import { Divider } from '@mui/material';
 import { useAppStore } from '@/store/appStore';
 import ProfileSelector from '../profile/ProfileSelector';
 import PathBar from '../navigation/PathBar';
 import { useProfileStore } from '@/store/profileStore';
+// Dynamic import for Tauri to avoid SSR issues
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export default function TopBar() {
   const { themeMode, setThemeMode } = useAppStore();
@@ -40,7 +46,14 @@ export default function TopBar() {
   };
   
   return (
-    <Toolbar variant="dense" sx={{ minHeight: 48, px: { xs: 1, sm: 2 } }}>
+    <Toolbar 
+        variant="dense" 
+        sx={{ 
+            minHeight: 48, 
+            px: { xs: 1, sm: 2 },
+        }}
+    >
+      {/* Brand */}
       <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 0, mr: 2 }}>
         <CloudIcon sx={{ color: '#FF9900', mr: 1, fontSize: 24 }} />
         <Typography

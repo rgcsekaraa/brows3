@@ -332,7 +332,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                     elevation={0}
                     sx={{ 
                       mb: 1.5, 
-                      borderRadius: 1.5, 
+                      borderRadius: 1.25, 
                       bgcolor: 'action.hover',
                       border: '1px solid',
                       borderColor: 'divider',
@@ -417,7 +417,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 startIcon={<AddIcon />}
                 onClick={() => { resetForm(); setMode('add'); }}
                 sx={{ 
-                  borderRadius: 1.5, 
+                  borderRadius: 1.25, 
                   py: 1.2,
                   fontWeight: 700,
                   borderWidth: 2,
@@ -462,7 +462,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
               variant="outlined"
               sx={{ 
                   mt: 1,
-                  '& .MuiOutlinedInput-root': { borderRadius: 2 },
+                  '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
                   '& .MuiInputLabel-root': { fontWeight: 600 }
               }}
             />
@@ -473,7 +473,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 value={formData.credentialType}
                 label="Provider / Auth Method"
                 onChange={(e) => updateField('credentialType', e.target.value)}
-                sx={{ borderRadius: 2 }}
+                sx={{ borderRadius: 1.5 }}
               >
                 <MenuItem value="Environment">System Environment Variables</MenuItem>
                 <MenuItem value="SharedConfig">Local AWS Config File (~/.aws)</MenuItem>
@@ -521,7 +521,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                         variant="outlined" 
                         placeholder="default"
                         helperText="Found profiles in your local machine"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
                     />
                 )}
                 fullWidth
@@ -529,7 +529,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
             )}
             
             {(formData.credentialType === 'Manual' || formData.credentialType === 'CustomEndpoint') && (
-              <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 1.5, borderStyle: 'dashed' }}>
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 1.25, borderStyle: 'dashed' }}>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
                     {formData.credentialType === 'CustomEndpoint' && (
                       <TextField
@@ -539,7 +539,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                         fullWidth
                         placeholder="https://s3.us-east-1.amazonaws.com"
                         variant="outlined"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper' } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.25, bgcolor: 'background.paper' } }}
                       />
                     )}
                     <TextField
@@ -548,7 +548,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                         onChange={(e) => updateField('accessKeyId', e.target.value)}
                         fullWidth
                         variant="outlined"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper' } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.25, bgcolor: 'background.paper' } }}
                     />
                     <TextField
                         label="Secret Access Key"
@@ -573,7 +573,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 value={formData.region}
                 label="Default Region"
                 onChange={(e) => updateField('region', e.target.value)}
-                sx={{ borderRadius: 2 }}
+                sx={{ borderRadius: 1.5 }}
                 MenuProps={{ PaperProps: { sx: { maxHeight: 300 } } }}
               >
                 {AWS_REGIONS.map((region) => (
@@ -602,7 +602,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
               {testResult && (
                 <Alert 
                   severity={testResult.success ? 'success' : 'error'} 
-                  sx={{ borderRadius: 1.5, fontWeight: 600 }}
+                  sx={{ borderRadius: 1.25, fontWeight: 600 }}
                 >
                   {testResult.message}
                 </Alert>
@@ -610,7 +610,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
             </Box>
             
             {error && (
-              <Alert severity="error" variant="filled" sx={{ borderRadius: 2 }}>{error}</Alert>
+              <Alert severity="error" variant="filled" sx={{ borderRadius: 1.5 }}>{error}</Alert>
             )}
           </Box>
         </DialogContent>
@@ -646,7 +646,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         fullWidth
         PaperProps={{
             sx: { 
-                borderRadius: 3, 
+                borderRadius: 2, 
                 boxShadow: '0 24px 80px rgba(0,0,0,0.2)',
                 backgroundImage: 'none',
                 bgcolor: 'background.paper',

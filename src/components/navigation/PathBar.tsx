@@ -152,32 +152,69 @@ export default function PathBar() {
         sx: { maxHeight: 300 },
       }}
       PaperComponent={({ children, ...paperProps }) => (
-        <Paper {...paperProps} elevation={8}>
-          {children}
-          {recentPaths.length > 0 && (
+        // Only render if we have history
+        recentPaths.length > 0 ? (
+          <Paper 
+            {...paperProps} 
+            elevation={8} 
+            sx={{ 
+              mt: 1, 
+              borderRadius: 4, 
+              boxShadow: '0 24px 80px rgba(0,0,0,0.25)', 
+              p: 1, 
+              '& .MuiAutocomplete-listbox': {
+                  p: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 0.5
+              },
+              '& .MuiAutocomplete-option': {
+                mx: 0,
+                my: 0,
+                p: '10px 16px !important', 
+                borderRadius: 2.5, 
+                border: '1px solid transparent',
+                transition: 'all 0.2s ease',
+                fontWeight: 500,
+                '&:hover': {
+                   bgcolor: 'action.hover',
+                   borderColor: 'divider',
+                   transform: 'translateY(-1px)',
+                   boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                },
+                '&[aria-selected="true"]': {
+                   bgcolor: 'action.selected',
+                   borderColor: 'primary.main',
+                }
+              }
+            }}
+          >
+            {children}
             <Typography
-              variant="caption"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                clearHistory();
-                setIsOpen(false);
-              }}
-              sx={{
-                display: 'block',
-                textAlign: 'center',
-                py: 1,
-                color: 'text.disabled',
-                cursor: 'pointer',
-                borderTop: '1px solid',
-                borderColor: 'divider',
-                '&:hover': { color: 'text.secondary' },
-              }}
-            >
-              Clear history
+                  variant="caption"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    clearHistory();
+                    setIsOpen(false);
+                  }}
+                  sx={{
+                    display: 'block',
+                    textAlign: 'center',
+                    py: 1,
+                    mt: 0.5,
+                    color: 'text.secondary',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    borderTop: '1px solid',
+                    borderColor: 'divider',
+                    '&:hover': { color: 'text.primary', bgcolor: 'action.hover', borderRadius: 1 },
+                  }}
+                >
+                  Clear history
             </Typography>
-          )}
-        </Paper>
+          </Paper>
+        ) : null
       )}
       renderInput={(params) => (
         <TextField
@@ -191,10 +228,10 @@ export default function PathBar() {
           sx={{
             '& .MuiOutlinedInput-root': {
               bgcolor: 'background.paper',
-              borderRadius: 1,
               pr: 0.5,
+              transition: 'all 0.2s',
               '& fieldset': { borderColor: 'divider' },
-              '&:hover fieldset': { borderColor: 'text.secondary' },
+              '&:hover fieldset': { borderColor: 'text.primary' },
               '&.Mui-focused fieldset': { borderColor: 'primary.main', borderWidth: 2 },
             }
           }}
@@ -206,16 +243,19 @@ export default function PathBar() {
               </InputAdornment>
             ),
             endAdornment: (
-              <InputAdornment position="end">
-                <IconButton 
-                  size="small" 
-                  onClick={() => handleNavigate(inputValue)}
-                  edge="end"
-                  sx={{ mr: 0.8 }}
-                >
-                  <GoIcon fontSize="small" />
-                </IconButton>
-              </InputAdornment>
+              <>
+                {params.InputProps.endAdornment}
+                <InputAdornment position="end">
+                  <IconButton 
+                    size="small" 
+                    onClick={() => handleNavigate(inputValue)}
+                    edge="end"
+                    sx={{ mr: -0.5 }}
+                  >
+                    <GoIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              </>
             )
           }}
         />

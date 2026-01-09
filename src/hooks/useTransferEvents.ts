@@ -2,11 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { TransferEvent } from '@/lib/tauri';
+import { TransferEvent, TransferJob } from '@/lib/tauri';
 import { useTransferStore } from '@/store/transferStore';
 
 export function useTransferEvents() {
-  const { updateJob } = useTransferStore();
+  const { updateJob, addJob } = useTransferStore();
   const unlistenRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -14,11 +14,18 @@ export function useTransferEvents() {
     const setup = async () => {
       if (unlistenRef.current) return;
       
-      const unlisten = await listen<TransferEvent>('transfer-update', (event) => {
+      const unlistenUpdate = await listen<TransferEvent>('transfer-update', (event) => {
         updateJob(event.payload);
       });
       
-      unlistenRef.current = unlisten;
+      const unlistenAdded = await listen<TransferJob>('transfer-added', (event) => {
+        addJob(event.payload);
+      });
+      
+      unlistenRef.current = () => {
+          unlistenUpdate();
+          unlistenAdded();
+      };
     };
 
     setup();

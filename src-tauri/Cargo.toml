@@ -1,10 +1,11 @@
 [package]
 name = "brows3"
 version = "0.1.0"
-description = "Cross-platform S3 Browser Desktop Application"
+description = "Premium, Secure S3 Browser for macOS, Windows, and Linux."
 authors = ["Brows3 Team"]
 license = "MIT"
-repository = ""
+homepage = "https://github.com/rgcsekaraa/brows3"
+repository = "https://github.com/rgcsekaraa/brows3"
 edition = "2021"
 
 [lib]

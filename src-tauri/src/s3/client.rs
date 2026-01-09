@@ -198,6 +198,23 @@ impl S3ClientManager {
     pub fn has_cache(&self, profile_id: &str, bucket_name: &str) -> bool {
         self.object_cache.contains_key(&(profile_id.to_string(), bucket_name.to_string()))
     }
+
+    /// Remove cache for a specific bucket
+    pub fn remove_bucket_cache(&mut self, profile_id: &str, bucket_name: &str) {
+        // Remove object list
+        self.object_cache.remove(&(profile_id.to_string(), bucket_name.to_string()));
+        
+        // Remove all folder entries for this bucket
+        // Since folder_cache keys are (profile, bucket, prefix), we need to retain others
+        // A full scan is necessary or we could use another map for efficiently tracking keys.
+        // For now, retain is acceptable if cache isn't massive, or we can just accept it.
+        // A better approach might be to use a nested HashMap structure, but for this fix,
+        // we will iterate and remove.
+        let pid = profile_id.to_string();
+        let bname = bucket_name.to_string();
+        
+        self.folder_cache.retain(|(p, b, _), _| p != &pid || b != &bname);
+    }
 }
 
 impl Default for S3ClientManager {
