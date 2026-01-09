@@ -332,7 +332,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                     elevation={0}
                     sx={{ 
                       mb: 1.5, 
-                      borderRadius: 2, 
+                      borderRadius: 1.5, 
                       bgcolor: 'action.hover',
                       border: '1px solid',
                       borderColor: 'divider',
@@ -417,7 +417,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 startIcon={<AddIcon />}
                 onClick={() => { resetForm(); setMode('add'); }}
                 sx={{ 
-                  borderRadius: 2, 
+                  borderRadius: 1.5, 
                   py: 1.2,
                   fontWeight: 700,
                   borderWidth: 2,
@@ -487,7 +487,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                   severity={awsEnv?.has_access_key ? "success" : "info"}
                   variant="outlined" 
                   sx={{ 
-                      borderRadius: 2, 
+                      borderRadius: 1.5, 
                       bgcolor: awsEnv?.has_access_key ? 'success.main' : 'info.main', 
                       color: awsEnv?.has_access_key ? 'success.contrastText' : 'info.contrastText',
                       '& .MuiAlert-icon': { color: awsEnv?.has_access_key ? 'success.contrastText' : 'info.contrastText' } 
@@ -529,7 +529,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
             )}
             
             {(formData.credentialType === 'Manual' || formData.credentialType === 'CustomEndpoint') && (
-              <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 2, borderStyle: 'dashed' }}>
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 1.5, borderStyle: 'dashed' }}>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
                     {formData.credentialType === 'CustomEndpoint' && (
                       <TextField
@@ -539,7 +539,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                         fullWidth
                         placeholder="https://s3.us-east-1.amazonaws.com"
                         variant="outlined"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'background.paper' } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper' } }}
                       />
                     )}
                     <TextField
@@ -548,7 +548,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                         onChange={(e) => updateField('accessKeyId', e.target.value)}
                         fullWidth
                         variant="outlined"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'background.paper' } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper' } }}
                     />
                     <TextField
                         label="Secret Access Key"
@@ -557,7 +557,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                         onChange={(e) => updateField('secretAccessKey', e.target.value)}
                         fullWidth
                         variant="outlined"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'background.paper' } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper' } }}
                     />
                     <Typography variant="caption" sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 500 }}>
                         <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'success.main' }} />
@@ -602,7 +602,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
               {testResult && (
                 <Alert 
                   severity={testResult.success ? 'success' : 'error'} 
-                  sx={{ borderRadius: 2, fontWeight: 600 }}
+                  sx={{ borderRadius: 1.5, fontWeight: 600 }}
                 >
                   {testResult.message}
                 </Alert>

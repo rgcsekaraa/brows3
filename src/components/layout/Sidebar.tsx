@@ -103,7 +103,7 @@ export default function Sidebar() {
             ),
           }}
           sx={{ 
-            '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'action.hover' },
+            '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'action.hover' },
             '& .MuiOutlinedInput-notchedOutline': { border: 'none' }
           }}
         />

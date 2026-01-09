@@ -83,6 +83,22 @@ const baseComponents: ThemeOptions['components'] = {
       },
     },
   },
+  MuiOutlinedInput: {
+    styleOverrides: {
+      root: {
+        borderRadius: 12,
+      },
+    },
+  },
+  MuiTextField: {
+    styleOverrides: {
+      root: {
+        '& .MuiOutlinedInput-root': {
+          borderRadius: 12,
+        },
+      },
+    },
+  },
 };
 
 export const lightTheme = createTheme({
