@@ -161,34 +161,26 @@ export default function PathBar() {
         <Paper {...paperProps} elevation={8}>
           {children}
           {recentPaths.length > 0 && (
-            <Box
+            <Typography
+              variant="caption"
+              onClick={(e) => {
+                e.stopPropagation();
+                clearHistory();
+                setIsOpen(false);
+              }}
               sx={{
+                display: 'block',
+                textAlign: 'center',
+                py: 1,
+                color: 'text.disabled',
+                cursor: 'pointer',
                 borderTop: '1px solid',
                 borderColor: 'divider',
-                p: 1,
-                display: 'flex',
-                justifyContent: 'center',
+                '&:hover': { color: 'text.secondary' },
               }}
             >
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearHistory();
-                  setIsOpen(false);
-                  toast.success('History cleared');
-                }}
-                sx={{ 
-                  fontSize: '0.75rem', 
-                  color: 'text.secondary',
-                  gap: 0.5,
-                  '&:hover': { color: 'error.main' },
-                }}
-              >
-                <ClearIcon sx={{ fontSize: 16 }} />
-                <Typography variant="caption">Clear History</Typography>
-              </IconButton>
-            </Box>
+              Clear history
+            </Typography>
           )}
         </Paper>
       )}
