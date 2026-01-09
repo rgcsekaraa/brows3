@@ -89,61 +89,62 @@ jobs:
           
           echo "Updating manifest for version $VERSION ($TAG)"
           
-          # Wait a few seconds for GitHub to process the assets
-          sleep 10
+          # Wait for GitHub to process the assets
+          sleep 15
           
-          # Fetch signatures and artifacts
-          # We use the GitHub CLI to list assets and then parse them
-          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[] | {name: .name, url: .url}')
+          # Get the release ID and assets
+          RELEASE_INFO=$(gh api repos/${{ github.repository }}/releases/tags/$TAG)
           
-          UPDATER_JSON=$(cat update.json)
+          # Start building the platforms object
+          PLATFORMS="{}"
           
-          # Add platform info to JSON
-          # This is a simplified version - in a real production environment 
-          # you might want to spend more effort parsing exact signatures.
-          # Here we assume the .sig files are named correctly by tauri-action.
-          
-          # For Tauri v2, the updater expects:
-          # platforms: { "darwin-aarch64": { "url": "...", "signature": "..." }, ... }
-          
-          echo "$ASSETS" | while read -r asset; do
-            NAME=$(echo "$asset" | jq -r .name)
-            URL=$(echo "$asset" | jq -r .url)
+          # Function to add platform
+          add_platform() {
+            local PLATFORM=$1
+            local PATTERN=$2
+            local SIG_PATTERN=$3
             
-            # If it's a signature file, we need its content
-            if [[ "$NAME" == *.sig ]]; then
-               SIG_CONTENT=$(gh release download "$TAG" -p "$NAME" -O -)
-               BASE_NAME="${NAME%.sig}"
-               
-               # Match the signature to its platform
-               PLATFORM=""
-               if [[ "$BASE_NAME" == *.dmg ]] || [[ "$BASE_NAME" == *.app.tar.gz ]]; then
-                 if [[ "$BASE_NAME" == *aarch64* ]]; then PLATFORM="darwin-aarch64"; 
-                 else PLATFORM="darwin-x86_64"; fi
-               elif [[ "$BASE_NAME" == *.msi ]] || [[ "$BASE_NAME" == *.exe ]]; then
-                 PLATFORM="windows-x86_64";
-               elif [[ "$BASE_NAME" == *.deb ]] || [[ "$BASE_NAME" == *.AppImage ]]; then
-                 PLATFORM="linux-x86_64";
-               fi
-               
-               if [ -n "$PLATFORM" ]; then
-                 # Find the corresponding binary URL
-                 BINARY_URL=$(echo "$ASSETS" | jq -r "select(.name == \"$BASE_NAME\") | .url")
-                 
-                 # Update the JSON
-                 UPDATER_JSON=$(echo "$UPDATER_JSON" | jq ".platforms[\"$PLATFORM\"] = {\"url\": \"$BINARY_URL\", \"signature\": \"$SIG_CONTENT\"}")
-               fi
+            # Find the asset URL
+            ASSET_URL=$(echo "$RELEASE_INFO" | jq -r ".assets[] | select(.name | test(\"$PATTERN\")) | .browser_download_url" | head -1)
+            
+            if [ -n "$ASSET_URL" ] && [ "$ASSET_URL" != "null" ]; then
+              # Download the signature
+              SIG_URL=$(echo "$RELEASE_INFO" | jq -r ".assets[] | select(.name | test(\"$SIG_PATTERN\")) | .browser_download_url" | head -1)
+              
+              if [ -n "$SIG_URL" ] && [ "$SIG_URL" != "null" ]; then
+                SIG=$(curl -sL "$SIG_URL")
+                PLATFORMS=$(echo "$PLATFORMS" | jq --arg p "$PLATFORM" --arg u "$ASSET_URL" --arg s "$SIG" '.[$p] = {"url": $u, "signature": $s}')
+                echo "Added $PLATFORM: $ASSET_URL"
+              fi
             fi
-          done
+          }
           
-          # Final update of version and date
-          UPDATER_JSON=$(echo "$UPDATER_JSON" | jq ".version = \"$VERSION\" | .pub_date = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"")
+          # Add each platform (looking for .tar.gz for macOS/Linux, .msi or NSIS for Windows)
+          add_platform "darwin-aarch64" "aarch64.*\\.app\\.tar\\.gz$" "aarch64.*\\.app\\.tar\\.gz\\.sig$"
+          add_platform "darwin-x86_64" "x86_64.*\\.app\\.tar\\.gz$" "x86_64.*\\.app\\.tar\\.gz\\.sig$"
+          add_platform "linux-x86_64" "\\.AppImage$" "\\.AppImage\\.sig$"
+          add_platform "windows-x86_64" "_x64-setup\\.exe$" "_x64-setup\\.exe\\.sig$"
           
-          echo "$UPDATER_JSON" > update.json
+          # Build final update.json
+          PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          
+          cat > update.json << EOF
+          {
+            "version": "$VERSION",
+            "notes": "See https://github.com/${{ github.repository }}/releases/tag/$TAG for release notes.",
+            "pub_date": "$PUB_DATE",
+            "platforms": $PLATFORMS
+          }
+          EOF
+          
+          # Pretty print
+          cat update.json | jq . > update.json.tmp && mv update.json.tmp update.json
+          
+          echo "Final update.json:"
+          cat update.json
           
           # Commit and push
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add update.json
-          git commit -m "chore: update auto-update manifest to v$VERSION"
-          git push origin main
+          git diff --cached --quiet || (git commit -m "chore: update auto-update manifest to v$VERSION" && git push origin main)
