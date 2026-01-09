@@ -17,6 +17,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Arc::new(RwLock::new(S3ClientManager::new())))
         .manage(Arc::new(RwLock::new(TransferManager::new())))
         .setup(|app| {
