@@ -44,17 +44,39 @@ const baseComponents: ThemeOptions['components'] = {
       root: {
         textTransform: 'none',
         fontWeight: 500,
+        borderRadius: 8,
       },
     },
   },
   MuiCard: {
     styleOverrides: {
       root: {
-        borderRadius: 12,
+        borderRadius: 8,
       },
     },
   },
   MuiPaper: {
+    styleOverrides: {
+      root: {
+        borderRadius: 8,
+      },
+    },
+  },
+  MuiDialog: {
+    styleOverrides: {
+      paper: {
+        borderRadius: 12,
+      },
+    },
+  },
+  MuiChip: {
+    styleOverrides: {
+      root: {
+        borderRadius: 6,
+      },
+    },
+  },
+  MuiAlert: {
     styleOverrides: {
       root: {
         borderRadius: 8,
@@ -72,10 +94,11 @@ export const lightTheme = createTheme({
       paper: '#FFFFFF',
     },
     text: {
-      primary: '#1A1A1A',
-      secondary: '#666666',
+      primary: '#111111',
+      secondary: '#444444',
+      disabled: '#777777',
     },
-    divider: '#E0E0E0',
+    divider: '#D0D0D0',
   },
   typography: {
     fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',

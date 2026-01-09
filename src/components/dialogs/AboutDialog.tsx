@@ -33,7 +33,7 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
       maxWidth="xs" 
       fullWidth
       PaperProps={{
-        sx: { borderRadius: 3, overflow: 'hidden' }
+        sx: { borderRadius: 2, overflow: 'hidden' }
       }}
     >
       <IconButton
