@@ -115,6 +115,9 @@ export default function PathBar() {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
+      // Only handle Enter if no option is highlighted in the dropdown
+      // This prevents double-trigger when selecting from autocomplete
+      e.preventDefault();
       handleNavigate(inputValue);
     }
   };
@@ -128,8 +131,11 @@ export default function PathBar() {
       inputValue={inputValue}
       onInputChange={(_, newVal) => setInputValue(newVal)}
       options={recentPaths}
-      onChange={(_, value) => {
-        if (value) handleNavigate(value);
+      onChange={(_, value, reason) => {
+        // Only navigate when clicking on an option, not on Enter key (handled separately)
+        if (value && reason === 'selectOption') {
+          handleNavigate(value);
+        }
       }}
       renderOption={(props, option) => {
         const { key, ...otherProps } = props;
