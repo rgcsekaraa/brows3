@@ -652,7 +652,14 @@ function BucketContent() {
   }
 
   // Show error state if bucket failed to load
+  // Show error state if bucket failed to load
   if (initialError && !isLoading) {
+    // Check if this might be a prefix-restricted access issue
+    const isAccessDenied = initialError.toLowerCase().includes('access') || 
+                           initialError.toLowerCase().includes('denied') ||
+                           initialError.toLowerCase().includes('forbidden') ||
+                           initialError.toLowerCase().includes('permission');
+    
     return (
       <Box sx={{ 
         p: 6, 
@@ -661,20 +668,44 @@ function BucketContent() {
         flexDirection: 'column', 
         alignItems: 'center',
         gap: 2,
-        maxWidth: 600,
+        maxWidth: 700,
         mx: 'auto',
         mt: 8
       }}>
         <StorageIcon sx={{ fontSize: 80, color: 'text.disabled' }} />
         <Typography variant="h5" fontWeight={600} gutterBottom>
-          Bucket Not Found
+          {isAccessDenied ? 'Access Restricted' : 'Bucket Not Found'}
         </Typography>
-        <Typography color="text.secondary" variant="body1">
+        <Typography color="text.secondary" variant="body1" sx={{ fontFamily: 'monospace', bgcolor: 'action.hover', p: 1, borderRadius: 1, maxWidth: '100%', overflow: 'auto' }}>
           {initialError}
         </Typography>
-        <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
-          This bucket may not exist, or you might not have permission to access it.
-        </Typography>
+        
+        {isAccessDenied ? (
+          <>
+            <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
+              Your AWS credentials may have limited access to this bucket.
+            </Typography>
+            <Alert severity="info" sx={{ mt: 2, textAlign: 'left', maxWidth: 600 }}>
+              <Typography variant="body2" gutterBottom>
+                <strong>If you have access to a specific folder/prefix:</strong>
+              </Typography>
+              <Typography variant="body2" component="div">
+                Use the <strong>Path Bar</strong> in the top navbar to navigate directly to your accessible path:
+              </Typography>
+              <Typography variant="body2" component="div" sx={{ mt: 1, fontFamily: 'monospace', bgcolor: 'background.paper', p: 1, borderRadius: 1 }}>
+                s3://{bucketName}/your-prefix/
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Example: s3://my-bucket/team-data/reports/
+              </Typography>
+            </Alert>
+          </>
+        ) : (
+          <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
+            This bucket may not exist, or you might not have permission to access it.
+          </Typography>
+        )}
+        
         <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
           <Button 
             variant="contained" 

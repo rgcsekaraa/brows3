@@ -74,7 +74,21 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
       } else if (typeof err === 'string') {
         msg = err;
       } else if (typeof err === 'object' && err !== null) {
-        msg = err.message || err.error || 'Bucket access failed';
+        //Try multiple properties
+        if (err.message) {
+          msg = err.message;
+        } else if (err.error) {
+          msg = typeof err.error === 'string' ? err.error : JSON.stringify(err.error);
+        } else if (err.toString && err.toString() !== '[object Object]') {
+          msg = err.toString();
+        } else {
+          try {
+            const jsonStr = JSON.stringify(err);
+            msg = jsonStr !== '{}' ? jsonStr : 'Access denied or bucket not found';
+          } catch {
+            msg = 'Access denied or bucket not found';
+          }
+        }
       }
       setError(msg);
       return null;
