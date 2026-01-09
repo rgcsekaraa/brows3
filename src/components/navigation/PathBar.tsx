@@ -45,34 +45,61 @@ export default function PathBar() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const validateAndParsePath = (path: string) => {
-    // 1. Remove optional s3:// prefix
-    let cleanPath = path.replace(/^s3:\/\//, '');
+  const validateAndParsePath = (path: string): { bucket: string; prefix: string } | null => {
+    const trimmedPath = path.trim();
     
-    // 2. Remove trailing slash
-    if (cleanPath.endsWith('/')) {
-      cleanPath = cleanPath.slice(0, -1);
+    // Check if it's an S3 URI format
+    const s3UriMatch = trimmedPath.match(/^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(\/.*)?$/i);
+    
+    if (s3UriMatch) {
+      const bucket = s3UriMatch[1];
+      let prefix = s3UriMatch[2] || '';
+      // Remove leading slash and trailing slash from prefix
+      prefix = prefix.replace(/^\//, '').replace(/\/$/, '');
+      return { bucket, prefix };
     }
     
-    if (!cleanPath) return null;
+    // Check if it's just a bucket name (3-63 chars, lowercase letters, numbers, hyphens, dots)
+    const bucketOnlyMatch = trimmedPath.match(/^([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])$/i);
     
-    // 3. Split bucket and prefix
-    const parts = cleanPath.split('/');
-    const bucket = parts[0];
-    const prefix = parts.slice(1).join('/');
+    if (bucketOnlyMatch) {
+      return { bucket: bucketOnlyMatch[1], prefix: '' };
+    }
     
-    // Bucket name validation (basic)
-    if (!bucket || bucket.length < 3) return null;
+    // Check if it's bucket/prefix format (without s3://)
+    const bucketPrefixMatch = trimmedPath.match(/^([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(\/.*)?$/i);
     
-    return { bucket, prefix };
+    if (bucketPrefixMatch) {
+      const bucket = bucketPrefixMatch[1];
+      let prefix = bucketPrefixMatch[2] || '';
+      prefix = prefix.replace(/^\//, '').replace(/\/$/, '');
+      return { bucket, prefix };
+    }
+    
+    // Invalid format
+    return null;
   };
 
   const handleNavigate = (path: string) => {
-    const parsed = validateAndParsePath(path);
+    const trimmedPath = path.trim();
+    
+    if (!trimmedPath) {
+      toast.error('Enter S3 Path', 'Please enter a bucket name or S3 URI.\n\nExamples:\n• s3://my-bucket\n• s3://my-bucket/folder/\n• my-bucket');
+      return;
+    }
+    
+    const parsed = validateAndParsePath(trimmedPath);
     
     if (!parsed) {
-      toast.error('Invalid S3 Path', 'Please enter a valid bucket name (e.g. "my-bucket" or "s3://my-bucket/folder")');
-      return; // Exit early - don't navigate anywhere
+      toast.error('Invalid S3 URI Format', 
+        'Please enter a valid S3 path.\n\n' +
+        'Valid formats:\n' +
+        '• s3://bucket-name\n' +
+        '• s3://bucket-name/prefix/\n' +
+        '• bucket-name\n\n' +
+        'Bucket names must be 3-63 characters, lowercase letters, numbers, hyphens, or dots.'
+      );
+      return;
     }
 
     const { bucket, prefix } = parsed;
