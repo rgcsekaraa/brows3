@@ -163,7 +163,8 @@ export default function PathBar() {
           {recentPaths.length > 0 && (
             <Typography
               variant="caption"
-              onClick={(e) => {
+              onMouseDown={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 clearHistory();
                 setIsOpen(false);
