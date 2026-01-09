@@ -20,10 +20,62 @@ pub fn run() {
         .manage(Arc::new(RwLock::new(S3ClientManager::new())))
         .manage(Arc::new(RwLock::new(TransferManager::new())))
         .setup(|app| {
-            // Add default menu on macOS to enable Copy/Paste/Cut/SelectAll
+            // Add native menu on macOS to enable Copy/Paste/Cut/SelectAll/Undo/Redo shortcuts
             #[cfg(target_os = "macos")]
-            if let Err(e) = app.set_menu(tauri::menu::Menu::default(app.handle())?) {
-                log::error!("Error setting menu: {}", e);
+            {
+                use tauri::menu::{Menu, Submenu, PredefinedMenuItem};
+                
+                let handle = app.handle();
+                
+                // Create Edit menu with all standard edit operations
+                let edit_menu = Submenu::with_items(
+                    handle,
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(handle, None)?,
+                        &PredefinedMenuItem::redo(handle, None)?,
+                        &PredefinedMenuItem::separator(handle)?,
+                        &PredefinedMenuItem::cut(handle, None)?,
+                        &PredefinedMenuItem::copy(handle, None)?,
+                        &PredefinedMenuItem::paste(handle, None)?,
+                        &PredefinedMenuItem::select_all(handle, None)?,
+                    ],
+                )?;
+                
+                // Create App menu (required on macOS)
+                let app_menu = Submenu::with_items(
+                    handle,
+                    "Brows3",
+                    true,
+                    &[
+                        &PredefinedMenuItem::about(handle, None, None)?,
+                        &PredefinedMenuItem::separator(handle)?,
+                        &PredefinedMenuItem::services(handle, None)?,
+                        &PredefinedMenuItem::separator(handle)?,
+                        &PredefinedMenuItem::hide(handle, None)?,
+                        &PredefinedMenuItem::hide_others(handle, None)?,
+                        &PredefinedMenuItem::show_all(handle, None)?,
+                        &PredefinedMenuItem::separator(handle)?,
+                        &PredefinedMenuItem::quit(handle, None)?,
+                    ],
+                )?;
+                
+                // Create Window menu
+                let window_menu = Submenu::with_items(
+                    handle,
+                    "Window",
+                    true,
+                    &[
+                        &PredefinedMenuItem::minimize(handle, None)?,
+                        &PredefinedMenuItem::maximize(handle, None)?,
+                        &PredefinedMenuItem::separator(handle)?,
+                        &PredefinedMenuItem::close_window(handle, None)?,
+                    ],
+                )?;
+                
+                let menu = Menu::with_items(handle, &[&app_menu, &edit_menu, &window_menu])?;
+                app.set_menu(menu)?;
             }
             
             // Initialize logging for both debug and release builds
