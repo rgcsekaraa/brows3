@@ -121,7 +121,7 @@ export default function Footer() {
 
       {/* Production Version */}
       <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1, fontSize: '0.65rem' }}>
-        Brows3 v0.2.4
+        Brows3 v0.2.5
       </Typography>
     </Box>
   );
