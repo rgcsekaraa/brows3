@@ -49,30 +49,20 @@ export default function PathBar() {
   const validateAndParsePath = (path: string): { bucket: string; prefix: string } | null => {
     const trimmedPath = path.trim();
     
-    // Check if it's an S3 URI format
+    // MUST start with s3:// - no exceptions
+    if (!trimmedPath.startsWith('s3://')) {
+      return null;
+    }
+    
+    // Check if it's a valid S3 URI format: s3://bucket-name or s3://bucket-name/prefix/
+    // Bucket names: 3-63 chars, lowercase letters, numbers, hyphens, dots
+    // Must start and end with letter or number
     const s3UriMatch = trimmedPath.match(/^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(\/.*)?$/i);
     
     if (s3UriMatch) {
       const bucket = s3UriMatch[1];
       let prefix = s3UriMatch[2] || '';
       // Remove leading slash and trailing slash from prefix
-      prefix = prefix.replace(/^\//, '').replace(/\/$/, '');
-      return { bucket, prefix };
-    }
-    
-    // Check if it's just a bucket name (3-63 chars, lowercase letters, numbers, hyphens, dots)
-    const bucketOnlyMatch = trimmedPath.match(/^([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])$/i);
-    
-    if (bucketOnlyMatch) {
-      return { bucket: bucketOnlyMatch[1], prefix: '' };
-    }
-    
-    // Check if it's bucket/prefix format (without s3://)
-    const bucketPrefixMatch = trimmedPath.match(/^([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(\/.*)?$/i);
-    
-    if (bucketPrefixMatch) {
-      const bucket = bucketPrefixMatch[1];
-      let prefix = bucketPrefixMatch[2] || '';
       prefix = prefix.replace(/^\//, '').replace(/\/$/, '');
       return { bucket, prefix };
     }
@@ -85,20 +75,18 @@ export default function PathBar() {
     const trimmedPath = path.trim();
     
     if (!trimmedPath) {
-      toast.error('Enter S3 Path', 'Please enter a bucket name or S3 URI.\n\nExamples:\n• s3://my-bucket\n• s3://my-bucket/folder/\n• my-bucket');
+      toast.error('Enter S3 URI', 'Please enter a valid S3 URI.\n\nFormat: s3://bucket-name/path/');
       return;
     }
     
     const parsed = validateAndParsePath(trimmedPath);
     
     if (!parsed) {
-      toast.error('Invalid S3 URI Format', 
-        'Please enter a valid S3 path.\n\n' +
-        'Valid formats:\n' +
-        '• s3://bucket-name\n' +
-        '• s3://bucket-name/prefix/\n' +
-        '• bucket-name\n\n' +
-        'Bucket names must be 3-63 characters, lowercase letters, numbers, hyphens, or dots.'
+      toast.error('Invalid S3 URI', 
+        'Path must start with s3://\n\n' +
+        'Examples:\n' +
+        '• s3://my-bucket\n' +
+        '• s3://my-bucket/folder/'
       );
       return;
     }
