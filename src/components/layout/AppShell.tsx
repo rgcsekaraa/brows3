@@ -33,6 +33,7 @@ import ToastContainer from '@/components/common/ToastContainer';
 import { check } from '@tauri-apps/plugin-updater';
 import { toast } from '@/store/toastStore';
 import { profileApi } from '@/lib/tauri';
+import { useClipboardShortcuts } from '@/hooks/useClipboardShortcuts';
 
 const drawerWidth = 260; 
 
@@ -46,6 +47,9 @@ export default function AppShell({ children }: AppShellProps) {
   const [mounted, setMounted] = useState(false);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [isUpdateavailable, setIsUpdateAvailable] = useState(false);
+  
+  // Enable clipboard shortcuts globally
+  useClipboardShortcuts();
   
   // Determine if we should use dark mode
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');

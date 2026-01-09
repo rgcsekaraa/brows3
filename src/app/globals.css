@@ -10,6 +10,18 @@ body {
   overflow-x: hidden;
 }
 
+/* Allow text selection for copy/paste */
+* {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* But disable selection on buttons and interactive elements */
+button, [role="button"], input, textarea, select {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
 a {
   color: inherit;
   text-decoration: none;
