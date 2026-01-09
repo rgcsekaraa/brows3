@@ -16,6 +16,7 @@ import {
   DataObject as ObjectIcon,
   Storage as BucketIcon,
   History as HistoryIcon,
+  Clear as ClearIcon,
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/store/appStore';
@@ -25,7 +26,7 @@ import { toast } from '@/store/toastStore';
 export default function PathBar() {
   const router = useRouter();
   const { addTab, setActiveTab, tabs } = useAppStore();
-  const { recentPaths, addPath } = useHistoryStore();
+  const { recentPaths, addPath, clearHistory } = useHistoryStore();
   
   const [inputValue, setInputValue] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -147,12 +148,50 @@ export default function PathBar() {
         return (
           <Box component="li" key={key} {...otherProps}>
             <HistoryIcon sx={{ mr: 1.5, color: 'text.secondary', fontSize: 20 }} />
-            <Box>
+            <Box sx={{ flex: 1 }}>
               <Typography variant="body2">{option}</Typography>
             </Box>
           </Box>
         );
       }}
+      ListboxProps={{
+        sx: { maxHeight: 300 },
+      }}
+      PaperComponent={({ children, ...paperProps }) => (
+        <Paper {...paperProps} elevation={8}>
+          {children}
+          {recentPaths.length > 0 && (
+            <Box
+              sx={{
+                borderTop: '1px solid',
+                borderColor: 'divider',
+                p: 1,
+                display: 'flex',
+                justifyContent: 'center',
+              }}
+            >
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearHistory();
+                  setIsOpen(false);
+                  toast.success('History cleared');
+                }}
+                sx={{ 
+                  fontSize: '0.75rem', 
+                  color: 'text.secondary',
+                  gap: 0.5,
+                  '&:hover': { color: 'error.main' },
+                }}
+              >
+                <ClearIcon sx={{ fontSize: 16 }} />
+                <Typography variant="caption">Clear History</Typography>
+              </IconButton>
+            </Box>
+          )}
+        </Paper>
+      )}
       renderInput={(params) => (
         <TextField
           {...params}
