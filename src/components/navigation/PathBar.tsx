@@ -154,64 +154,28 @@ export default function PathBar() {
       PaperComponent={({ children, ...paperProps }) => (
         // Only render if we have history
         recentPaths.length > 0 ? (
-          <Paper 
-            {...paperProps} 
-            elevation={8} 
-            sx={{ 
-              mt: 1, 
-              borderRadius: 4, 
-              boxShadow: '0 24px 80px rgba(0,0,0,0.25)', 
-              p: 1, 
-              '& .MuiAutocomplete-listbox': {
-                  p: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 0.5
-              },
-              '& .MuiAutocomplete-option': {
-                mx: 0,
-                my: 0,
-                p: '10px 16px !important', 
-                borderRadius: 2.5, 
-                border: '1px solid transparent',
-                transition: 'all 0.2s ease',
-                fontWeight: 500,
-                '&:hover': {
-                   bgcolor: 'action.hover',
-                   borderColor: 'divider',
-                   transform: 'translateY(-1px)',
-                   boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                },
-                '&[aria-selected="true"]': {
-                   bgcolor: 'action.selected',
-                   borderColor: 'primary.main',
-                }
-              }
-            }}
-          >
+          <Paper {...paperProps} elevation={4} sx={{ mt: 0.5 }}>
             {children}
             <Typography
-                  variant="caption"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    clearHistory();
-                    setIsOpen(false);
-                  }}
-                  sx={{
-                    display: 'block',
-                    textAlign: 'center',
-                    py: 1,
-                    mt: 0.5,
-                    color: 'text.secondary',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    borderTop: '1px solid',
-                    borderColor: 'divider',
-                    '&:hover': { color: 'text.primary', bgcolor: 'action.hover', borderRadius: 1 },
-                  }}
-                >
-                  Clear history
+              variant="caption"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                clearHistory();
+                setIsOpen(false);
+              }}
+              sx={{
+                display: 'block',
+                textAlign: 'center',
+                py: 0.75,
+                color: 'text.secondary',
+                cursor: 'pointer',
+                borderTop: '1px solid',
+                borderColor: 'divider',
+                '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
+              }}
+            >
+              Clear history
             </Typography>
           </Paper>
         ) : null

@@ -43,126 +43,12 @@ const baseComponents: ThemeOptions['components'] = {
     styleOverrides: {
       root: {
         textTransform: 'none',
-        fontWeight: 600,
-        borderRadius: 6,
-        padding: '5px 12px',
-        boxShadow: 'none',
-        fontSize: '0.8125rem',
-        '&:hover': {
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-        }
-      },
-      contained: {
-        boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-        '&:hover': {
-           boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-        }
-      },
-      outlined: {
-        borderWidth: '1px',
-        '&:hover': { borderWidth: '1px' }
-      }
-    },
-  },
-  MuiMenu: {
-    styleOverrides: {
-      paper: {
-        borderRadius: 8,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        marginTop: 4,
-        minWidth: 140,
-      },
-      list: {
-        padding: 4,
-      }
-    }
-  },
-  MuiMenuItem: {
-    styleOverrides: {
-      root: {
-        padding: '8px 12px',
-        fontSize: '0.8125rem',
-        fontWeight: 500,
-        borderRadius: 6,
-        minHeight: 'auto',
-        '&:hover': {
-            backgroundColor: 'rgba(255,255,255,0.06)',
-        },
-        '&.Mui-selected': {
-            backgroundColor: 'rgba(255,255,255,0.1)',
-            '&:hover': {
-                 backgroundColor: 'rgba(255,255,255,0.12)',
-            }
-        }
-      }
-    }
-  },
-  MuiCard: {
-    styleOverrides: {
-      root: {
-        borderRadius: 12, // Match softer look (3)
-        boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
       },
     },
   },
-  MuiPaper: {
-    styleOverrides: {
-      root: {
-        borderRadius: 12, // Match softer look
-        backgroundImage: 'none',
-      },
-    },
-  },
-  MuiDialog: {
-    styleOverrides: {
-      paper: {
-        borderRadius: 16, // Even rounder for dialogs
-        boxShadow: '0 24px 80px rgba(0,0,0,0.2)',
-      },
-    },
-  },
-  MuiChip: {
-    styleOverrides: {
-      root: {
-        fontWeight: 600,
-        borderRadius: 8,
-      },
-    },
-  },
-  MuiAlert: {
-    styleOverrides: {
-      root: {
-        borderRadius: 12,
-        fontWeight: 500,
-      },
-      standardSuccess: {
-        backgroundColor: '#E8F5E9',
-        color: '#1B5E20',
-      },
-      standardInfo: {
-        backgroundColor: '#E3F2FD',
-        color: '#0D47A1',
-      }
-    },
-  },
-  MuiOutlinedInput: {
-    styleOverrides: {
-      root: {
-        borderRadius: 6,
-      },
-      input: {
-        padding: '8px 12px',
-      }
-    },
-  },
-  MuiTextField: {
-    styleOverrides: {
-      root: {
-        '& .MuiOutlinedInput-root': {
-          borderRadius: 6,
-        },
-      },
+  MuiButtonBase: {
+    defaultProps: {
+      disableRipple: false,
     },
   },
 };
@@ -197,7 +83,7 @@ export const lightTheme = createTheme({
     button: { fontWeight: 700, letterSpacing: '-0.01em' },
   },
   shape: {
-    borderRadius: 8, // Global radius bump
+    borderRadius: 6,
   },
   components: {
     ...baseComponents,
@@ -251,7 +137,7 @@ export const darkTheme = createTheme({
     button: { fontWeight: 700, letterSpacing: '-0.01em' },
   },
   shape: {
-    borderRadius: 8,
+    borderRadius: 6,
   },
   components: {
     ...baseComponents,

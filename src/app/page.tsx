@@ -132,7 +132,7 @@ export default function Home() {
   }
   
   const renderBucketList = () => {
-    if (isLoading && buckets.length === 0) {
+    if (isLoading) {
       return (
         <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 1.5 }}>
           <Table>

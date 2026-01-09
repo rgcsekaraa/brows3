@@ -127,15 +127,6 @@ export default function ProfileSelector() {
           }}
           sx={{
             minWidth: 140,
-            borderRadius: 1,
-            '& .MuiSelect-select': { py: 0.75, px: 1.5, display: 'flex', alignItems: 'center' },
-            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
-            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'text.secondary' },
-          }}
-          MenuProps={{
-            PaperProps: {
-              sx: { minWidth: 180 }
-            }
           }}
         >
           {profiles.map((profile) => (

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-01-10
+
+### Fixed
+- **All Buckets Page Refresh**: Fixed loading skeleton not showing during refresh - now properly displays loading state when clicking Refresh.
+- **Bucket View Refresh**: Fixed skeleton overlay visibility issue in bucket content view.
+- **Footer Version**: Updated footer to display correct version number.
+
+### Performance
+- **Transfer Store Optimization**: Skip state updates when transfer progress hasn't changed, reducing unnecessary re-renders during heavy file transfers.
+- **Icon Caching**: Pre-populated icon map with 47 file type icons for O(1) lookup instead of creating JSX elements on every render.
+- **useBuckets**: Removed unnecessary `useMemo` wrapper from trivial cache age calculation.
+
+### Changed
+- **MUI Stock Experience**: Reverted to stock Material UI styling for menus, buttons, and inputs instead of heavy customizations for a more consistent and familiar UI.
+
 ## [0.2.3] - 2026-01-09
 
 ### Fixed

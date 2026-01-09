@@ -131,10 +131,8 @@ export function useBuckets(options: { enabled?: boolean } = { enabled: true }): 
     return cacheTimestamp !== null && !isLoading;
   }, [cacheTimestamp, isLoading]);
 
-  const cacheAge = useMemo(() => {
-    if (!cacheTimestamp) return null;
-    return Date.now() - cacheTimestamp;
-  }, [cacheTimestamp]);
+  // Compute cache age inline - trivial calculation, no need for useMemo
+  const cacheAge = cacheTimestamp ? Date.now() - cacheTimestamp : null;
 
   return { buckets, isLoading, error, refresh, fetchBuckets, isCached, cacheAge };
 }

@@ -55,44 +55,68 @@ const getExt = (name: string): string => {
   return i > 0 ? name.slice(i + 1).toLowerCase() : '';
 };
 
-// File icon lookup - static map for performance
-const ICON_MAP: Record<string, React.ReactNode> = {};
-const getIcon = (name: string, isFolder: boolean): React.ReactNode => {
-  if (isFolder) return <FolderIcon sx={{ color: '#FFB74D', fontSize: 20 }} />;
-  
-  const ext = getExt(name);
-  if (ICON_MAP[ext]) return ICON_MAP[ext];
-  
+// File icon lookup - cached for performance
+const ICON_STYLES = { fontSize: 18 };
+const ICON_MAP: Record<string, React.ReactNode> = {
   // Images
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico'].includes(ext)) {
-    return <ImageIcon sx={{ color: '#4CAF50', fontSize: 18 }} />;
-  }
+  jpg: <ImageIcon sx={{ color: '#4CAF50', ...ICON_STYLES }} />,
+  jpeg: <ImageIcon sx={{ color: '#4CAF50', ...ICON_STYLES }} />,
+  png: <ImageIcon sx={{ color: '#4CAF50', ...ICON_STYLES }} />,
+  gif: <ImageIcon sx={{ color: '#4CAF50', ...ICON_STYLES }} />,
+  webp: <ImageIcon sx={{ color: '#4CAF50', ...ICON_STYLES }} />,
+  svg: <ImageIcon sx={{ color: '#4CAF50', ...ICON_STYLES }} />,
+  ico: <ImageIcon sx={{ color: '#4CAF50', ...ICON_STYLES }} />,
   // Videos
-  if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
-    return <VideoIcon sx={{ color: '#9C27B0', fontSize: 18 }} />;
-  }
+  mp4: <VideoIcon sx={{ color: '#9C27B0', ...ICON_STYLES }} />,
+  webm: <VideoIcon sx={{ color: '#9C27B0', ...ICON_STYLES }} />,
+  mov: <VideoIcon sx={{ color: '#9C27B0', ...ICON_STYLES }} />,
+  avi: <VideoIcon sx={{ color: '#9C27B0', ...ICON_STYLES }} />,
+  mkv: <VideoIcon sx={{ color: '#9C27B0', ...ICON_STYLES }} />,
   // Audio
-  if (['mp3', 'wav', 'ogg', 'flac', 'aac'].includes(ext)) {
-    return <AudioIcon sx={{ color: '#FF5722', fontSize: 18 }} />;
-  }
-  // PDF
-  if (ext === 'pdf') return <PdfIcon sx={{ color: '#F44336', fontSize: 18 }} />;
-  // JSON
-  if (ext === 'json') return <JsonIcon sx={{ color: '#FFC107', fontSize: 18 }} />;
+  mp3: <AudioIcon sx={{ color: '#FF5722', ...ICON_STYLES }} />,
+  wav: <AudioIcon sx={{ color: '#FF5722', ...ICON_STYLES }} />,
+  ogg: <AudioIcon sx={{ color: '#FF5722', ...ICON_STYLES }} />,
+  flac: <AudioIcon sx={{ color: '#FF5722', ...ICON_STYLES }} />,
+  aac: <AudioIcon sx={{ color: '#FF5722', ...ICON_STYLES }} />,
+  // Documents
+  pdf: <PdfIcon sx={{ color: '#F44336', ...ICON_STYLES }} />,
+  json: <JsonIcon sx={{ color: '#FFC107', ...ICON_STYLES }} />,
   // Code
-  if (['js', 'ts', 'jsx', 'tsx', 'py', 'go', 'rs', 'java', 'cpp', 'c'].includes(ext)) {
-    return <CodeIcon sx={{ color: '#2196F3', fontSize: 18 }} />;
-  }
+  js: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
+  ts: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
+  jsx: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
+  tsx: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
+  py: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
+  go: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
+  rs: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
+  java: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
+  cpp: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
+  c: <CodeIcon sx={{ color: '#2196F3', ...ICON_STYLES }} />,
   // Text
-  if (['txt', 'md', 'log', 'csv', 'xml', 'html', 'css', 'yaml', 'yml'].includes(ext)) {
-    return <TextIcon sx={{ color: '#607D8B', fontSize: 18 }} />;
-  }
+  txt: <TextIcon sx={{ color: '#607D8B', ...ICON_STYLES }} />,
+  md: <TextIcon sx={{ color: '#607D8B', ...ICON_STYLES }} />,
+  log: <TextIcon sx={{ color: '#607D8B', ...ICON_STYLES }} />,
+  csv: <TextIcon sx={{ color: '#607D8B', ...ICON_STYLES }} />,
+  xml: <TextIcon sx={{ color: '#607D8B', ...ICON_STYLES }} />,
+  html: <TextIcon sx={{ color: '#607D8B', ...ICON_STYLES }} />,
+  css: <TextIcon sx={{ color: '#607D8B', ...ICON_STYLES }} />,
+  yaml: <TextIcon sx={{ color: '#607D8B', ...ICON_STYLES }} />,
+  yml: <TextIcon sx={{ color: '#607D8B', ...ICON_STYLES }} />,
   // Archive
-  if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext)) {
-    return <ArchiveIcon sx={{ color: '#795548', fontSize: 18 }} />;
-  }
-  
-  return <FileIcon sx={{ color: '#9E9E9E', fontSize: 18 }} />;
+  zip: <ArchiveIcon sx={{ color: '#795548', ...ICON_STYLES }} />,
+  tar: <ArchiveIcon sx={{ color: '#795548', ...ICON_STYLES }} />,
+  gz: <ArchiveIcon sx={{ color: '#795548', ...ICON_STYLES }} />,
+  rar: <ArchiveIcon sx={{ color: '#795548', ...ICON_STYLES }} />,
+  '7z': <ArchiveIcon sx={{ color: '#795548', ...ICON_STYLES }} />,
+};
+
+const FOLDER_ICON = <FolderIcon sx={{ color: '#FFB74D', fontSize: 20 }} />;
+const DEFAULT_FILE_ICON = <FileIcon sx={{ color: '#9E9E9E', ...ICON_STYLES }} />;
+
+const getIcon = (name: string, isFolder: boolean): React.ReactNode => {
+  if (isFolder) return FOLDER_ICON;
+  const ext = getExt(name);
+  return ICON_MAP[ext] || DEFAULT_FILE_ICON;
 };
 
 // Previewable extensions
@@ -374,40 +398,34 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
       {/* Table Body Area */}
-      <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        {isLoading && (
-          <Box sx={{ p: 0, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2, bgcolor: 'background.default' }}>
-            <Table size="small">
-              <TableHead>{headerContent()}</TableHead>
-              <TableBody>
-                {Array.from({ length: 15 }, (_, i) => (
-                  <TableRow key={i}>
-                    <TableCell padding="checkbox"><Skeleton width={18} height={18} /></TableCell>
-                    <TableCell><Skeleton variant="circular" width={18} height={18} /></TableCell>
-                    <TableCell><Skeleton width="60%" /></TableCell>
-                    <TableCell><Skeleton width={40} /></TableCell>
-                    <TableCell><Skeleton width={60} /></TableCell>
-                    <TableCell><Skeleton width={80} /></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Box>
-        )}
-
-        {!isLoading && rows.length === 0 ? (
-          <Box sx={{ flex: 1 }}>
-            <Table size="small">
-              <TableHead>{headerContent()}</TableHead>
-              <TableBody>
-                <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
-                    <Typography color="text.secondary">Empty folder</Typography>
-                  </TableCell>
+      <Box sx={{ flex: 1, overflow: 'hidden' }}>
+        {isLoading ? (
+          <Table size="small">
+            <TableHead>{headerContent()}</TableHead>
+            <TableBody>
+              {Array.from({ length: 15 }, (_, i) => (
+                <TableRow key={i}>
+                  <TableCell padding="checkbox"><Skeleton width={18} height={18} /></TableCell>
+                  <TableCell><Skeleton variant="circular" width={18} height={18} /></TableCell>
+                  <TableCell><Skeleton width="60%" /></TableCell>
+                  <TableCell><Skeleton width={40} /></TableCell>
+                  <TableCell><Skeleton width={60} /></TableCell>
+                  <TableCell><Skeleton width={80} /></TableCell>
                 </TableRow>
-              </TableBody>
-            </Table>
-          </Box>
+              ))}
+            </TableBody>
+          </Table>
+        ) : rows.length === 0 ? (
+          <Table size="small">
+            <TableHead>{headerContent()}</TableHead>
+            <TableBody>
+              <TableRow>
+                <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                  <Typography color="text.secondary">Empty folder</Typography>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         ) : (
           <TableVirtuoso
             data={rows}

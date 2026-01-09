@@ -34,21 +34,23 @@ export const useTransferStore = create<TransferState>((set, get) => ({
   }),
   
   updateJob: (event) => set((state) => {
-    // Check if job exists
-    const exists = state.jobs.some(j => j.id === event.job_id);
-    if (!exists) {
-        // If not found, we should probably trigger a refresh, but we can't do it async in reducer easily
-        // For now, we rely on manual refresh/add
-        return state;
+    const jobIndex = state.jobs.findIndex(j => j.id === event.job_id);
+    if (jobIndex === -1) return state; // Job not found
+    
+    const job = state.jobs[jobIndex];
+    // Skip update if nothing changed (prevents unnecessary re-renders)
+    if (job.processed_bytes === event.processed_bytes && job.status === event.status) {
+      return state;
     }
     
-    return {
-      jobs: state.jobs.map((job) => 
-        job.id === event.job_id 
-          ? { ...job, processed_bytes: event.processed_bytes, status: event.status }
-          : job
-      ),
+    // Create new array only if there's an actual change
+    const newJobs = [...state.jobs];
+    newJobs[jobIndex] = { 
+      ...job, 
+      processed_bytes: event.processed_bytes, 
+      status: event.status 
     };
+    return { jobs: newJobs };
   }),
   
   setJobs: (jobs) => set({ jobs }),
