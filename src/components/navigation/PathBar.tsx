@@ -191,7 +191,7 @@ export default function PathBar() {
           sx={{
             '& .MuiOutlinedInput-root': {
               bgcolor: 'background.paper',
-              borderRadius: 1.5,
+              borderRadius: 1,
               pr: 0.5,
               '& fieldset': { borderColor: 'divider' },
               '&:hover fieldset': { borderColor: 'text.secondary' },

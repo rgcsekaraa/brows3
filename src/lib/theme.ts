@@ -86,7 +86,7 @@ const baseComponents: ThemeOptions['components'] = {
   MuiOutlinedInput: {
     styleOverrides: {
       root: {
-        borderRadius: 12,
+        borderRadius: 8,
       },
     },
   },
@@ -94,7 +94,7 @@ const baseComponents: ThemeOptions['components'] = {
     styleOverrides: {
       root: {
         '& .MuiOutlinedInput-root': {
-          borderRadius: 12,
+          borderRadius: 8,
         },
       },
     },
