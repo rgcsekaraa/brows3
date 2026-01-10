@@ -1,18 +1,27 @@
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { useMonitorStore } from '@/store/monitorStore';
+
+// Check if running in Tauri environment
+export const isTauri = (): boolean => {
+  return typeof window !== 'undefined' && '__TAURI__' in window;
+};
+
+// Dynamically get Tauri invoke - only import when actually in Tauri context
+const getTauriInvoke = async () => {
+  if (!isTauri()) {
+    throw new Error('Not running in Tauri environment. This feature requires the desktop application.');
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke;
+};
 
 // Monitored invoke wrapper
 const invoke = async <T>(cmd: string, args?: any): Promise<T> => {
   const store = useMonitorStore.getState();
   store.incrementRequests();
   
-  // Optional: Log start? (might be too noisy)
-  
   try {
+    const tauriInvoke = await getTauriInvoke();
     const result = await tauriInvoke<T>(cmd, args);
-    // Log success (maybe only for mutations or keep it simple headers?)
-    // data-heavy calls might spam logs. Let's just log key commands or all for now.
-    // User requested "request sent overall".
     store.addLog('success', cmd);
     return result;
   } catch (err) {
@@ -94,10 +103,7 @@ export const profileApi = {
   },
 };
 
-// Check if running in Tauri environment
-export const isTauri = (): boolean => {
-  return typeof window !== 'undefined' && '__TAURI__' in window;
-};
+
 
 // Bucket types matching Rust backend
 export interface BucketInfo {
