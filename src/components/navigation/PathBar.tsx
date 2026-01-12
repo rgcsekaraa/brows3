@@ -21,6 +21,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/store/appStore';
 import { useHistoryStore } from '@/store/historyStore';
+import { useProfileStore } from '@/store/profileStore';
 import { toast } from '@/store/toastStore';
 
 export default function PathBar() {
@@ -93,8 +94,11 @@ export default function PathBar() {
 
     const { bucket, prefix } = parsed;
     
+    const activeProfile = useProfileStore.getState().profiles.find(p => p.id === useProfileStore.getState().activeProfileId);
+    const region = activeProfile?.region || 'us-east-1';
+    
     // Build the correct URL path
-    const urlPath = `/bucket?name=${bucket}&region=us-east-1${prefix ? `&prefix=${encodeURIComponent(prefix + '/')}` : ''}`;
+    const urlPath = `/bucket?name=${bucket}&region=${region}${prefix ? `&prefix=${encodeURIComponent(prefix + '/')}` : ''}`;
     
     // Save to history
     addPath(`s3://${bucket}/${prefix ? prefix + '/' : ''}`);

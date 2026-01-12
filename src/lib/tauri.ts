@@ -26,7 +26,21 @@ const invoke = async <T>(cmd: string, args?: any): Promise<T> => {
     return result;
   } catch (err) {
     store.incrementFailures();
-    store.addLog('error', cmd, err instanceof Error ? err.message : String(err));
+    
+    let errorMessage = String(err);
+    if (err && typeof err === 'object') {
+      // Handle serialization of backend errors
+      try {
+        errorMessage = JSON.stringify(err);
+      } catch {
+        // Fallback if circular or not serializable
+        errorMessage = String(err);
+      }
+    } else if (err instanceof Error) {
+      errorMessage = err.message;
+    }
+
+    store.addLog('error', cmd, errorMessage);
     throw err;
   }
 };

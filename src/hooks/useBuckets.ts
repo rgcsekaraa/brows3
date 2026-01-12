@@ -93,7 +93,19 @@ export function useBuckets(options: { enabled?: boolean } = { enabled: true }): 
       }
     } catch (err) {
       if (mountedRef.current) {
-        const message = err instanceof Error ? err.message : 'Failed to load buckets';
+        let message = 'Failed to load buckets';
+        if (err instanceof Error) {
+          message = err.message;
+        } else if (typeof err === 'string') {
+          message = err;
+        } else if (err && typeof err === 'object') {
+          try {
+            message = JSON.stringify(err);
+          } catch {
+            message = String(err);
+          }
+        }
+        
         setError(message);
         setBuckets([]);
         setCacheTimestamp(null);
