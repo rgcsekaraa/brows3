@@ -56,6 +56,16 @@ jobs:
       - name: install frontend dependencies
         run: pnpm install
 
+      - name: Extract Release Notes
+        id: extract_notes
+        run: |
+          NOTES=$(node .github/scripts/extract-release-notes.js)
+          # Escape newlines for GitHub Actions output
+          NOTES="${NOTES//'%'/'%25'}"
+          NOTES="${NOTES//$'\n'/'%0A'}"
+          NOTES="${NOTES//$'\r'/'%0D'}"
+          echo "notes=$NOTES" >> $GITHUB_OUTPUT
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -65,7 +75,7 @@ jobs:
           includeUpdaterJson: false
           tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
           releaseName: "Brows3 v__VERSION__"
-          releaseBody: "See the assets to download this version and install."
+          releaseBody: ${{ steps.extract_notes.outputs.notes }}
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

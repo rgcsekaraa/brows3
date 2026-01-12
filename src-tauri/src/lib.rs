@@ -22,29 +22,14 @@ pub fn run() {
         .manage(Arc::new(RwLock::new(TransferManager::new())))
         .setup(|app| {
             // Add native menu on macOS to enable Copy/Paste/Cut/SelectAll/Undo/Redo shortcuts
-            #[cfg(target_os = "macos")]
+            // Add native menu to enable standard shortcuts and window controls
             {
                 use tauri::menu::{Menu, Submenu, PredefinedMenuItem};
                 
                 let handle = app.handle();
                 
-                // Create Edit menu with all standard edit operations
-                let edit_menu = Submenu::with_items(
-                    handle,
-                    "Edit",
-                    true,
-                    &[
-                        &PredefinedMenuItem::undo(handle, None)?,
-                        &PredefinedMenuItem::redo(handle, None)?,
-                        &PredefinedMenuItem::separator(handle)?,
-                        &PredefinedMenuItem::cut(handle, None)?,
-                        &PredefinedMenuItem::copy(handle, None)?,
-                        &PredefinedMenuItem::paste(handle, None)?,
-                        &PredefinedMenuItem::select_all(handle, None)?,
-                    ],
-                )?;
-                
-                // Create App menu (required on macOS)
+                // File Menu (Windows/Linux) or App Menu (macOS)
+                #[cfg(target_os = "macos")]
                 let app_menu = Submenu::with_items(
                     handle,
                     "Brows3",
@@ -61,8 +46,34 @@ pub fn run() {
                         &PredefinedMenuItem::quit(handle, None)?,
                     ],
                 )?;
+
+                #[cfg(not(target_os = "macos"))]
+                let file_menu = Submenu::with_items(
+                    handle,
+                    "File",
+                    true,
+                    &[
+                        &PredefinedMenuItem::quit(handle, None)?,
+                    ],
+                )?;
                 
-                // Create Window menu
+                // Edit Menu (Common)
+                let edit_menu = Submenu::with_items(
+                    handle,
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(handle, None)?,
+                        &PredefinedMenuItem::redo(handle, None)?,
+                        &PredefinedMenuItem::separator(handle)?,
+                        &PredefinedMenuItem::cut(handle, None)?,
+                        &PredefinedMenuItem::copy(handle, None)?,
+                        &PredefinedMenuItem::paste(handle, None)?,
+                        &PredefinedMenuItem::select_all(handle, None)?,
+                    ],
+                )?;
+
+                // Window Menu (Common)
                 let window_menu = Submenu::with_items(
                     handle,
                     "Window",
@@ -75,7 +86,12 @@ pub fn run() {
                     ],
                 )?;
                 
+                #[cfg(target_os = "macos")]
                 let menu = Menu::with_items(handle, &[&app_menu, &edit_menu, &window_menu])?;
+                
+                #[cfg(not(target_os = "macos"))]
+                let menu = Menu::with_items(handle, &[&file_menu, &edit_menu, &window_menu])?;
+
                 app.set_menu(menu)?;
             }
             
