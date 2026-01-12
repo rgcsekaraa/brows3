@@ -28,6 +28,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 
 ### 📄 Rich Previews & Editing
 - **Built-in Editor**: Powered by **Monaco (VS Code's Engine)**. Edit text, JSON, and code files directly in S3.
+- **Direct Edit Action**: Quick "Edit" button in the file list and context menu for instant code/text modifications.
 - **Media Previews**: Native support for **high-resolution images**, **videos**, and **PDFs**.
 - **Rendering Indicators**: Clear visual feedback for large image rendering states.
 

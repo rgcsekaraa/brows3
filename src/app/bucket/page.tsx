@@ -64,6 +64,7 @@ import {
   StarBorder as StarBorderIcon,
   FolderZip as FolderZipIcon,
   ArrowDropDown as ArrowDropDownIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import { useObjects } from '@/hooks/useObjects';
 import { operationsApi, transferApi, objectApi, S3Object } from '@/lib/tauri';
@@ -946,6 +947,18 @@ function BucketContent() {
           <MenuItem onClick={handleDownload}>
             <ListItemIcon><DownloadIcon fontSize="small" /></ListItemIcon>
             Download
+          </MenuItem>
+        )}
+        {!selectedObject?.isFolder && selectedObject && (selectedObject.key.split('.').pop() || '').match(/^(txt|md|json|xml|html|css|js|ts|py|yaml|yml|log|csv)$/) && (
+          <MenuItem onClick={() => {
+            if (selectedObject) {
+              setPreviewKey(selectedObject.key);
+              setPreviewOpen(true);
+            }
+            handleMenuClose();
+          }}>
+            <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+            Edit
           </MenuItem>
         )}
         {selectedObject?.isFolder && (

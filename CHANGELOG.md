@@ -4,7 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
+ 
+## [0.2.12] - 2026-01-12
+ 
+### Added
+- **Direct Edit Action**: Added "Edit" icon to the file list and dedicated "Edit" option in context menu for text-based files.
+- **Developer Information**: Added developer details and quick-start instructions to the "About" dialog.
+ 
+### Fixed
+- **Window Management**: Application now launches in a maximized state by default for immediate full-screen productivity.
+- **Connection Test Reliability**: Fixed a bug where connection tests would continue running even after changing form values. Tests now automatically reset on any input change.
+- **Modal Scrollability**: Fixed layout issue where the "Create Profile" modal was not scrollable on smaller screens or minimized windows.
+- **File Editing**: Resolved issues with the in-app editor not saving correctly and improved state management for file previews.
+ 
 ## [0.2.11] - 2026-01-12
 
 ### Fixed

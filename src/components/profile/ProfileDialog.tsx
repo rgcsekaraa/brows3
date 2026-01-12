@@ -96,6 +96,14 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  // Reset testing state when form data changes
+  useEffect(() => {
+    if (testing || testResult) {
+      setTesting(false);
+      setTestResult(null);
+    }
+  }, [formData]);
+
   // Reset state when dialog opens/closes
   useEffect(() => {
     if (open) {
@@ -274,7 +282,12 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
           </IconButton>
         </DialogTitle>
         
-        <DialogContent sx={{ minWidth: 500, minHeight: 400, px: 3 }}>
+        <DialogContent sx={{ 
+          minWidth: { xs: '100%', sm: 500 }, 
+          maxHeight: '70vh', 
+          overflowY: 'auto',
+          px: 3 
+        }}>
           {profiles.length === 0 ? (
             <Box sx={{ 
               py: 8, 
@@ -450,7 +463,12 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
             <CloseIcon fontSize="small" />
           </IconButton>
         </DialogTitle>
-        <DialogContent sx={{ pt: 3, px: 2 }}>
+        <DialogContent sx={{ 
+          pt: 1, 
+          px: 2,
+          maxHeight: '70vh',
+          overflowY: 'auto'
+        }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
             <TextField
               label="Connection Name"
@@ -650,7 +668,6 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 boxShadow: '0 24px 80px rgba(0,0,0,0.2)',
                 backgroundImage: 'none',
                 bgcolor: 'background.paper',
-                overflow: 'hidden'
             }
         }}
     >

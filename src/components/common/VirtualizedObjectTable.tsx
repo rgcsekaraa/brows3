@@ -266,6 +266,11 @@ const RowContent = memo(function RowContent({
                   <PreviewIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               )}
+              {canEdit && onEdit && (
+                <IconButton size="small" onClick={() => onEdit(row.key)} sx={{ p: 0.5 }} title="Edit">
+                  <EditIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              )}
             </>
           )}
           <IconButton size="small" onClick={(e) => onMenuOpen(e, row.key, row.isFolder)} sx={{ p: 0.5 }}>

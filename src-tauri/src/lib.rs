@@ -128,6 +128,7 @@ pub fn run() {
             // Show the main window after initialization to prevent white flash
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
+                let _ = window.maximize();
             }
             
             Ok(())
