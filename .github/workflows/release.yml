@@ -58,13 +58,13 @@ jobs:
 
       - name: Extract Release Notes
         id: extract_notes
+        shell: bash
         run: |
-          NOTES=$(node .github/scripts/extract-release-notes.js)
-          # Escape newlines for GitHub Actions output
-          NOTES="${NOTES//'%'/'%25'}"
-          NOTES="${NOTES//$'\n'/'%0A'}"
-          NOTES="${NOTES//$'\r'/'%0D'}"
-          echo "notes=$NOTES" >> $GITHUB_OUTPUT
+          {
+            echo "notes<<EOF"
+            node .github/scripts/extract-release-notes.js
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - uses: tauri-apps/tauri-action@v0
         env:
