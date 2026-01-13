@@ -58,13 +58,16 @@ const isPdf = (filename: string): boolean => {
 };
 
 // Check if file is text/editable
+// Check if file is text/editable
 const isTextFile = (filename: string): boolean => {
   const ext = getExtension(filename);
   const textExts = [
-    'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'jsx', 'tsx', 
-    'py', 'yaml', 'yml', 'log', 'csv', 'toml', 'ini', 'sh', 'bash', 'conf', 
-    'env', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp', 'sql', 'dockerfile',
-    'gitignore', 'properties', 'gradle', 'bat', 'cmd', 'ps1', 'lua', 'rb', 'php'
+    'txt', 'md', 'markdown', 'json', 'xml', 'html', 'css', 'scss', 'less', 'sass', 
+    'js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'php', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 
+    'go', 'rs', 'swift', 'kt', 'kts', 'scala', 'groovy', 'pl', 'sh', 'bash', 'zsh', 'fish', 
+    'bat', 'cmd', 'ps1', 'yml', 'yaml', 'toml', 'ini', 'conf', 'cfg', 'env', 'properties', 
+    'gradle', 'sql', 'prisma', 'graphql', 'gql', 'log', 'csv', 'tsv', 'lock', 'gitignore', 
+    'dockerfile', 'makefile', 'cmake', 'tf', 'hcl', 'lua', 'dart', 'r', 'ex', 'exs'
   ];
   return textExts.includes(ext) || filename.startsWith('.') || ext === ''; // Treat no-extension files as text usually
 };
@@ -76,22 +79,31 @@ const getLanguage = (filename: string): string => {
         case 'ts': case 'tsx': return 'typescript';
         case 'py': return 'python';
         case 'rs': return 'rust';
-        case 'md': return 'markdown';
-        case 'sh': case 'bash': return 'shell';
+        case 'md': case 'markdown': return 'markdown';
+        case 'sh': case 'bash': case 'zsh': case 'fish': return 'shell';
         case 'yml': case 'yaml': return 'yaml';
-        case 'json': return 'json';
-        case 'xml': return 'xml';
+        case 'json': case 'lock': return 'json';
+        case 'xml': case 'svg': return 'xml';
         case 'html': return 'html';
-        case 'css': return 'css';
+        case 'css': case 'scss': case 'less': case 'sass': return 'css';
         case 'sql': return 'sql';
         case 'java': return 'java';
         case 'cpp': case 'c': case 'h': case 'hpp': return 'cpp';
+        case 'cs': return 'csharp';
         case 'go': return 'go';
         case 'dockerfile': return 'dockerfile';
         case 'lua': return 'lua';
         case 'rb': return 'ruby';
         case 'php': return 'php';
-        case 'ini': case 'conf': case 'properties': return 'ini';
+        case 'ini': case 'conf': case 'cfg': case 'properties': case 'env': case 'toml': return 'ini';
+        case 'bat': case 'cmd': case 'ps1': return 'bat';
+        case 'kt': case 'kts': return 'kotlin';
+        case 'swift': return 'swift';
+        case 'scala': return 'scala';
+        case 'pl': return 'perl';
+        case 'graphql': case 'gql': return 'graphql';
+        case 'tf': case 'hcl': return 'hcl'; // Monaco might need plugin for hcl, fallback to plaintext if not built-in, but often maps to ruby or similar highlighting
+        case 'r': return 'r';
         default: return 'plaintext';
     }
 };

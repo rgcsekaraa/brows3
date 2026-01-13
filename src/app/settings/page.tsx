@@ -131,7 +131,7 @@ export default function SettingsPage() {
           <ListItem>
             <ListItemText 
               primary="Default Region" 
-              secondary="Region used when creating buckets or defaulting connections" 
+              secondary="Used as fallback for new profiles if region cannot be auto-detected" 
             />
             <ListItemSecondaryAction>
               <TextField 

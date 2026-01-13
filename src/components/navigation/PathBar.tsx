@@ -47,7 +47,7 @@ export default function PathBar() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const validateAndParsePath = (path: string): { bucket: string; prefix: string } | null => {
+  const validateAndParsePath = (path: string): { bucket: string; region?: string; prefix: string; hasTrailingSlash: boolean } | null => {
     const trimmedPath = path.trim();
     
     // MUST start with s3:// - no exceptions
@@ -56,16 +56,21 @@ export default function PathBar() {
     }
     
     // Check if it's a valid S3 URI format: s3://bucket-name or s3://bucket-name/prefix/
+    // Supports explicit region: s3://bucket-name@region/prefix/
     // Bucket names: 3-63 chars, lowercase letters, numbers, hyphens, dots
     // Must start and end with letter or number
-    const s3UriMatch = trimmedPath.match(/^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(\/.*)?$/i);
+    const s3UriMatch = trimmedPath.match(/^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:@([a-z0-9-]+))?(\/.*)?$/i);
     
     if (s3UriMatch) {
       const bucket = s3UriMatch[1];
-      let prefix = s3UriMatch[2] || '';
-      // Remove leading slash and trailing slash from prefix
+      const region = s3UriMatch[2]; // Optional region
+      let prefix = s3UriMatch[3] || '';
+      
+      const hasTrailingSlash = prefix.endsWith('/');
+      
+      // Remove leading slash and trailing slash from prefix for internal use
       prefix = prefix.replace(/^\//, '').replace(/\/$/, '');
-      return { bucket, prefix };
+      return { bucket, region, prefix, hasTrailingSlash };
     }
     
     // Invalid format
@@ -87,21 +92,45 @@ export default function PathBar() {
         'Path must start with s3://\n\n' +
         'Examples:\n' +
         '• s3://my-bucket\n' +
-        '• s3://my-bucket/folder/'
+        '• s3://my-bucket@us-west-2/folder/ (Explicit Region)\n' +
+        '• s3://my-bucket/file.json (Direct File)'
       );
       return;
     }
 
-    const { bucket, prefix } = parsed;
+    const { bucket, region: explicitRegion, prefix, hasTrailingSlash } = parsed;
     
     const activeProfile = useProfileStore.getState().profiles.find(p => p.id === useProfileStore.getState().activeProfileId);
-    const region = activeProfile?.region || 'us-east-1';
+    // Use explicit region if provided, otherwise fallback to profile default
+    const region = explicitRegion || activeProfile?.region || 'us-east-1';
+    
+    // Determine if we should append a slash (treat as folder) or not (treat as file)
+    // 1. If explicit trailing slash was provided -> Folder
+    // 2. If NO trailing slash but looks like a file (has extension) -> File
+    // 3. Otherwise (no slash, no extension) -> Default to Folder logic (append slash)
+    let finalPrefix = prefix;
+    if (prefix) {
+        if (hasTrailingSlash) {
+            finalPrefix = prefix + '/';
+        } else {
+            // Check for extension (e.g. .json, .txt, .jpg)
+            // Simple heuristic: dot not at start/end
+            const hasExtension = /\.[a-zA-Z0-9]+$/.test(prefix);
+            if (hasExtension) {
+                // Treat as file - NO slash
+                finalPrefix = prefix;
+            } else {
+                // Treat as folder - Append slash
+                finalPrefix = prefix + '/';
+            }
+        }
+    }
     
     // Build the correct URL path
-    const urlPath = `/bucket?name=${bucket}&region=${region}${prefix ? `&prefix=${encodeURIComponent(prefix + '/')}` : ''}`;
+    const urlPath = `/bucket?name=${bucket}&region=${region}${finalPrefix ? `&prefix=${encodeURIComponent(finalPrefix)}` : ''}`;
     
     // Save to history
-    addPath(`s3://${bucket}/${prefix ? prefix + '/' : ''}`);
+    addPath(`s3://${bucket}${explicitRegion ? '@' + explicitRegion : ''}/${finalPrefix}`);
 
     // Navigate using the URL path
     addTab({
@@ -188,7 +217,7 @@ export default function PathBar() {
         <TextField
           {...params}
           inputRef={inputRef}
-          placeholder="Go to bucket (e.g. s3://my-bucket)..."
+          placeholder="Go to path... (e.g. s3://bucket@region/folder/)"
           variant="outlined"
           size="small"
           fullWidth

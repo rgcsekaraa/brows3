@@ -108,8 +108,8 @@ export const profileApi = {
     return invoke<TestConnectionResult>('test_connection', { profile });
   },
   
-  async discoverLocalProfiles(): Promise<string[]> {
-    return invoke<string[]>('discover_local_profiles');
+  async discoverLocalProfiles(): Promise<{ name: string; region?: string }[]> {
+    return invoke<{ name: string; region?: string }[]>('discover_local_profiles');
   },
 
   async checkAwsEnvironment(): Promise<{ has_access_key: boolean; has_secret_key: boolean; has_session_token: boolean; region?: string }> {

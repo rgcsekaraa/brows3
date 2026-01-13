@@ -183,11 +183,17 @@ pub async fn test_connection(
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DiscoveredProfile {
+    pub name: String,
+    pub region: Option<String>,
+}
+
 #[tauri::command]
-pub async fn discover_local_profiles() -> Result<Vec<String>, String> {
+pub async fn discover_local_profiles() -> Result<Vec<DiscoveredProfile>, String> {
     use std::path::PathBuf;
+    use std::collections::HashMap;
     
-    let mut profiles = Vec::new();
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     
     // Profiles to check
@@ -206,11 +212,16 @@ pub async fn discover_local_profiles() -> Result<Vec<String>, String> {
         files_to_check.push(home.join(".aws").join("config"));
     }
 
+    // Map profile_name -> region (if found)
+    let mut profiles: HashMap<String, Option<String>> = HashMap::new();
+
     for path in files_to_check {
         log::info!("Checking AWS credentials path: {:?}", path);
         if path.exists() {
             log::info!("Path exists, reading content...");
             if let Ok(content) = std::fs::read_to_string(&path) {
+                let mut current_profile: Option<String> = None;
+
                 for line in content.lines() {
                     let line = line.trim();
                     // Ignore comments
@@ -221,21 +232,33 @@ pub async fn discover_local_profiles() -> Result<Vec<String>, String> {
                     if line.starts_with('[') {
                         // Extract EVERYTHING between []
                         if let Some(end_idx) = line.find(']') {
-                            let mut profile = &line[1..end_idx];
+                            let mut profile_raw = &line[1..end_idx];
                             
                             // Handle [profile name] format in config file correctly
-                            if let Some(stripped) = profile.strip_prefix("profile") {
+                            if let Some(stripped) = profile_raw.strip_prefix("profile") {
                                 let trimmed = stripped.trim_start();
                                 // Only strip if it was followed by whitespace or it's the end
                                 if trimmed.len() < stripped.len() {
-                                    profile = trimmed;
+                                    profile_raw = trimmed;
                                 }
                             }
                             
-                            let profile_str = profile.trim().to_string();
-                            if !profile_str.is_empty() && !profiles.contains(&profile_str) {
-                                log::info!("Discovered profile: {}", profile_str);
-                                profiles.push(profile_str);
+                            let profile_name = profile_raw.trim().to_string();
+                            if !profile_name.is_empty() {
+                                current_profile = Some(profile_name.clone());
+                                // Ensure entry exists
+                                profiles.entry(profile_name).or_insert(None);
+                            }
+                        }
+                    } else if let Some(ref profile_name) = current_profile {
+                        // Parse region = us-east-1
+                        if let Some((key, value)) = line.split_once('=') {
+                            let key = key.trim().to_lowercase();
+                            if key == "region" {
+                                let val = value.trim().to_string();
+                                if !val.is_empty() {
+                                    profiles.insert(profile_name.clone(), Some(val));
+                                }
                             }
                         }
                     }
@@ -248,13 +271,19 @@ pub async fn discover_local_profiles() -> Result<Vec<String>, String> {
 
     if profiles.is_empty() {
         log::info!("No profiles found, defaulting to 'default'");
-        profiles.push("default".to_string());
-    } else {
-        log::info!("Found total of {} profiles", profiles.len());
-        profiles.sort();
-    }
+        profiles.insert("default".to_string(), None);
+    } 
     
-    Ok(profiles)
+    let mut result: Vec<DiscoveredProfile> = profiles
+        .into_iter()
+        .map(|(name, region)| DiscoveredProfile { name, region })
+        .collect();
+        
+    result.sort_by(|a, b| a.name.cmp(&b.name));
+    
+    log::info!("Found total of {} profiles", result.len());
+    
+    Ok(result)
 }
 
 #[derive(Debug, Serialize, Deserialize)]

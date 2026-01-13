@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSettingsStore } from '@/store/settingsStore';
 import {
   Alert,
   Box,
@@ -41,6 +42,7 @@ import {
 } from '@mui/icons-material';
 import { Profile, CredentialType, profileApi, isTauri, TestConnectionResult } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
+import { toast } from '@/store/toastStore';
 
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -61,6 +63,7 @@ interface ProfileDialogProps {
 
 export default function ProfileDialog({ open, onClose, editProfile }: ProfileDialogProps) {
   const { profiles, setProfiles, addProfile, updateProfile, removeProfile, setActiveProfileId } = useProfileStore();
+  const { defaultRegion } = useSettingsStore();
   
   const [mode, setMode] = useState<'list' | 'add' | 'edit'>('list');
   const [formData, setFormData] = useState({
@@ -77,7 +80,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
-  const [discoveredProfiles, setDiscoveredProfiles] = useState<string[]>([]);
+  const [discoveredProfiles, setDiscoveredProfiles] = useState<{ name: string; region?: string }[]>([]);
   const [awsEnv, setAwsEnv] = useState<{ has_access_key: boolean; has_secret_key: boolean; has_session_token: boolean; region?: string } | null>(null);
 
   // Discover local profiles and check environment
@@ -129,7 +132,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     setFormData({
       name: '',
       credentialType: 'Environment',
-      region: 'us-east-1',
+      region: defaultRegion || 'us-east-1',
       profileName: 'default',
       accessKeyId: '',
       secretAccessKey: '',
@@ -531,7 +534,25 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 freeSolo
                 value={formData.profileName}
                 onInputChange={(_, newValue) => updateField('profileName', newValue)}
-                options={discoveredProfiles}
+                onChange={(_, value) => {
+                    // Auto-fill region if found in discovered profile
+                    if (typeof value === 'string') {
+                        // Direct text input or string option (though we map objects below)
+                         const found = discoveredProfiles.find(p => p.name === value);
+                         if (found?.region) {
+                             updateField('region', found.region);
+                         }
+                    } else if (value && typeof value === 'object' && 'name' in value) {
+                        // Ensure typescript knows it's our object
+                         const found = value as { name: string; region?: string }; // Cast for safety if needed
+                         updateField('profileName', found.name);
+                         if (found.region) {
+                             updateField('region', found.region);
+                             toast.success(`Region auto-detected: ${found.region}`);
+                         }
+                    }
+                }}
+                options={discoveredProfiles.map(p => p.name)}
                 renderInput={(params) => (
                     <TextField 
                         {...params} 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Brows3",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "identifier": "com.brows3",
   "build": {
     "frontendDist": "../out",
@@ -44,8 +44,8 @@
     "copyright": "© 2024 Brows3. All rights reserved.",
     "publisher": "Brows3 Team",
     "category": "Utility",
-    "shortDescription": "Premium, Secure S3 Browser for macOS, Windows, and Linux.",
-    "longDescription": "Brows3 is the ultimate premium desktop client for Amazon S3 and compatible cloud storage. Featuring a luxury glassmorphism UI, reliable cross-platform performance, and secure local credential management, it provides the most elegant way to manage your cloud buckets.",
+    "shortDescription": "A lightning-fast, secure, and modern S3 desktop client.",
+    "longDescription": "Brows3 is the high-performance desktop client for Amazon S3 and compatible storage. Built with Rust and Tauri, it offers instant prefix navigation, deep recursive search, and secure local profile management in a beautiful, native interface.",
     "license": "MIT",
     "homepage": "https://github.com/rgcsekaraa/brows3",
     "windows": {

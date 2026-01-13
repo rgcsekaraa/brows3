@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [0.2.13] - 2026-01-13
+ 
+### Added
+- **Automatic Region Discovery**: Profiles imported from generic `~/.aws/config` files now automatically detect and select the correct region, eliminating manual configuration.
+- **Direct Object Navigation**: Support for pasting direct S3 file URIs (e.g., `s3://bucket/file.json`). The app intelligently distinguishes between files and folders without forcing trailing slashes.
+- **Extended File Support**: Massive expansion of supported editable file types. Now supports editing and previewing for YAML, TOML, INI, Shell Scripts, Rust, Go, Python, Terraform, Dockerfiles, and many more.
+
 ## [0.2.12] - 2026-01-12
  
 ### Added
