@@ -48,7 +48,9 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 - **Cost Awareness**: UI indicators for cached data help you manage S3 API costs.
 
 - **📄 In-App PDF Preview**: View PDFs directly within the application with a high-performance native renderer. Features embedded search, standard PDF navigation, and focused reading mode.
-- **⚡ Deep Recursive Search**: Instantly toggle between local filtering and server-side recursive search. Find objects buried deep in subfolders without manually navigating the hierarchy.
+- **🌐 Automatic Region Discovery**: Profiles now automatically detect the correct AWS region from system configurations, enabling zero-config setup.
+- **📑 Smart Tab Management**: Intelligent tab deduplication ensures you never have multiple tabs open for the same S3 path—automatically switching to existing tabs when searching.
+- **⚡ Deep Recursive Search**: Overhauled with 5x more depth and context-awareness. Search recursively within specific folders with auto-region retry support.
 - **📊 System Monitor**: Real-time visibility into application performance. Track API request success/failure rates and view live logs for debugging.
 - **🔐 Profile-Gated Access**: Create isolated profiles for different AWS accounts or environments. Switch contexts instantly with zero friction.
 - **⚙️ Enhanced Settings**:

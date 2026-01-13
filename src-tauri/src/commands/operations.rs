@@ -24,12 +24,20 @@ pub async fn put_object(
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
 
+    // Check cache for bucket region first
+    let bucket_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(&bucket_name)
+    }.or(bucket_region);
+
     // Get S3 client
-    let mut s3_manager = s3_state.write().await;
-    let client = if let Some(ref d) = bucket_region {
-        s3_manager.get_client_for_region(&active_profile, d).await?
-    } else {
-        s3_manager.get_client(&active_profile).await?
+    let client = {
+        let mut s3_manager = s3_state.write().await;
+        if let Some(ref d) = bucket_region {
+            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+        } else {
+            s3_manager.get_client(&active_profile).await?.clone()
+        }
     };
 
     let mut request = client
@@ -72,12 +80,20 @@ pub async fn get_object(
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
 
+    // Check cache for bucket region first
+    let bucket_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(&bucket_name)
+    }.or(bucket_region);
+
     // Get S3 client
-    let mut s3_manager = s3_state.write().await;
-    let client = if let Some(ref d) = bucket_region {
-        s3_manager.get_client_for_region(&active_profile, d).await?
-    } else {
-        s3_manager.get_client(&active_profile).await?
+    let client = {
+        let mut s3_manager = s3_state.write().await;
+        if let Some(ref d) = bucket_region {
+            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+        } else {
+            s3_manager.get_client(&active_profile).await?.clone()
+        }
     };
 
     // Get object
@@ -120,12 +136,20 @@ pub async fn delete_object(
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
 
+    // Check cache for bucket region first
+    let bucket_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(&bucket_name)
+    }.or(bucket_region);
+
     // Get S3 client
-    let mut s3_manager = s3_state.write().await;
-    let client = if let Some(ref d) = bucket_region {
-        s3_manager.get_client_for_region(&active_profile, d).await?
-    } else {
-        s3_manager.get_client(&active_profile).await?
+    let client = {
+        let mut s3_manager = s3_state.write().await;
+        if let Some(ref d) = bucket_region {
+            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+        } else {
+            s3_manager.get_client(&active_profile).await?.clone()
+        }
     };
 
     client
@@ -156,6 +180,12 @@ pub async fn copy_object(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+
+    // Check cache for bucket region first
+    let destination_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(&destination_bucket)
+    }.or(destination_region);
 
     let mut s3_manager = s3_state.write().await;
     // We need the client for the DESTINATION region to initiate copy
@@ -204,11 +234,19 @@ pub async fn delete_objects(
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
 
-    let mut s3_manager = s3_state.write().await;
-    let client = if let Some(ref d) = bucket_region {
-        s3_manager.get_client_for_region(&active_profile, d).await?
-    } else {
-        s3_manager.get_client(&active_profile).await?
+    // Check cache for bucket region first
+    let bucket_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(&bucket_name)
+    }.or(bucket_region);
+
+    let client = {
+        let mut s3_manager = s3_state.write().await;
+        if let Some(ref d) = bucket_region {
+            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+        } else {
+            s3_manager.get_client(&active_profile).await?.clone()
+        }
     };
 
     // Delete in batches of 1000
@@ -296,11 +334,19 @@ pub async fn get_object_metadata(
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
     
-    let mut s3_manager = s3_state.write().await;
-    let client = if let Some(ref d) = bucket_region {
-        s3_manager.get_client_for_region(&active_profile, d).await?
-    } else {
-        s3_manager.get_client(&active_profile).await?
+    // Check cache for bucket region first
+    let bucket_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(&bucket_name)
+    }.or(bucket_region);
+
+    let client = {
+        let mut s3_manager = s3_state.write().await;
+        if let Some(ref d) = bucket_region {
+            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+        } else {
+            s3_manager.get_client(&active_profile).await?.clone()
+        }
     };
 
     let output = client.head_object()

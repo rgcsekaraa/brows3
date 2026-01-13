@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
 import {
   AppBar,
   Box,
@@ -170,7 +170,9 @@ export default function AppShell({ children }: AppShellProps) {
                     color: 'text.primary',
                 }}
             >
-                <TopBar />
+                <Suspense fallback={<Box sx={{ height: 48 }} />}>
+                    <TopBar />
+                </Suspense>
             </AppBar>
             <TabBar />
         </Box>
@@ -198,7 +200,9 @@ export default function AppShell({ children }: AppShellProps) {
           <Toolbar variant="dense" /> {/* Spacer for AppBar */}
           <Toolbar variant="dense" sx={{ minHeight: 40 }} /> {/* Spacer for TabBar */}
           <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <Sidebar />
+            <Suspense fallback={<Box sx={{ p: 2 }}><CircularProgress size={24} /></Box>}>
+              <Sidebar />
+            </Suspense>
           </Box>
         </Drawer>
         
@@ -281,7 +285,9 @@ export default function AppShell({ children }: AppShellProps) {
               children
             )}
 
-          <Footer />
+            <Suspense fallback={<Box sx={{ height: 28 }} />}>
+              <Footer />
+            </Suspense>
         </Box>
         
         <ProfileDialog open={profileDialogOpen} onClose={() => setProfileDialogOpen(false)} />

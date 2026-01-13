@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [0.2.14] - 2026-01-13
+ 
+### Added
+- **Deep Search Overhaul**: Increased recursive search depth by 5x (scans up to 50,000 objects). Added context-aware prefix support and robust region auto-retry logic for exhaustive searching.
+- **Tab Deduplication**: The search bar now intelligently switches to existing tabs if the target path is already open, preventing workspace clutter.
+
+### Fixed
+- **Application Stability**: Resolved critical `TypeError` crashes during navigation by implementing mandatory `Suspense` boundaries for Next.js layouts.
+- **Enhanced Safety**: Added defensive null-checks for search parameters and default props for virtualization tables to eliminate "Load failed" errors.
+- **State Cleanup**: Implemented global reset logic when deleting profiles, ensuring all tabs, history, and regions are cleared for a clean slate.
+
 ## [0.2.13] - 2026-01-13
  
 ### Added

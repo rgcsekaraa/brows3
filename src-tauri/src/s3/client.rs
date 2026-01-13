@@ -25,6 +25,7 @@ pub struct S3ClientManager {
     clients: HashMap<(String, String), Client>,
     object_cache: HashMap<(String, String), Vec<S3Object>>, // (profile_id, bucket_name) -> objects
     folder_cache: HashMap<(String, String, String), FolderContent>, // (profile_id, bucket_name, prefix) -> children
+    bucket_regions: HashMap<String, String>, // bucket_name -> region
 }
 
 impl S3ClientManager {
@@ -33,6 +34,7 @@ impl S3ClientManager {
             clients: HashMap::new(),
             object_cache: HashMap::new(),
             folder_cache: HashMap::new(),
+            bucket_regions: HashMap::new(),
         }
     }
 
@@ -130,6 +132,17 @@ impl S3ClientManager {
         self.clients.clear();
         self.object_cache.clear();
         self.folder_cache.clear();
+        self.bucket_regions.clear();
+    }
+
+    /// Get cached region for a bucket
+    pub fn get_bucket_region(&self, bucket_name: &str) -> Option<String> {
+        self.bucket_regions.get(bucket_name).cloned()
+    }
+
+    /// Cache the region for a bucket
+    pub fn set_bucket_region(&mut self, bucket_name: &str, region: String) {
+        self.bucket_regions.insert(bucket_name.to_string(), region);
     }
 
     /// Get cached objects for a bucket
@@ -199,6 +212,14 @@ impl S3ClientManager {
         self.object_cache.contains_key(&(profile_id.to_string(), bucket_name.to_string()))
     }
 
+    /// Get a single object from cache by key
+    pub fn get_object_from_cache(&self, profile_id: &str, bucket_name: &str, key: &str) -> Option<S3Object> {
+        if let Some(objects) = self.object_cache.get(&(profile_id.to_string(), bucket_name.to_string())) {
+            return objects.iter().find(|obj| obj.key == key).cloned();
+        }
+        None
+    }
+
     /// Remove cache for a specific bucket
     pub fn remove_bucket_cache(&mut self, profile_id: &str, bucket_name: &str) {
         // Remove object list
@@ -214,6 +235,7 @@ impl S3ClientManager {
         let bname = bucket_name.to_string();
         
         self.folder_cache.retain(|(p, b, _), _| p != &pid || b != &bname);
+        self.bucket_regions.remove(&bname);
     }
 }
 

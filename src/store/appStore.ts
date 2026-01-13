@@ -21,17 +21,24 @@ interface AppState {
   tabs: Tab[];
   activeTabId: string | null;
   
+  // Region Discovery
+  discoveredRegions: Record<string, string>; // bucket -> region
+  
   // Actions
   setThemeMode: (mode: ThemeMode) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarWidth: (width: number) => void;
+  setDiscoveredRegion: (bucket: string, region: string) => void;
   
   // Tab Actions
   addTab: (tab: Omit<Tab, 'id'>) => void;
   removeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   updateTab: (id: string, updates: Partial<Tab>) => void;
+  
+  // Global Reset
+  resetApp: () => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -44,6 +51,8 @@ export const useAppStore = create<AppState>()(
       tabs: [{ id: 'home', title: 'Explorer', path: '/', icon: 'cloud' }],
       activeTabId: 'home',
       
+      discoveredRegions: {},
+      
       setThemeMode: (themeMode) => set({ themeMode }),
       
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -51,6 +60,10 @@ export const useAppStore = create<AppState>()(
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+
+      setDiscoveredRegion: (bucket, region) => set((state) => ({
+        discoveredRegions: { ...state.discoveredRegions, [bucket]: region }
+      })),
       
       addTab: (tab) => set((state) => {
         // Check if a tab with the same path already exists (deduplicate)
@@ -92,6 +105,12 @@ export const useAppStore = create<AppState>()(
       updateTab: (id, updates) => set((state) => ({
         tabs: state.tabs.map((t) => t.id === id ? { ...t, ...updates } : t)
       })),
+
+      resetApp: () => set({
+        tabs: [{ id: 'home', title: 'Explorer', path: '/', icon: 'cloud' }],
+        activeTabId: 'home',
+        discoveredRegions: {},
+      }),
     }),
     {
       name: 'brows3-app-v2', // Versioned name for new state structure

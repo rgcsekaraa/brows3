@@ -9,6 +9,8 @@ import {
   IconButton,
   Typography,
   Box,
+  Divider,
+  Tooltip,
 } from '@mui/material';
 import { 
   Search as SearchIcon, 
@@ -18,7 +20,7 @@ import {
   History as HistoryIcon,
   Clear as ClearIcon,
 } from '@mui/icons-material';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAppStore } from '@/store/appStore';
 import { useHistoryStore } from '@/store/historyStore';
 import { useProfileStore } from '@/store/profileStore';
@@ -26,13 +28,34 @@ import { toast } from '@/store/toastStore';
 
 export default function PathBar() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { addTab, setActiveTab, tabs } = useAppStore();
   const { recentPaths, addPath, clearHistory } = useHistoryStore();
   
   const [inputValue, setInputValue] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sync input value with current URL params
+  useEffect(() => {
+    // Only sync if the user is NOT actively typing/focused
+    if (isFocused) return;
+
+    if (!searchParams) return;
+
+    const bucket = searchParams.get('name');
+    const region = searchParams.get('region');
+    const prefix = searchParams.get('prefix') || '';
+    
+    if (bucket) {
+      const uri = `s3://${bucket}/${prefix}`;
+      setInputValue(uri);
+    } else {
+      setInputValue('');
+    }
+  }, [searchParams, isFocused]);
 
   // Global Shortcut: Ctrl+Shift+P (or Cmd+Shift+P)
   useEffect(() => {
@@ -58,18 +81,18 @@ export default function PathBar() {
     // Check if it's a valid S3 URI format: s3://bucket-name or s3://bucket-name/prefix/
     // Supports explicit region: s3://bucket-name@region/prefix/
     // Bucket names: 3-63 chars, lowercase letters, numbers, hyphens, dots
-    // Must start and end with letter or number
-    const s3UriMatch = trimmedPath.match(/^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:@([a-z0-9-]+))?(\/.*)?$/i);
+    // Region/Prefix: More permissive regex to allow underscores and dots in paths
+    const s3UriMatch = trimmedPath.match(/^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:@([a-z0-9-]+))?(\/(.*))?$/i);
     
     if (s3UriMatch) {
       const bucket = s3UriMatch[1];
       const region = s3UriMatch[2]; // Optional region
-      let prefix = s3UriMatch[3] || '';
+      let rawPrefix = s3UriMatch[4] || ''; // The actual path after s3://bucket/
       
-      const hasTrailingSlash = prefix.endsWith('/');
+      const hasTrailingSlash = rawPrefix.endsWith('/');
       
       // Remove leading slash and trailing slash from prefix for internal use
-      prefix = prefix.replace(/^\//, '').replace(/\/$/, '');
+      const prefix = rawPrefix.replace(/\/$/, '');
       return { bucket, region, prefix, hasTrailingSlash };
     }
     
@@ -77,10 +100,19 @@ export default function PathBar() {
     return null;
   };
 
+  const isNavigating = useRef(false);
+
   const handleNavigate = (path: string) => {
+    // 1. Prevent double navigation in the same frame (CRITICAL for race conditions)
+    if (isNavigating.current) return;
+    isNavigating.current = true;
+    setTimeout(() => { isNavigating.current = false; }, 500);
+
     const trimmedPath = path.trim();
     
     if (!trimmedPath) {
+      // Don't show error if user just clicked Enter on empty input while browsing history
+      if (isOpen) return;
       toast.error('Enter S3 URI', 'Please enter a valid S3 URI.\n\nFormat: s3://bucket-name/path/');
       return;
     }
@@ -100,22 +132,29 @@ export default function PathBar() {
 
     const { bucket, region: explicitRegion, prefix, hasTrailingSlash } = parsed;
     
-    const activeProfile = useProfileStore.getState().profiles.find(p => p.id === useProfileStore.getState().activeProfileId);
-    // Use explicit region if provided, otherwise fallback to profile default
-    const region = explicitRegion || activeProfile?.region || 'us-east-1';
+    const activeProfileId = useProfileStore.getState().activeProfileId;
+    const activeProfile = useProfileStore.getState().profiles.find(p => p.id === activeProfileId);
+    
+    // Priority: 1. Discovered region (specific to this bucket), 2. Explicit region, 3. Profile default
+    const discoveredRegion = useAppStore.getState().discoveredRegions[bucket];
+    const region = explicitRegion || discoveredRegion || activeProfile?.region || 'us-east-1';
     
     // Determine if we should append a slash (treat as folder) or not (treat as file)
-    // 1. If explicit trailing slash was provided -> Folder
-    // 2. If NO trailing slash but looks like a file (has extension) -> File
-    // 3. Otherwise (no slash, no extension) -> Default to Folder logic (append slash)
     let finalPrefix = prefix;
     if (prefix) {
+        // More robust extension check: it's a "file" if it ends in .ext, and NOT a folder if no trailing slash
+        const hasExtension = /\.[a-zA-Z0-9]{2,10}$/.test(prefix);
+        
         if (hasTrailingSlash) {
-            finalPrefix = prefix + '/';
+            if (hasExtension) {
+                // If it has an extension but user provided a slash, they likely pasted 
+                // a file URI with an accidental trailing slash. Treat as file.
+                finalPrefix = prefix;
+            } else {
+                // Standard folder
+                finalPrefix = prefix + '/';
+            }
         } else {
-            // Check for extension (e.g. .json, .txt, .jpg)
-            // Simple heuristic: dot not at start/end
-            const hasExtension = /\.[a-zA-Z0-9]+$/.test(prefix);
             if (hasExtension) {
                 // Treat as file - NO slash
                 finalPrefix = prefix;
@@ -133,41 +172,71 @@ export default function PathBar() {
     addPath(`s3://${bucket}${explicitRegion ? '@' + explicitRegion : ''}/${finalPrefix}`);
 
     // Navigate using the URL path
-    addTab({
-      title: bucket,
-      path: urlPath,
-      icon: 'bucket'
-    });
+    const { activeTabId, updateTab, tabs, setActiveTab } = useAppStore.getState();
+    
+    // Check if a tab with this path already exists (deduplication)
+    const existingTab = tabs.find(t => t.path === urlPath);
+    
+    if (existingTab) {
+      // Switch to the existing tab
+      setActiveTab(existingTab.id);
+    } else if (activeTabId && activeTabId !== 'home') {
+      // Update the current active tab
+      updateTab(activeTabId, {
+        title: bucket,
+        path: urlPath,
+      });
+    } else {
+      // Create a new tab
+      addTab({
+        title: bucket,
+        path: urlPath,
+        icon: 'bucket'
+      });
+    }
+    
     router.push(urlPath);
     
-    setInputValue(''); // Clear input after successful navigation
     setIsOpen(false);
     // Blur to hide keyboard/dropdown
     inputRef.current?.blur();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      // Only handle Enter if no option is highlighted in the dropdown
-      // This prevents double-trigger when selecting from autocomplete
-      e.preventDefault();
-      handleNavigate(inputValue);
-    }
-  };
 
   return (
     <Autocomplete
       freeSolo
+      autoHighlight={false}
+      selectOnFocus={false}
+      clearOnBlur={false}
+      handleHomeEndKeys={true}
       open={isOpen}
       onOpen={() => setIsOpen(true)}
       onClose={() => setIsOpen(false)}
       inputValue={inputValue}
-      onInputChange={(_, newVal) => setInputValue(newVal)}
+      onInputChange={(_, newVal, reason) => {
+        // IMPORTANT: Ignore 'reset' events which MUI triggers on blur or selection
+        // This prevents the input from being wiped or snapped to a previous value
+        if (reason !== 'reset') {
+          setInputValue(newVal);
+        }
+      }}
+      // Set value to null so Autocomplete doesn't "hold" a selection state
+      // This makes it purely a suggestion engine for the inputValue text
+      value={null}
       options={recentPaths}
       onChange={(_, value, reason) => {
-        // Only navigate when clicking on an option, not on Enter key (handled separately)
+        // Handle explicit selection from history
         if (value && reason === 'selectOption') {
           handleNavigate(value);
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          // If the popup is open and an item is highlighted, Autocomplete handles it via onChange
+          // We only trigger manual navigation if the popup is closed or no item is highlighted
+          // The use of setTimeout or isNavigating ref in handleNavigate handles race conditions
+          handleNavigate(inputValue);
         }
       }}
       renderOption={(props, option) => {
@@ -185,7 +254,6 @@ export default function PathBar() {
         sx: { maxHeight: 300 },
       }}
       PaperComponent={({ children, ...paperProps }) => (
-        // Only render if we have history
         recentPaths.length > 0 ? (
           <Paper {...paperProps} elevation={4} sx={{ mt: 0.5 }}>
             {children}
@@ -213,50 +281,72 @@ export default function PathBar() {
           </Paper>
         ) : null
       )}
-      renderInput={(params) => (
-        <TextField
-          {...params}
-          inputRef={inputRef}
-          placeholder="Go to path... (e.g. s3://bucket@region/folder/)"
-          variant="outlined"
-          size="small"
-          fullWidth
-          onKeyDown={handleKeyDown}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              bgcolor: 'background.paper',
-              pr: 0.5,
-              transition: 'all 0.2s',
-              '& fieldset': { borderColor: 'divider' },
-              '&:hover fieldset': { borderColor: 'text.primary' },
-              '&.Mui-focused fieldset': { borderColor: 'primary.main', borderWidth: 2 },
-            }
-          }}
-          InputProps={{
-            ...params.InputProps,
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon color="action" fontSize="small" />
-              </InputAdornment>
-            ),
-            endAdornment: (
-              <>
-                {params.InputProps.endAdornment}
-                <InputAdornment position="end">
-                  <IconButton 
-                    size="small" 
-                    onClick={() => handleNavigate(inputValue)}
-                    edge="end"
-                    sx={{ mr: -0.5 }}
-                  >
-                    <GoIcon fontSize="small" />
-                  </IconButton>
+      renderInput={(params) => {
+        // Merge refs to ensure both MUI and our shortcuts work
+        const { ref, ...inputProps } = params.inputProps as any;
+        return (
+          <TextField
+            {...params}
+            onFocus={() => setIsFocused(true)}
+            onBlur={(e: any) => {
+              setIsFocused(false);
+              params.inputProps.onBlur?.(e);
+            }}
+            inputRef={(el: HTMLInputElement) => {
+              (inputRef as any).current = el;
+              if (ref) {
+                if (typeof ref === 'function') ref(el);
+                else ref.current = el;
+              }
+            }}
+            placeholder="Go to path... (e.g. s3://bucket@region/folder/)"
+            variant="outlined"
+            size="small"
+            fullWidth
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                bgcolor: 'background.paper',
+                pr: 1,
+                transition: 'all 0.2s',
+                '& fieldset': { borderColor: 'divider' },
+                '&:hover fieldset': { borderColor: 'text.primary' },
+                '&.Mui-focused fieldset': { borderColor: 'primary.main', borderWidth: 2 },
+              },
+              '& .MuiInputBase-input': {
+                pr: 2 // Extra padding so text doesn't hit the Go button
+              }
+            }}
+            InputProps={{
+              ...params.InputProps,
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon color="action" fontSize="small" />
                 </InputAdornment>
-              </>
-            )
-          }}
-        />
-      )}
+              ),
+              endAdornment: (
+                <Box sx={{ display: 'flex', alignItems: 'center', mr: -0.5 }}>
+                  {params.InputProps.endAdornment}
+                  <Divider orientation="vertical" flexItem sx={{ height: 16, mx: 0.5, my: 'auto' }} />
+                  <InputAdornment position="end">
+                    <Tooltip title="Go to path" placement="top">
+                      <IconButton 
+                        size="small" 
+                        onClick={() => handleNavigate(inputValue)}
+                        sx={{ 
+                          color: 'primary.main',
+                          '&:hover': { bgcolor: 'primary.alpha10' }
+                        }}
+                      >
+                        <GoIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </InputAdornment>
+                </Box>
+              )
+            }}
+          />
+        );
+      }}
     />
   );
 }

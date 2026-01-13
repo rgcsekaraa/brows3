@@ -129,7 +129,7 @@ function BucketContent() {
         setIsSearching(true);
         try {
             // Server-side deep search (recursive)
-            const results = await objectApi.searchObjects(bucketName, bucketRegion, searchQuery);
+            const results = await objectApi.searchObjects(bucketName, bucketRegion, searchQuery, prefix);
             setSearchResults(results);
         } catch (err) {
             displayError(`Search failed: ${err}`);

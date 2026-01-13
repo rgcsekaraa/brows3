@@ -300,8 +300,8 @@ const RowContent = memo(function RowContent({
 });
 
 export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
-  folders,
-  objects,
+  folders = [],
+  objects = [],
   selectedKeys,
   sortField,
   sortDirection,

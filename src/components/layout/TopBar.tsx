@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import {
   Box,
   IconButton,
@@ -76,7 +76,11 @@ export default function TopBar() {
       
       {/* Path Bar for Direct Bucket Access (Centered) */}
       <Box sx={{ width: '100%', maxWidth: 450, mx: 1 }}>
-        {activeProfileId && <PathBar />}
+        {activeProfileId && (
+          <Suspense fallback={<Box sx={{ height: 32 }} />}>
+            <PathBar />
+          </Suspense>
+        )}
       </Box>
       
       {/* Right Spacer */}

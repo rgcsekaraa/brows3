@@ -171,6 +171,7 @@ export interface ListObjectsResult {
   next_continuation_token: string | null;
   is_truncated: boolean;
   prefix: string;
+  bucket_region?: string;
 }
 
 export const objectApi = {
@@ -185,8 +186,8 @@ export const objectApi = {
     });
   },
 
-  async searchObjects(bucketName: string, bucketRegion: string | undefined, query: string): Promise<S3Object[]> {
-    return invoke<S3Object[]>('search_objects', { bucketName, bucketRegion, query });
+  async searchObjects(bucketName: string, bucketRegion: string | undefined, query: string, prefix: string = ''): Promise<S3Object[]> {
+    return invoke<S3Object[]>('search_objects', { bucketName, bucketRegion, query, prefix: prefix || null });
   },
 
   async getPresignedUrl(bucketName: string, bucketRegion: string | undefined, key: string, expiresIn: number = 3600): Promise<string> {

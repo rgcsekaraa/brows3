@@ -11,8 +11,10 @@ import {
 } from '@mui/icons-material';
 import { useProfileStore } from '@/store/profileStore';
 import { useTransferStore } from '@/store/transferStore';
+import { useAppStore } from '@/store/appStore';
 import { useBuckets } from '@/hooks/useBuckets';
 import { useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 function formatCacheAge(ms: number | null): string {
   if (ms === null) return '';
@@ -27,10 +29,23 @@ function formatCacheAge(ms: number | null): string {
 export default function Footer() {
   const { profiles, activeProfileId } = useProfileStore();
   const { jobs } = useTransferStore();
+  const { discoveredRegions } = useAppStore();
   const { buckets, isCached, cacheAge, isLoading } = useBuckets();
+  const searchParams = useSearchParams();
   
+  const bucketName = searchParams.get('name');
   const activeProfile = profiles.find(p => p.id === activeProfileId);
   const activeTransfers = jobs.filter(j => j.status === 'Queued' || j.status === 'InProgress');
+
+  // Priority: 1. Discovered region (specific to this bucket), 2. Profile default region
+  const displayRegion = useMemo(() => {
+    if (bucketName && discoveredRegions[bucketName]) {
+      return discoveredRegions[bucketName];
+    }
+    return activeProfile?.region || 'N/A';
+  }, [bucketName, discoveredRegions, activeProfile]);
+
+  const isDiscovered = bucketName && discoveredRegions[bucketName] && discoveredRegions[bucketName] !== activeProfile?.region;
   
   const cacheStatus = useMemo(() => {
     if (isLoading) return { label: 'Loading...', color: 'default' as const };
@@ -64,10 +79,14 @@ export default function Footer() {
           {activeProfile?.name || 'No Profile'}
         </Typography>
         <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 12, my: 'auto' }} />
-        <RegionIcon sx={{ fontSize: 14 }} />
-        <Typography variant="caption">
-          {activeProfile?.region || 'N/A'}
-        </Typography>
+        <Tooltip title={isDiscovered ? `Auto-discovered for ${bucketName}` : 'Region'}>
+           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+             <RegionIcon sx={{ fontSize: 14, color: isDiscovered ? 'primary.main' : 'inherit' }} />
+             <Typography variant="caption" sx={{ fontWeight: isDiscovered ? 700 : 400 }}>
+               {displayRegion}
+             </Typography>
+           </Box>
+        </Tooltip>
       </Box>
 
       <Box sx={{ flexGrow: 1 }} />
@@ -121,7 +140,7 @@ export default function Footer() {
 
       {/* Production Version */}
       <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1, fontSize: '0.65rem' }}>
-        Brows3 v0.2.13
+        Brows3 v0.2.14
       </Typography>
     </Box>
   );

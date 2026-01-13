@@ -42,7 +42,11 @@ import {
 } from '@mui/icons-material';
 import { Profile, CredentialType, profileApi, isTauri, TestConnectionResult } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
+import { useAppStore } from '@/store/appStore';
+import { useHistoryStore } from '@/store/historyStore';
+import { useClipboardStore } from '@/store/clipboardStore';
 import { toast } from '@/store/toastStore';
+import { useRouter } from 'next/navigation';
 
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -62,7 +66,11 @@ interface ProfileDialogProps {
 }
 
 export default function ProfileDialog({ open, onClose, editProfile }: ProfileDialogProps) {
+  const router = useRouter();
   const { profiles, setProfiles, addProfile, updateProfile, removeProfile, setActiveProfileId } = useProfileStore();
+  const { resetApp } = useAppStore();
+  const { clearHistory } = useHistoryStore();
+  const { clear: clearClipboard } = useClipboardStore();
   const { defaultRegion } = useSettingsStore();
   
   const [mode, setMode] = useState<'list' | 'add' | 'edit'>('list');
@@ -86,15 +94,43 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   // Discover local profiles and check environment
   useEffect(() => {
     if (open) {
-        profileApi.discoverLocalProfiles()
-          .then(setDiscoveredProfiles)
-          .catch(err => setError(err instanceof Error ? err.message : String(err)));
-          
-        profileApi.checkAwsEnvironment()
-          .then(setAwsEnv)
-          .catch(console.error);
+        const fetchData = async () => {
+            try {
+                const [profiles, env] = await Promise.all([
+                    profileApi.discoverLocalProfiles(),
+                    profileApi.checkAwsEnvironment()
+                ]);
+                
+                setDiscoveredProfiles(profiles);
+                setAwsEnv(env);
+                
+                // Smart default: If we are in "add" mode and haven't started typing a name yet
+                if (mode === 'add' && !formData.name && !editProfile) {
+                    if (env.has_access_key) {
+                        setFormData(prev => ({ ...prev, credentialType: 'Environment', name: 'Environment Credentials' }));
+                    } else if (profiles.length > 0) {
+                        const defaultProf = profiles.find(p => p.name === 'default') || profiles[0];
+                        setFormData(prev => ({
+                            ...prev,
+                            credentialType: 'SharedConfig',
+                            profileName: defaultProf.name,
+                            region: defaultProf.region || prev.region,
+                            name: `Local AWS (${defaultProf.name})`
+                        }));
+                        if (defaultProf.region) {
+                            toast.success(`Auto-detected: ${defaultProf.name} (${defaultProf.region})`);
+                        }
+                    }
+                }
+            } catch (err) {
+                setError(err instanceof Error ? err.message : String(err));
+            }
+        };
+        
+        fetchData();
     }
-  }, [open]);
+  }, [open, mode, editProfile]); // Added mode and editProfile to dependencies
+
   const updateField = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -255,6 +291,16 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     try {
       await profileApi.deleteProfile(profileID);
       removeProfile(profileID);
+      
+      // Global State Reset as requested by user
+      resetApp();
+      clearHistory();
+      clearClipboard();
+      
+      toast.success(`Profile "${profileName}" deleted and state reset.`);
+      
+      // Navigate to root to ensure we're not on a stale bucket page
+      router.push('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete profile');
     }
@@ -535,21 +581,14 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 value={formData.profileName}
                 onInputChange={(_, newValue) => updateField('profileName', newValue)}
                 onChange={(_, value) => {
-                    // Auto-fill region if found in discovered profile
-                    if (typeof value === 'string') {
-                        // Direct text input or string option (though we map objects below)
-                         const found = discoveredProfiles.find(p => p.name === value);
-                         if (found?.region) {
-                             updateField('region', found.region);
-                         }
-                    } else if (value && typeof value === 'object' && 'name' in value) {
-                        // Ensure typescript knows it's our object
-                         const found = value as { name: string; region?: string }; // Cast for safety if needed
-                         updateField('profileName', found.name);
-                         if (found.region) {
-                             updateField('region', found.region);
-                             toast.success(`Region auto-detected: ${found.region}`);
-                         }
+                    if (value) {
+                        updateField('profileName', value);
+                        // Auto-fill region if found in discovered profile
+                        const found = discoveredProfiles.find(p => p.name === value);
+                        if (found?.region) {
+                            updateField('region', found.region);
+                            toast.success(`Region auto-detected: ${found.region}`);
+                        }
                     }
                 }}
                 options={discoveredProfiles.map(p => p.name)}

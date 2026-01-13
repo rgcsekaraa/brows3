@@ -169,13 +169,24 @@ pub async fn test_connection(
             })
         }
         Err(e) => {
-            let error_msg = match e.as_service_error() {
-                Some(s3_err) => format!("{}: {}", s3_err.code().unwrap_or("Unknown Code"), s3_err.message().unwrap_or("No message")),
-                None => format!("{:?}", e),
-            };
+            let s3_err = e.as_service_error();
+            let code = s3_err.and_then(|s| s.code()).unwrap_or("Unknown");
+            let message = s3_err.and_then(|s| s.message()).unwrap_or("No message");
+
+            // If it's an AccessDenied, it means the CREDENTIALS are correct, but the user
+            // lacks permission to list all buckets. We can still consider this "connected".
+            if code == "AccessDenied" || code == "403" {
+                return Ok(TestConnectionResult {
+                    success: true,
+                    message: "Connected! (Note: You are authenticated, but lack permission to list all buckets. You may need to enter bucket names manually or use a direct link.)".to_string(),
+                    region: Some(profile.region.clone().unwrap_or_else(|| "us-east-1".to_string())),
+                    bucket_count: Some(0),
+                });
+            }
+
             Ok(TestConnectionResult {
                 success: false,
-                message: format!("Connection failed: {}", error_msg),
+                message: format!("Connection failed: {}: {}", code, message),
                 region: None,
                 bucket_count: None,
             })

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Box,
@@ -22,6 +22,7 @@ import {
   Button,
   Container,
   Grid,
+  CircularProgress,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -41,7 +42,7 @@ import { useHistoryStore } from '@/store/historyStore';
 import { useAppStore } from '@/store/appStore';
 import { toast } from '@/store/toastStore';
 
-export default function Home() {
+function HomeContent() {
   const router = useRouter();
   const { activeProfileId, profiles } = useProfileStore();
   const { recentPaths, addPath } = useHistoryStore();
@@ -56,6 +57,8 @@ export default function Home() {
   const [s3UriInput, setS3UriInput] = useState('');
   
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
+
+  // ... rest of the component logic ...
   
 
   const filteredBuckets = useMemo(() => {
@@ -71,33 +74,64 @@ export default function Home() {
     router.push('/?view=discovery');
   };
 
-  const validateAndParsePath = (path: string): { bucket: string; prefix: string } | null => {
+  const validateAndParsePath = (path: string): { bucket: string; prefix: string; hasTrailingSlash: boolean } | null => {
     const trimmedPath = path.trim();
     if (!trimmedPath.startsWith('s3://')) return null;
-    const s3UriMatch = trimmedPath.match(/^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(\/.*)?$/i);
+    
+    // Check if it's a valid S3 URI format: s3://bucket-name or s3://bucket-name/prefix/
+    // Supports explicit region: s3://bucket-name@region/prefix/
+    const s3UriMatch = trimmedPath.match(/^s3:\/\/([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:@([a-z0-9-]+))?(\/(.*))?$/i);
+    
     if (s3UriMatch) {
       const bucket = s3UriMatch[1];
-      let prefix = s3UriMatch[2] || '';
-      prefix = prefix.replace(/^\//, '').replace(/\/$/, '');
-      return { bucket, prefix };
+      let rawPrefix = s3UriMatch[4] || '';
+      const hasTrailingSlash = rawPrefix.endsWith('/');
+      const prefix = rawPrefix.replace(/\/$/, '');
+      return { bucket, prefix, hasTrailingSlash };
     }
     return null;
   };
 
+  const isNavigating = useRef(false);
+
   const handleNavigate = (path: string) => {
+    // 1. Prevent double navigation in the same frame
+    if (isNavigating.current) return;
+    isNavigating.current = true;
+    setTimeout(() => { isNavigating.current = false; }, 500);
+
     const trimmedPath = path.trim();
     if (!trimmedPath) {
       toast.error('Enter S3 URI', 'Please enter a valid S3 URI.');
       return;
     }
+
     const parsed = validateAndParsePath(trimmedPath);
     if (!parsed) {
       toast.error('Invalid S3 URI', 'Path must start with s3://bucket-name/');
       return;
     }
-    const { bucket, prefix } = parsed;
-    const urlPath = `/bucket?name=${bucket}&region=us-east-1${prefix ? `&prefix=${encodeURIComponent(prefix + '/')}` : ''}`;
-    addPath(`s3://${bucket}/${prefix ? prefix + '/' : ''}`);
+    
+    const { bucket, prefix, hasTrailingSlash } = parsed;
+    
+    const activeProfile = profiles.find(p => p.id === activeProfileId);
+    // Priority: 1. Discovered region, 2. Profile default
+    const discoveredRegion = useAppStore.getState().discoveredRegions[bucket];
+    const region = discoveredRegion || activeProfile?.region || 'us-east-1';
+    
+    // Determine if we should append a slash
+    let finalPrefix = prefix;
+    if (prefix) {
+        const hasExtension = /\.[a-zA-Z0-9]{2,10}$/.test(prefix);
+        if (hasTrailingSlash || !hasExtension) {
+            finalPrefix = prefix + '/';
+        } else {
+            finalPrefix = prefix;
+        }
+    }
+
+    const urlPath = `/bucket?name=${bucket}&region=${region}${finalPrefix ? `&prefix=${encodeURIComponent(finalPrefix)}` : ''}`;
+    addPath(`s3://${bucket}/${finalPrefix}`);
     addTab({ title: bucket, path: urlPath, icon: 'bucket' });
     router.push(urlPath);
   };
@@ -417,5 +451,13 @@ export default function Home() {
         }
       `}</style>
     </Box>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><CircularProgress /></Box>}>
+      <HomeContent />
+    </Suspense>
   );
 }
