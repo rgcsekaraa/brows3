@@ -62,7 +62,7 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
         </Box>
         
         {/* Title */}
-        <Typography variant="h6" fontWeight={700}>Brows3 v0.2.14</Typography>
+        <Typography variant="h6" fontWeight={700}>Brows3 v0.2.15</Typography>
         
         <Chip 
           label={`v${version}`} 

@@ -1,6 +1,6 @@
 [package]
 name = "brows3"
-version = "0.2.14"
+version = "0.2.15"
 description = "Premium, Secure S3 Browser for macOS, Windows, and Linux."
 authors = ["Brows3 Team"]
 license = "MIT"
