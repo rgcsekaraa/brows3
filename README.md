@@ -157,6 +157,18 @@ If you prefer building from source, follow the instructions for your platform:
 pnpm tauri build
 ```
 
+## ⚠️ Troubleshooting (macOS)
+
+If you see the error **"Brows3.app is damaged and can't be opened"** after downloading:
+
+Brows3 is a free, open-source project and is not yet signed with a paid Apple Developer certificate. You can easily fix this by running one command in your Terminal:
+
+```bash
+sudo xattr -rd com.apple.quarantine /Applications/Brows3.app
+```
+
+For more details, see our [macOS Troubleshooting Guide](docs/MACOS_TROUBLESHOOTING.md).
+
 ## 👥 Contributors
 
 We welcome contributions from the community! Whether you are a Rustacean, a React developer, or as a technical writer, your help is appreciated.
