@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter};
 use crate::credentials::Profile;
 use crate::s3::S3ClientManager;
 use super::{TransferJob, TransferStatus, TransferType, TransferEvent};
-use chrono::Utc; // Import Utc
+// chrono::Utc removed - not needed
 use aws_sdk_s3::primitives::ByteStream;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -40,7 +40,7 @@ impl TransferManager {
         queue.push(job.id.clone());
         
         // Emit added event
-        if let Some(app) = &self.app_handle {
+        if self.app_handle.is_some() {
             // Re-map to event to include finished_at? Or just emit job?
             // Job has changed, need to map it if we use strict types
             self.emit_update(&job);

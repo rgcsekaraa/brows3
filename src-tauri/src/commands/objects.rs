@@ -352,11 +352,11 @@ pub async fn search_objects(
                         s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
                     };
                     
-                    let mut retry_req = new_client.list_objects_v2()
+                    let retry_req = new_client.list_objects_v2()
                         .bucket(&bucket_name)
                         .prefix(&prefix_str);
                     
-                    bucket_region = Some(new_region);
+                    // bucket_region assignment removed - not read after this
                     retry_req.send().await
                         .map_err(|e| crate::error::AppError::S3Error(format!("Search retry failed: {}", e)))?
                 } else {
