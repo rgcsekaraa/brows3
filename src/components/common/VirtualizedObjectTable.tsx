@@ -11,7 +11,6 @@ import {
   Checkbox,
   IconButton,
   Typography,
-  Skeleton,
   Tooltip,
   Stack,
   Divider,
@@ -422,21 +421,10 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
       {/* Table Body Area */}
       <Box sx={{ flex: 1, overflow: 'hidden' }}>
         {isLoading ? (
-          <Table size="small">
-            <TableHead>{headerContent()}</TableHead>
-            <TableBody>
-              {Array.from({ length: 15 }, (_, i) => (
-                <TableRow key={i}>
-                  <TableCell padding="checkbox"><Skeleton width={18} height={18} /></TableCell>
-                  <TableCell><Skeleton variant="circular" width={18} height={18} /></TableCell>
-                  <TableCell><Skeleton width="60%" /></TableCell>
-                  <TableCell><Skeleton width={40} /></TableCell>
-                  <TableCell><Skeleton width={60} /></TableCell>
-                  <TableCell><Skeleton width={80} /></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+            <CircularProgress size={32} />
+            <Typography variant="caption" color="text.secondary">Loading...</Typography>
+          </Box>
         ) : rows.length === 0 ? (
           <Table size="small">
             <TableHead>{headerContent()}</TableHead>

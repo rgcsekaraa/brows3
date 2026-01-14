@@ -43,6 +43,28 @@ const baseComponents: ThemeOptions['components'] = {
     styleOverrides: {
       root: {
         textTransform: 'none',
+        transition: 'none',
+      },
+    },
+  },
+  MuiIconButton: {
+    styleOverrides: {
+      root: {
+        transition: 'none',
+      },
+    },
+  },
+  MuiListItemButton: {
+    styleOverrides: {
+      root: {
+        transition: 'none',
+      },
+    },
+  },
+  MuiListItem: {
+    styleOverrides: {
+      root: {
+        transition: 'none',
       },
     },
   },
@@ -57,16 +79,35 @@ export const lightTheme = createTheme({
   palette: {
     mode: 'light',
     ...brandColors,
+    primary: {
+      ...brandColors.primary,
+      main: '#EA8D00', // Darker Orange for better contrast on white
+    },
     background: {
-      default: '#F8F9FA', // Slightly more stark white/grey
+      default: '#F8F9FA',
       paper: '#FFFFFF',
     },
+    action: {
+      selectedOpacity: 0.16,
+      hoverOpacity: 0.08,
+    },
     text: {
-      primary: '#111827', // Cool grey 900
-      secondary: '#4B5563', // Cool grey 600
-      disabled: '#9CA3AF',
+      primary: '#111827',
+      secondary: '#374151',
+      disabled: '#6B7280',
     },
     divider: '#E5E7EB',
+  },
+  transitions: {
+    duration: {
+      shortest: 0,
+      shorter: 0,
+      short: 0,
+      standard: 0,
+      complex: 0,
+      enteringScreen: 0,
+      leavingScreen: 0,
+    },
   },
   typography: {
     fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
@@ -113,14 +154,25 @@ export const darkTheme = createTheme({
     mode: 'dark',
     ...brandColors,
     background: {
-      default: '#0B0F19', // Deep dark blue/grey
-      paper: '#111827', // Cool dark grey
+      default: '#0B0F19',
+      paper: '#111827',
     },
     text: {
       primary: '#F9FAFB',
       secondary: '#9CA3AF',
     },
     divider: '#1F2937',
+  },
+  transitions: {
+    duration: {
+      shortest: 0,
+      shorter: 0,
+      short: 0,
+      standard: 0,
+      complex: 0,
+      enteringScreen: 0,
+      leavingScreen: 0,
+    },
   },
   typography: {
     fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',

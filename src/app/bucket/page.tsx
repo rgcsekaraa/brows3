@@ -34,6 +34,7 @@ import {
   Skeleton,
   InputAdornment,
   FormControlLabel,
+  Fade,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -354,21 +355,6 @@ function BucketContent() {
   };
 
   // Actions
-  const handleBulkDelete = async () => {
-    if (!bucketName || selectedKeys.size === 0) return;
-    setIsDeleting(true);
-    try {
-      await operationsApi.deleteObjects(bucketName, bucketRegion, Array.from(selectedKeys));
-      setDeleteConfirmOpen(false);
-      clearSelection();
-      displaySuccess(`Deleted ${selectedKeys.size} items`);
-      refresh();
-    } catch (err) {
-      displayError(`Bulk delete failed: ${err}`);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -536,8 +522,23 @@ function BucketContent() {
       setIsUploading(false);
     }
   };
-
-  // Background loading happens automatically now
+  
+  const handleBulkDelete = async () => {
+    if (!bucketName || selectedKeys.size === 0) return;
+    
+    setIsDeleting(true);
+    try {
+        await operationsApi.deleteObjects(bucketName, bucketRegion, Array.from(selectedKeys));
+        displaySuccess(`Successfully deleted ${selectedKeys.size} items`);
+        setSelectedKeys(new Set());
+        refresh();
+        setDeleteConfirmOpen(false); // Close dialog if open
+    } catch (err) {
+        displayError(err instanceof Error ? err.message : 'Bulk delete failed');
+    } finally {
+        setIsDeleting(false);
+    }
+  };
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => {
     event.stopPropagation();
@@ -815,6 +816,42 @@ function BucketContent() {
              sx={{ mr: 0, ml: 0.5 }}
            />
 
+        {selectedKeys.size > 0 ? (
+          <Fade in={selectedKeys.size > 0}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Chip 
+                label={`${selectedKeys.size} selected`} 
+                size="small" 
+                color="primary" 
+                variant="outlined" 
+                onDelete={() => setSelectedKeys(new Set())}
+                sx={{ fontWeight: 700, borderRadius: 1 }}
+              />
+              <Button 
+                variant="outlined"
+                size="small"
+                onClick={handleDownloadSelected}
+                startIcon={<DownloadIcon />}
+                disabled={isUploading}
+                sx={{ fontWeight: 700 }}
+              >
+                Download
+              </Button>
+               <Button 
+                variant="contained" 
+                color="error"
+                size="small" 
+                onClick={handleDeletePrompt}
+                startIcon={<DeleteIcon />}
+                disabled={isDeleting}
+                sx={{ fontWeight: 700 }}
+              >
+                Delete
+              </Button>
+            </Box>
+          </Fade>
+        ) : (
+          <>
         <Button 
           variant="outlined" 
           startIcon={<CreateNewFolderIcon />} 
@@ -852,6 +889,8 @@ function BucketContent() {
                 Folder
             </MenuItem>
         </Menu>
+          </>
+        )}
 
         <Tooltip title="Refresh">
             <IconButton 
@@ -871,6 +910,7 @@ function BucketContent() {
         </Tooltip>
         </Box>
       </Box>
+
 
 
 

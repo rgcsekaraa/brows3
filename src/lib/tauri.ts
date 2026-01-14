@@ -258,7 +258,8 @@ export interface TransferJob {
   total_bytes: number;
   processed_bytes: number;
   status: 'Queued' | 'InProgress' | 'Completed' | { Failed: string } | 'Paused' | 'Cancelled';
-  created_at: number;
+  created_at: number; // milliseconds
+  finished_at?: number; // milliseconds
   parent_group_id?: string;
   group_name?: string;
   is_group_root?: boolean;
@@ -269,6 +270,7 @@ export interface TransferEvent {
   processed_bytes: number;
   total_bytes: number;
   status: TransferJob['status'];
+  finished_at?: number;
 }
 
 export const transferApi = {

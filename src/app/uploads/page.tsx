@@ -55,6 +55,18 @@ const formatTimeAgo = (timestamp: number): string => {
   return new Date(timestamp).toLocaleDateString();
 };
 
+// Format duration
+const formatDuration = (ms: number): string => {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.floor(ms / 1000);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+};
+
 // Get status info
 const getStatusInfo = (status: TransferJob['status']): { label: string; color: 'success' | 'error' | 'warning' | 'info' | 'default'; icon: React.ReactNode } => {
   if (status === 'Completed') {
@@ -228,8 +240,11 @@ export default function UploadsPage() {
                 <TableCell sx={{ fontWeight: 600 }}>File</TableCell>
                 <TableCell sx={{ fontWeight: 600, width: 100 }}>Size</TableCell>
                 <TableCell sx={{ fontWeight: 600, width: 150 }}>Progress</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 100 }}>Started</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 80 }}>Actions</TableCell>
+                <TableCell sx={{ fontWeight: 600, width: 150 }}>Progress</TableCell>
+                <TableCell sx={{ fontWeight: 600, width: 140 }}>Started</TableCell>
+                <TableCell sx={{ fontWeight: 600, width: 140 }}>Finished</TableCell>
+                <TableCell sx={{ fontWeight: 600, width: 100 }}>Elapsed</TableCell>
+                <TableCell sx={{ fontWeight: 600, width: 80, textAlign: 'right' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -271,6 +286,13 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
     const handleCancel = () => cancelJob(job.id);
     const handleRetry = () => retryJob(job.id);
 
+    // Date formatting (handling ms)
+    const startDate = new Date(job.created_at).toLocaleString();
+    const finishedDate = job.finished_at ? new Date(job.finished_at).toLocaleString() : '—';
+    const elapsed = job.finished_at ? formatDuration(job.finished_at - job.created_at) : (
+        job.status === 'InProgress' ? <span className="elapsed-timer">{formatTimeAgo(job.created_at).replace(' ago', '')}</span> : '—'
+    );
+
     return (
         <TableRow sx={{ '&:last-child td, &:last-child th': { border: 0 }, bgcolor: isNested ? 'action.hover' : 'inherit' }}>
             <TableCell component="th" scope="row" sx={{ pl: isNested ? 4 : 2 }}>
@@ -299,8 +321,26 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                 </Box>
             </TableCell>
             <TableCell>
-                <Typography variant="caption" color="text.secondary">
-                    {formatTimeAgo(job.created_at)}
+                <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.2 }}>
+                   {new Date(job.created_at).toLocaleDateString()}
+                   <br/>
+                   <Box component="span" color="text.secondary">{new Date(job.created_at).toLocaleTimeString()}</Box>
+                </Typography>
+            </TableCell>
+            <TableCell>
+                <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.2 }}>
+                   {job.finished_at ? (
+                       <>
+                           {new Date(job.finished_at).toLocaleDateString()}
+                           <br/>
+                           <Box component="span" color="text.secondary">{new Date(job.finished_at).toLocaleTimeString()}</Box>
+                       </>
+                   ) : '—'}
+                </Typography>
+            </TableCell>
+             <TableCell>
+                <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                   {job.finished_at ? formatDuration(job.finished_at - job.created_at) : '—'}
                 </Typography>
             </TableCell>
             <TableCell align="right">
@@ -389,12 +429,14 @@ function GroupRow({ group }: { group: any }) {
                         sx={{ borderRadius: 1, height: 24 }}
                     />
                 </TableCell>
+                <TableCell>{/* Finished header place for group */}</TableCell>
+                <TableCell>{/* Elapsed header place for group */}</TableCell>
                 <TableCell align="right">
                     {/* Bulk actions */}
                 </TableCell>
             </TableRow>
             <TableRow>
-                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
+                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={8}>
                     <Collapse in={open} timeout="auto" unmountOnExit>
                         <Box sx={{ margin: 1 }}>
                             <Table size="small" aria-label="files">

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [0.2.16] - 2026-01-14
+ 
+### Added
+- **Custom App Icon**: New premium goose mascot branding across app icon, header, and About dialog.
+- **Instant Theme Switching**: Removed all transition delays for snappy dark/light mode toggling.
+
+### Improved
+- **Light Mode Contrast**: Darkened primary orange and increased sidebar selection/hover opacity for better visibility.
+- **Tab Close Button**: Enlarged close button (16px) for easier clicking.
+- **About Dialog**: Streamlined by removing developer/usage info sections.
+
+### Fixed
+- **Transfer Panel**: Added Started, Finished, and Elapsed time columns with correct timestamps.
+- **Uploads Page**: Applied same time column improvements and verified grouping logic.
+
 ## [0.2.15] - 2026-01-13
  
 ### Added

@@ -34,7 +34,8 @@ pub struct TransferJob {
     pub status: TransferStatus,
     pub total_bytes: u64,
     pub processed_bytes: u64,
-    pub created_at: i64, // Timestamp
+    pub created_at: i64, // Timestamp (ms)
+    pub finished_at: Option<i64>, // Timestamp (ms)
     // Grouping fields
     pub parent_group_id: Option<String>,
     pub group_name: Option<String>,
@@ -47,6 +48,7 @@ pub struct TransferEvent {
     pub processed_bytes: u64,
     pub total_bytes: u64,
     pub status: TransferStatus,
+    pub finished_at: Option<i64>,
 }
 
 impl TransferJob {
@@ -68,7 +70,8 @@ impl TransferJob {
             status: TransferStatus::Pending,
             total_bytes,
             processed_bytes: 0,
-            created_at: Utc::now().timestamp(),
+            created_at: Utc::now().timestamp_millis(),
+            finished_at: None,
             parent_group_id: None,
             group_name: None,
             is_group_root: false,

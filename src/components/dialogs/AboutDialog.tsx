@@ -48,21 +48,21 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
         <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
           <Box
             sx={{
-              width: 64,
-              height: 64,
-              borderRadius: 1.25,
-              bgcolor: 'action.hover',
+              width: 80,
+              height: 80,
+              borderRadius: 2,
+              overflow: 'hidden',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <CloudIcon sx={{ fontSize: 40, color: '#FF9900' }} />
+            <img src="/logo.png" alt="Brows3" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </Box>
         </Box>
         
         {/* Title */}
-        <Typography variant="h6" fontWeight={700}>Brows3 v0.2.15</Typography>
+        <Typography variant="h6" fontWeight={700}>Brows3 v0.2.16</Typography>
         
         <Chip 
           label={`v${version}`} 
@@ -106,29 +106,6 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
           Built with Tauri • React • Rust
         </Typography>
         
-        <Divider sx={{ my: 2 }} />
-        
-        {/* Developer Info */}
-        <Box sx={{ textAlign: 'left' }}>
-          <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-            Developer Information
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 1.5, color: 'text.secondary' }}>
-            Developed by <strong>RG Chandrasekaraa</strong>. Focused on creating high-performance, elegant tools for developers.
-          </Typography>
-          
-          <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-            Usage Instructions
-          </Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>
-            • Use the <strong>Profiles</strong> menu to manage S3 credentials.<br/>
-            • <strong>Double-click</strong> folders to navigate.<br/>
-            • <strong>Edit</strong> button is available for text-based files.<br/>
-            • All credentials are stored securely in your system's native keychain.
-          </Typography>
-        </Box>
-        
-        <Divider sx={{ my: 2 }} />
 
         <Typography variant="caption" color="text.disabled">
           MIT License © 2026

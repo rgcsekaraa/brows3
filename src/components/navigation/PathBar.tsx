@@ -307,7 +307,7 @@ export default function PathBar() {
               '& .MuiOutlinedInput-root': {
                 bgcolor: 'background.paper',
                 pr: 1,
-                transition: 'all 0.2s',
+                // transition: 'none',
                 '& fieldset': { borderColor: 'divider' },
                 '&:hover fieldset': { borderColor: 'text.primary' },
                 '&.Mui-focused fieldset': { borderColor: 'primary.main', borderWidth: 2 },

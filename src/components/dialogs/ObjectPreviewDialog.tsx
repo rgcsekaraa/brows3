@@ -147,14 +147,21 @@ export default function ObjectPreviewDialog({
       setPresignedUrl(null);
       setSaveSuccess(false);
 
+      // Safety timeout to prevent infinite spinner
+      const timeoutId = setTimeout(() => {
+        if (isLoading) {
+             console.error("Content loading timed out");
+             setIsLoading(false);
+             setError("Loading timed out. Please try again.");
+        }
+      }, 15000); 
+
       try {
         if (isImageFile || isVideoFile || isPdfFile) {
           // Get presigned URL for preview
           if (isImageFile) setIsImageRendering(true);
           if (isPdfFile) {
              setIsPdfLoading(true);
-             // Safety timeout: invalidating loading state after 5s if onLoad doesn't fire
-             // This is because iframe onLoad for PDFs is sometimes unreliable in certain browsers/network conditions
              setTimeout(() => setIsPdfLoading(false), 5000); 
           }
           const url = await objectApi.getPresignedUrl(bucketName, bucketRegion, objectKey, 3600);
@@ -162,15 +169,19 @@ export default function ObjectPreviewDialog({
         } else if (isText) {
           // Get text content
           const textContent = await objectApi.getObjectContent(bucketName, bucketRegion, objectKey);
-          setContent(textContent);
-          setEditedContent(textContent);
+          
+          // Even if empty, it's valid content
+          setContent(textContent || '');
+          setEditedContent(textContent || '');
         } else {
-             // Try to fetch as text anyway if small? Or just message.
-             // For now message.
+             // Not a recognized preview type, but maybe accessible as text?
+             // We won't auto-load to save bandwidth/confusion, just show "Preview not available"
         }
       } catch (err) {
+        console.error("Failed to load object content:", err);
         setError(err instanceof Error ? err.message : 'Failed to load content');
       } finally {
+        clearTimeout(timeoutId);
         setIsLoading(false);
       }
     };

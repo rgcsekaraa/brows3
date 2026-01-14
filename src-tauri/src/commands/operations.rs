@@ -261,13 +261,44 @@ pub async fn delete_objects(
             .build()
             .unwrap();
 
-        client
+        let result = client
             .delete_objects()
             .bucket(&bucket_name)
-            .delete(delete)
+            .delete(delete.clone())
             .send()
-            .await
-            .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+            .await;
+
+        match result {
+             Ok(_) => {},
+             Err(err) => {
+                 // Retry logic for bulk delete
+                 log::warn!("delete_objects failed, attempting region discovery: {}", err);
+                 let detected_region = {
+                     let retry_client = {
+                        let mut s3_manager = s3_state.write().await;
+                        s3_manager.get_client(&active_profile).await?.clone()
+                     };
+                     crate::s3::get_bucket_region(&retry_client, &bucket_name).await.ok()
+                 };
+
+                 if let Some(new_region) = detected_region {
+                     let new_client = {
+                         let mut s3_manager = s3_state.write().await;
+                         s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                         s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                     };
+                     
+                     new_client.delete_objects()
+                         .bucket(&bucket_name)
+                         .delete(delete)
+                         .send()
+                         .await
+                         .map_err(|e| crate::error::AppError::S3Error(format!("Retry delete failed: {}", e)))?;
+                 } else {
+                     return Err(crate::error::AppError::S3Error(err.to_string()));
+                 }
+             }
+        }
     }
 
     Ok(())
@@ -349,19 +380,52 @@ pub async fn get_object_metadata(
         }
     };
 
-    let output = client.head_object()
+    let result = client.head_object()
         .bucket(&bucket_name)
         .key(&key)
         .send()
-        .await
-        .map_err(|e| {
-            let error_str = e.to_string();
+        .await;
+
+    let output = match result {
+        Ok(out) => out,
+        Err(err) => {
+            let error_str = err.to_string();
+            // If access denied (403), likely permissions, but could be region mismatch too in some cases.
+            // But usually region mismatch is 301 or 400.
             if error_str.contains("403") || error_str.contains("Access Denied") {
-                crate::error::AppError::AccessDenied(error_str)
-            } else {
-                crate::error::AppError::S3Error(error_str)
+                 return Err(crate::error::AppError::AccessDenied(error_str));
             }
-        })?;
+            
+            // Retry logic
+            log::warn!("head_object failed, attempting region discovery: {}", err);
+            let detected_region = {
+                let retry_client = {
+                   let mut s3_manager = s3_state.write().await;
+                   s3_manager.get_client(&active_profile).await?.clone()
+                };
+                crate::s3::get_bucket_region(&retry_client, &bucket_name).await.ok()
+            };
+
+            if let Some(new_region) = detected_region {
+                let new_client = {
+                    let mut s3_manager = s3_state.write().await;
+                    s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                    s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                };
+                new_client.head_object().bucket(&bucket_name).key(&key).send().await
+                    .map_err(|e| {
+                         let e_str = e.to_string();
+                         if e_str.contains("403") || e_str.contains("Access Denied") {
+                             crate::error::AppError::AccessDenied(e_str)
+                         } else {
+                             crate::error::AppError::S3Error(format!("Retry head failed: {}", e_str))
+                         }
+                    })?
+            } else {
+                return Err(crate::error::AppError::S3Error(error_str));
+            }
+        }
+    };
 
     let last_modified = output.last_modified.map(|d| d.to_string());
     

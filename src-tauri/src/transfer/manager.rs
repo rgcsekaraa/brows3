@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter};
 use crate::credentials::Profile;
 use crate::s3::S3ClientManager;
 use super::{TransferJob, TransferStatus, TransferType, TransferEvent};
+use chrono::Utc; // Import Utc
 use aws_sdk_s3::primitives::ByteStream;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -40,7 +41,9 @@ impl TransferManager {
         
         // Emit added event
         if let Some(app) = &self.app_handle {
-            let _ = app.emit("transfer-added", job.clone());
+            // Re-map to event to include finished_at? Or just emit job?
+            // Job has changed, need to map it if we use strict types
+            self.emit_update(&job);
         }
         
         // Emit initial status update
@@ -136,6 +139,7 @@ impl TransferManager {
                 processed_bytes: job.processed_bytes,
                 total_bytes: job.total_bytes,
                 status: job.status.clone(),
+                finished_at: job.finished_at,
             };
             let _ = app.emit("transfer-update", event);
         }
@@ -169,6 +173,13 @@ impl TransferManager {
             let mut jobs = self.jobs.write().await;
             if let Some(job) = jobs.get_mut(id) {
                 job.status = status.clone();
+                // If final status, set finished_at
+                match status {
+                    TransferStatus::Completed | TransferStatus::Failed(_) | TransferStatus::Cancelled => {
+                        job.finished_at = Some(chrono::Utc::now().timestamp_millis());
+                    }
+                    _ => {}
+                }
             }
         }
         // Re-read or just emit from what we had? The previous code emitted from the ref.

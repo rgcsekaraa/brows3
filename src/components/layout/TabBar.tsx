@@ -120,7 +120,7 @@ export default function TabBar() {
                     onClick={(e) => handleCloseTab(e, tab.id)}
                     sx={{ p: 0.2, '&:hover': { color: 'error.main' } }}
                   >
-                    <CloseIcon sx={{ fontSize: 12 }} />
+                    <CloseIcon sx={{ fontSize: 16 }} />
                   </IconButton>
                 )}
               </Box>

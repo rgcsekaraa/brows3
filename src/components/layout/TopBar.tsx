@@ -55,7 +55,7 @@ export default function TopBar() {
     >
       {/* Brand */}
       <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 0, mr: 2 }}>
-        <CloudIcon sx={{ color: '#FF9900', mr: 1, fontSize: 24 }} />
+        <img src="/logo.png" alt="Brows3" style={{ width: 28, height: 28, marginRight: 8, borderRadius: 4 }} />
         <Typography
           variant="h6"
           noWrap
