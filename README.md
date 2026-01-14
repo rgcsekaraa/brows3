@@ -13,7 +13,7 @@ Navigating through buckets with millions of objects is now as fast as browsing y
 
 Traditional S3 tools often suffer from latency when navigating deep folder structures or listing large numbers of objects. Brows3 rethinks the browsing experience:
 
-- **⚡ Instant Navigation**: After an initial index, folder traversal happens in **O(1)** time. No more waiting for "Loading..." spinners when clicking through directories.
+- **⚡ Instant Navigation**: After an initial index, folder traversal happens **instantly**. No more waiting for "Loading..." spinners when clicking through directories.
 - **🔍 Deep Search**: Perform instant, localized searches across your entire bucket. Find any file in milliseconds, even in massive datasets.
 - **📦 Intelligent Background Indexing**: Brows3 populates its local cache in the background while you work, ensuring your view is always synchronized without blocking your interaction.
 - **♾️ Hyper-Virtuoso Table**: Our custom-tuned virtualization engine handles lists of 100,000+ items with silky-smooth scrolling at 60fps.
