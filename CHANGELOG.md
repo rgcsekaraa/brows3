@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [0.2.17] - 2026-01-15
+ 
+### Added
+- **Actionable Toasts**: Transfer "Queued" notifications now include a "View" button to instantly navigate to the relevant Downloads or Uploads page.
+- **Improved Linux Support**: Added high-resolution (512x512) app icon for pixel-perfect rendering on Ubuntu/Linux desktops.
+- **Download Controls**: Added consistent "Retry" and "Cancel" actions for download jobs.
+
+### Fixed
+- **Large Download Freeze**: Resolved critical UI freeze when downloading large files (10GB+) by implementing smart progress event throttling.
+- **Sidebar Loading Glitch**: Fixed a race condition where rapidly switching buckets could display incorrect data from stale network requests.
+- **Table Stability**: Fixed layout shifts and indentation issues in transfer tables (Downloads/Uploads) for a rock-solid UI.
+
 ## [0.2.16] - 2026-01-14
  
 ### Added
