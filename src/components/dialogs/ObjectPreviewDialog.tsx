@@ -362,6 +362,11 @@ export default function ObjectPreviewDialog({
                 theme={theme.palette.mode === 'dark' ? 'vs-dark' : 'light'}
                 onChange={(val) => setEditedContent(val || '')}
                 onMount={handleEditorDidMount}
+                loading={
+                  <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CircularProgress size={32} />
+                  </Box>
+                }
              />
            </Box>
         )}

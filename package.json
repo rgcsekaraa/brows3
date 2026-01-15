@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001",
+    "prebuild": "node scripts/copy-monaco.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -20,6 +21,7 @@
     "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.9.0",
+    "monaco-editor": "^0.55.1",
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",

@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Monaco editor (auto-generated from node_modules during build)
+/public/monaco-editor/

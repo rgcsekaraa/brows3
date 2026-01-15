@@ -34,6 +34,7 @@ import { check } from '@tauri-apps/plugin-updater';
 import { toast } from '@/store/toastStore';
 import { profileApi } from '@/lib/tauri';
 import { useClipboardShortcuts } from '@/hooks/useClipboardShortcuts';
+import { preloadMonaco } from '@/lib/monaco-config';
 
 const drawerWidth = 260; 
 
@@ -65,6 +66,8 @@ export default function AppShell({ children }: AppShellProps) {
   // Handle hydration mismatch
   useEffect(() => {
     setMounted(true);
+    // Preload Monaco Editor in background for faster file editing
+    preloadMonaco();
   }, []);
   
   // Close drawer on mobile when navigating
