@@ -251,6 +251,7 @@ impl TransferManager {
                     .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
 
                 let mut downloaded: u64 = 0;
+                let mut last_update = std::time::Instant::now();
                 
                 // Emitting progress implies we need to intercept the stream
                 // For MVP, chunking it manually or using a wrapper
@@ -261,10 +262,16 @@ impl TransferManager {
                          .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
                     
                     downloaded += bytes.len() as u64;
-                    // Emit progress periodically? For now, every chunk
-                    // In production, throttle this to avoid event spam
-                    self.update_job_progress(&job.id, downloaded).await;
+                    
+                    // Throttle progress updates to avoid freezing the UI
+                    if last_update.elapsed() >= std::time::Duration::from_millis(300) {
+                        self.update_job_progress(&job.id, downloaded).await;
+                        last_update = std::time::Instant::now();
+                    }
                 }
+                
+                // Ensure final 100% progress is sent
+                self.update_job_progress(&job.id, downloaded).await;
                 
                 // If we didn't know total_bytes initially (e.g. single file download), update it now
                 if job.total_bytes == 0 {

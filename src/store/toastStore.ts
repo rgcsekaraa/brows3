@@ -9,6 +9,10 @@ export interface Toast {
   details?: string;
   autoHide?: boolean;
   duration?: number;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 interface ToastState {
@@ -39,12 +43,12 @@ export const useToastStore = create<ToastState>((set) => ({
 
 // Helper functions for easy usage
 export const toast = {
-  success: (message: string, details?: string) => 
-    useToastStore.getState().addToast({ type: 'success', message, details }),
-  error: (message: string, details?: string) => 
-    useToastStore.getState().addToast({ type: 'error', message, details, autoHide: false }),
-  warning: (message: string, details?: string) => 
-    useToastStore.getState().addToast({ type: 'warning', message, details }),
-  info: (message: string, details?: string) => 
-    useToastStore.getState().addToast({ type: 'info', message, details }),
+  success: (message: string, details?: string, action?: { label: string; onClick: () => void }) => 
+    useToastStore.getState().addToast({ type: 'success', message, details, action }),
+  error: (message: string, details?: string, action?: { label: string; onClick: () => void }) => 
+    useToastStore.getState().addToast({ type: 'error', message, details, autoHide: false, action }),
+  warning: (message: string, details?: string, action?: { label: string; onClick: () => void }) => 
+    useToastStore.getState().addToast({ type: 'warning', message, details, action }),
+  info: (message: string, details?: string, action?: { label: string; onClick: () => void }) => 
+    useToastStore.getState().addToast({ type: 'info', message, details, action }),
 };

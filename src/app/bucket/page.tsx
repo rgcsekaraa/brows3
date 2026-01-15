@@ -272,8 +272,16 @@ function BucketContent() {
     toast.error(msg, details);
   };
 
-  const displaySuccess = (msg: string) => {
-    toast.success(msg);
+  // Helper for success toast with optional navigation
+  const displaySuccess = (msg: string, path?: string) => {
+    toast.success(msg, undefined, path ? {
+        label: 'View',
+        onClick: () => {
+            // Add tab first if needed, but simple push works as tab store will auto-detect path if configured
+            // Or just router.push
+            router.push(path);
+        }
+    } : undefined);
   };
 
   const breadcrumbs = useMemo(() => {
@@ -479,7 +487,7 @@ function BucketContent() {
            });
            count++;
         }
-        displaySuccess(`Queued ${count} files for upload`);
+        displaySuccess(`Queued ${count} files for upload`, '/uploads');
       }
     } catch (err) {
       displayError(`Upload failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -508,7 +516,7 @@ function BucketContent() {
              totalFiles += count;
          }
          
-         displaySuccess(`Queued ${totalFiles} files from ${folders.length} folders`);
+         displaySuccess(`Queued ${totalFiles} files from ${folders.length} folders`, '/uploads');
       }
     } catch (err) {
       displayError(`Folder upload failed: ${err}`);
@@ -570,7 +578,7 @@ function BucketContent() {
           count++;
         }
       }
-      displaySuccess(`Queued ${count} items for download.`);
+      displaySuccess(`Queued ${count} items for download.`, '/downloads');
       setSelectedKeys(new Set());
     } catch (err) {
       displayError(err instanceof Error ? err.message : String(err));
@@ -642,7 +650,7 @@ function BucketContent() {
             const folderName = selectedObject.key.split('/').filter(Boolean).pop() || 'folder';
             const localPath = `${dir}/${folderName}`;
             await transferApi.queueFolderDownload(bucketName, bucketRegion, selectedObject.key, localPath);
-            displaySuccess('Folder download queued');
+            displaySuccess('Folder download queued', '/downloads');
         }
       } else {
         const filename = selectedObject.key.split('/').pop() || 'download';
@@ -660,7 +668,7 @@ function BucketContent() {
               savePath, 
               (selectedObject as any).size || 0
           );
-          displaySuccess('Download queued');
+          displaySuccess('Download queued', '/downloads');
         }
       }
     } catch (err) {
@@ -1083,7 +1091,7 @@ function BucketContent() {
               
               // Use queueFolderDownload for proper grouping
               const count = await transferApi.queueFolderDownload(bucketName, bucketRegion, selectedObject.key, localPath);
-              displaySuccess(`Queued ${count} files for download`);
+              displaySuccess(`Queued ${count} files for download`, '/downloads');
             } catch (err) {
               displayError('Failed to download folder', String(err));
             }

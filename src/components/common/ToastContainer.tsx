@@ -79,6 +79,32 @@ function ToastItem({ toast, onClose, onShowDetails }: ToastItemProps) {
           >
             {toast.message}
           </Typography>
+          {toast.action && (
+            <Button
+              size="small"
+              color="inherit"
+              onClick={() => {
+                toast.action?.onClick();
+                // Optionally close toast after action
+                // onClose(); 
+              }}
+              sx={{ 
+                mt: 0.5, 
+                p: 0, 
+                minWidth: 'auto', 
+                fontSize: '0.75rem',
+                fontWeight: 700, 
+                textTransform: 'none',
+                opacity: 1,
+                textDecoration: 'underline',
+                mr: 2,
+                '&:hover': { opacity: 0.8, bgcolor: 'transparent', textDecoration: 'underline' },
+              }}
+            >
+              {toast.action.label}
+            </Button>
+          )}
+
           {hasDetails && (
             <Button
               size="small"
