@@ -37,7 +37,7 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
     ? jobs.filter(j => j.transfer_type === filterType)
     : jobs;
   
-  const activeJobs = filteredJobs.filter(j => j.status === 'Queued' || j.status === 'InProgress');
+  const activeJobs = filteredJobs.filter(j => j.status === 'Pending' || j.status === 'InProgress');
   const finishedJobs = filteredJobs.filter(j => j.status === 'Completed' || typeof j.status === 'object');
   
   const getStatusIcon = (status: TransferJob['status']) => {

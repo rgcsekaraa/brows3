@@ -35,7 +35,7 @@ export default function Footer() {
   
   const bucketName = searchParams.get('name');
   const activeProfile = profiles.find(p => p.id === activeProfileId);
-  const activeTransfers = jobs.filter(j => j.status === 'Queued' || j.status === 'InProgress');
+  const activeTransfers = jobs.filter(j => j.status === 'Pending' || j.status === 'InProgress');
 
   // Priority: 1. Discovered region (specific to this bucket), 2. Profile default region
   const displayRegion = useMemo(() => {

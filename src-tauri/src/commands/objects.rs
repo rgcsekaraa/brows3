@@ -204,10 +204,16 @@ pub async fn list_objects(
         }
     };
 
-    // Map objects
+    // Map objects, filtering out folder markers (zero-byte objects ending with /)
     let mut objects: Vec<S3Object> = output
         .contents()
         .iter()
+        .filter(|obj| {
+            let key = obj.key().unwrap_or_default();
+            let size = obj.size().unwrap_or(0);
+            // Exclude folder markers: zero-byte objects whose key ends with '/'
+            !(key.ends_with('/') && size == 0)
+        })
         .map(|obj| S3Object {
             key: obj.key().unwrap_or_default().to_string(),
             last_modified: obj.last_modified().map(|d| d.to_string()),
@@ -369,10 +375,15 @@ pub async fn search_objects(
 
         for obj in output.contents() {
             let key = obj.key().unwrap_or_default();
+            let size = obj.size().unwrap_or(0);
+            // Skip folder markers (zero-byte objects ending with /)
+            if key.ends_with('/') && size == 0 {
+                continue;
+            }
             if key.to_lowercase().contains(&query.to_lowercase()) {
                 objects.push(S3Object {
                     key: key.to_string(),
-                    size: obj.size().unwrap_or(0),
+                    size,
                     last_modified: obj.last_modified().map(|d| d.to_string()),
                     storage_class: obj.storage_class().map(|s| s.as_str().to_string()),
                 });

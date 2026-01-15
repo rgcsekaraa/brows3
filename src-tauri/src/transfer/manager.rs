@@ -39,14 +39,12 @@ impl TransferManager {
         let mut queue = self.queue.lock().await;
         queue.push(job.id.clone());
         
-        // Emit added event
-        if self.app_handle.is_some() {
-            // Re-map to event to include finished_at? Or just emit job?
-            // Job has changed, need to map it if we use strict types
-            self.emit_update(&job);
+        // Emit added event with full job data
+        if let Some(app) = &self.app_handle {
+            let _ = app.emit("transfer-added", &job);
         }
         
-        // Emit initial status update
+        // Also emit initial status update
         self.emit_update(&job);
     }
     
@@ -190,6 +188,18 @@ impl TransferManager {
         }
     }
     
+    async fn update_job_total_size(&self, id: &str, size: u64) {
+        {
+            let mut jobs = self.jobs.write().await;
+            if let Some(job) = jobs.get_mut(id) {
+                job.total_bytes = size;
+            }
+        }
+        if let Some(job) = self.get_job(id).await {
+            self.emit_update(&job);
+        }
+    }
+
     async fn update_job_progress(&self, id: &str, processed: u64) {
         {
             let mut jobs = self.jobs.write().await;
@@ -254,6 +264,11 @@ impl TransferManager {
                     // Emit progress periodically? For now, every chunk
                     // In production, throttle this to avoid event spam
                     self.update_job_progress(&job.id, downloaded).await;
+                }
+                
+                // If we didn't know total_bytes initially (e.g. single file download), update it now
+                if job.total_bytes == 0 {
+                    self.update_job_total_size(&job.id, downloaded).await;
                 }
             }
         }

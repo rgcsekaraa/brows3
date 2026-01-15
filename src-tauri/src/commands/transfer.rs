@@ -36,13 +36,21 @@ pub async fn queue_upload(
     let path = PathBuf::from(&local_path);
     validate_path(&path)?;
     
+    // Fallback for 0 bytes: try to get size from filesystem
+    let mut actual_size = total_bytes;
+    if actual_size == 0 {
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            actual_size = metadata.len();
+        }
+    }
+    
     let job = TransferJob::new(
         TransferType::Upload,
         bucket_name,
         bucket_region,
         key,
         path,
-        total_bytes
+        actual_size
     );
     
     let job_id = job.id.clone();

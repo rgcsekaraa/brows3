@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -25,13 +25,14 @@ import {
   Schedule as ScheduleIcon,
   Sync as SyncIcon,
   Delete as DeleteIcon,
-  Refresh as RefreshIcon,
+
   FolderOpen as FolderOpenIcon,
   KeyboardArrowDown as KeyboardArrowDownIcon,
   KeyboardArrowUp as KeyboardArrowUpIcon,
-  Stop as StopIcon,
-  PlayArrow as PlayArrowIcon,
+  Cancel as CancelIcon,
+  Replay as ReplayIcon,
 } from '@mui/icons-material';
+
 import { useTransferStore } from '@/store/transferStore';
 import { TransferJob } from '@/lib/tauri';
 
@@ -75,17 +76,25 @@ const getStatusInfo = (status: TransferJob['status']): { label: string; color: '
   if (status === 'InProgress') {
     return { label: 'Uploading', color: 'info', icon: <SyncIcon fontSize="small" className="spin" /> };
   }
-  if (status === 'Queued') {
-    return { label: 'Queued', color: 'default', icon: <ScheduleIcon fontSize="small" /> };
+  if (status === 'Pending') {
+    return { label: 'Pending', color: 'default', icon: <ScheduleIcon fontSize="small" /> };
   }
   if (typeof status === 'object' && 'Failed' in status) {
     return { label: 'Failed', color: 'error', icon: <ErrorIcon fontSize="small" /> };
+  }
+  if (status === 'Cancelled') {
+    return { label: 'Cancelled', color: 'default', icon: <CancelIcon fontSize="small" /> };
   }
   return { label: String(status), color: 'default', icon: null };
 };
 
 export default function UploadsPage() {
   const { jobs, refreshJobs, clearCompleted: clearCompletedStore } = useTransferStore();
+  
+  // Refresh jobs on mount to sync with backend
+  useEffect(() => {
+    refreshJobs();
+  }, [refreshJobs]);
   
   // Filter only uploads
   const uploads = useMemo(() => 
@@ -131,7 +140,7 @@ export default function UploadsPage() {
   
   // Stats
   const stats = useMemo(() => {
-    const active = uploads.filter(u => u.status === 'InProgress' || u.status === 'Queued');
+    const active = uploads.filter(u => u.status === 'InProgress' || u.status === 'Pending');
     const completed = uploads.filter(u => u.status === 'Completed');
     const failed = uploads.filter(u => typeof u.status === 'object' && 'Failed' in u.status);
     
@@ -171,15 +180,7 @@ export default function UploadsPage() {
         </Box>
         
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button 
-            startIcon={<RefreshIcon />} 
-            onClick={() => refreshJobs()}
-            variant="outlined"
-            size="small"
-            sx={{ borderRadius: 1 }}
-          >
-            Refresh
-          </Button>
+
           {(stats.completedCount > 0 || stats.failedCount > 0) && (
             <Button 
               variant="outlined" 
@@ -193,32 +194,7 @@ export default function UploadsPage() {
         </Box>
       </Box>
 
-      {/* Overall Progress */}
-      {stats.activeCount > 0 && (
-        <Paper sx={{ p: 2, mb: 3 }} variant="outlined">
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="body2" fontWeight={600}>
-              Overall Progress
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {stats.activeCount} files remaining
-            </Typography>
-          </Box>
-          <LinearProgress 
-            variant="determinate" 
-            value={stats.progress} 
-            sx={{ height: 6, borderRadius: 1 }}
-          />
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              {formatBytes(stats.processedBytes)} / {formatBytes(stats.totalBytes)}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {Math.round(stats.progress)}%
-            </Typography>
-          </Box>
-        </Paper>
-      )}
+
 
       {/* Uploads Table */}
       {uploads.length === 0 ? (
@@ -233,26 +209,54 @@ export default function UploadsPage() {
         </Paper>
       ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, overflow: 'auto' }}>
-          <Table stickyHeader size="small">
+          <Table stickyHeader size="small" sx={{ tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 600, width: 50 }}>Status</TableCell>
+                <TableCell sx={{ fontWeight: 600, width: 150 }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>File</TableCell>
                 <TableCell sx={{ fontWeight: 600, width: 100 }}>Size</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 150 }}>Progress</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 150 }}>Progress</TableCell>
+                <TableCell sx={{ fontWeight: 600, width: 180 }}>Progress</TableCell>
                 <TableCell sx={{ fontWeight: 600, width: 140 }}>Started</TableCell>
                 <TableCell sx={{ fontWeight: 600, width: 140 }}>Finished</TableCell>
                 <TableCell sx={{ fontWeight: 600, width: 100 }}>Elapsed</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 80, textAlign: 'right' }}>Actions</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, width: 100 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {groupedUploads.map((row: any) => (
-                 row.isGroup ? 
-                    <GroupRow key={row.id} group={row} /> :
-                    <SingleRow key={row.id} job={row.item} />
-              ))}
+              {(() => {
+                  const folders = groupedUploads.filter((row: any) => row.isGroup);
+                  const files = groupedUploads.filter((row: any) => !row.isGroup);
+
+                  return (
+                    <>
+                      {folders.length > 0 && (
+                        <>
+                          <TableRow>
+                            <TableCell colSpan={8} sx={{ bgcolor: 'action.hover', fontWeight: 600, py: 1 }}>
+                              Folders ({folders.length})
+                            </TableCell>
+                          </TableRow>
+                          {folders.map((row: any) => (
+                             <GroupRow key={row.id} group={row} />
+                          ))}
+                        </>
+                      )}
+
+                      {files.length > 0 && (
+                        <>
+                           <TableRow>
+                            <TableCell colSpan={8} sx={{ bgcolor: 'action.hover', fontWeight: 600, py: 1 }}>
+                              Files ({files.length})
+                            </TableCell>
+                          </TableRow>
+                          {files.map((row: any) => (
+                             <SingleRow key={row.id} job={row.item} />
+                          ))}
+                        </>
+                      )}
+                    </>
+                  );
+              })()}
             </TableBody>
           </Table>
         </TableContainer>
@@ -279,7 +283,9 @@ export default function UploadsPage() {
 
 function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boolean }) {
     const status = getStatusInfo(job.status);
-    const progress = job.total_bytes > 0 ? (job.processed_bytes / job.total_bytes) * 100 : 0;
+    const isCompleted = job.status === 'Completed';
+    const progress = isCompleted ? 100 : (job.total_bytes > 0 ? (job.processed_bytes / job.total_bytes) * 100 : 0);
+    const displayBytes = job.total_bytes > 0 ? job.total_bytes : (isCompleted ? job.processed_bytes : 0);
     const { cancelJob, retryJob } = useTransferStore();
     
     // Actions
@@ -295,7 +301,7 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
 
     return (
         <TableRow sx={{ '&:last-child td, &:last-child th': { border: 0 }, bgcolor: isNested ? 'action.hover' : 'inherit' }}>
-            <TableCell component="th" scope="row" sx={{ pl: isNested ? 4 : 2 }}>
+            <TableCell component="th" scope="row">
                  <Chip 
                     icon={status.icon as any} 
                     label={status.label} 
@@ -305,13 +311,15 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                     sx={{ borderRadius: 1, height: 24 }}
                 />
             </TableCell>
-            <TableCell>
-                <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{job.key.split('/').pop()}</Typography>
-                    {!isNested && <Typography variant="caption" color="text.secondary">{job.bucket}</Typography>}
+            <TableCell sx={{ pl: isNested ? 10 : 2 }}>
+                <Box sx={{ overflow: 'hidden' }}>
+                    <Tooltip title={job.key.split('/').pop() || ''}>
+                        <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>{job.key.split('/').pop()}</Typography>
+                    </Tooltip>
+                    {!isNested && <Typography variant="caption" color="text.secondary" noWrap display="block">{job.bucket}</Typography>}
                 </Box>
             </TableCell>
-            <TableCell>{formatBytes(job.total_bytes)}</TableCell>
+            <TableCell>{formatBytes(displayBytes)}</TableCell>
             <TableCell>
                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
                     <Box sx={{ width: '100%', mr: 1 }}>
@@ -342,23 +350,38 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                 <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
                    {job.finished_at ? formatDuration(job.finished_at - job.created_at) : '—'}
                 </Typography>
-            </TableCell>
+             </TableCell>
+             
+            {/* 8. Actions */}
             <TableCell align="right">
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
-                   {(job.status === 'InProgress' || job.status === 'Queued') && (
-                        <Tooltip title="Cancel">
-                            <IconButton size="small" onClick={handleCancel} color="error">
-                                <StopIcon fontSize="small" />
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                    {/* Retry Button */}
+                    <Tooltip title={((typeof job.status === 'object' && 'Failed' in job.status) || job.status === 'Cancelled') ? "Retry" : ""}>
+                        <span>
+                            <IconButton 
+                                onClick={handleRetry} 
+                                size="small" 
+                                color="primary"
+                                disabled={!((typeof job.status === 'object' && 'Failed' in job.status) || job.status === 'Cancelled')}
+                            >
+                                <ReplayIcon fontSize="small" />
                             </IconButton>
-                        </Tooltip>
-                   )}
-                   {(typeof job.status === 'object' && 'Failed' in job.status || job.status === 'Cancelled') && (
-                        <Tooltip title="Retry">
-                            <IconButton size="small" onClick={handleRetry} color="primary">
-                                <RefreshIcon fontSize="small" />
+                        </span>
+                    </Tooltip>
+
+                    {/* Cancel Button */}
+                    <Tooltip title={(job.status === 'Pending' || job.status === 'InProgress') ? "Cancel" : ""}>
+                        <span>
+                            <IconButton 
+                                onClick={handleCancel} 
+                                size="small" 
+                                color="error"
+                                disabled={!(job.status === 'Pending' || job.status === 'InProgress')}
+                            >
+                                <CancelIcon fontSize="small" />
                             </IconButton>
-                        </Tooltip>
-                   )}
+                        </span>
+                    </Tooltip>
                 </Box>
             </TableCell>
         </TableRow>
@@ -369,12 +392,28 @@ function GroupRow({ group }: { group: any }) {
     const [open, setOpen] = useState(false);
     const items = group.items as TransferJob[];
     
-    const totalBytes = items.reduce((sum, j) => sum + j.total_bytes, 0);
-    const processedBytes = items.reduce((sum, j) => sum + j.processed_bytes, 0);
-    const progress = totalBytes > 0 ? (processedBytes / totalBytes) * 100 : 0;
     
-    const activeCount = items.filter(j => j.status === 'InProgress' || j.status === 'Queued').length;
+    const totalBytes = items.reduce((sum, j) => {
+        const bytes = j.total_bytes > 0 ? j.total_bytes : (j.status === 'Completed' ? j.processed_bytes : 0);
+        return sum + bytes;
+    }, 0);
+    const processedBytes = items.reduce((sum, j) => sum + j.processed_bytes, 0);
+    const isAllCompleted = items.every(j => j.status === 'Completed');
+    const progress = isAllCompleted ? 100 : (totalBytes > 0 ? (processedBytes / totalBytes) * 100 : 0);
+
+    const activeCount = items.filter(j => j.status === 'InProgress' || j.status === 'Pending').length;
     const failedCount = items.filter(j => typeof j.status === 'object' && 'Failed' in j.status).length;
+
+    // Date calculations
+    const startTimes = items.map(j => j.created_at).filter(t => t > 0);
+    const startTime = startTimes.length > 0 ? Math.min(...startTimes) : 0;
+    
+    const endTimes = items.map(j => j.finished_at || 0);
+    const endTime = isAllCompleted ? Math.max(...endTimes) : 0;
+    
+    const startDateStr = startTime > 0 ? new Date(startTime).toLocaleString() : '—';
+    const finishedDateStr = endTime > 0 ? new Date(endTime).toLocaleString() : '—';
+    const elapsedStr = endTime > 0 ? formatDuration(endTime - startTime) : (activeCount > 0 ? 'In Progress' : '—');
     
     let statusLabel = 'Completed';
     let statusColor = 'success';
@@ -389,18 +428,33 @@ function GroupRow({ group }: { group: any }) {
     
     return (
         <>
-            <TableRow sx={{ '& > *': { borderBottom: 'unset' } }}>
-                <TableCell colSpan={2}>
+            <TableRow sx={{ '& > *': { borderBottom: 'unset' } }} hover onClick={() => setOpen(!open)} style={{ cursor: 'pointer' }}>
+                {/* 1. Status */}
+                <TableCell>
+                    <Chip 
+                        label={statusLabel} 
+                        size="small" 
+                        color={statusColor as any} 
+                        variant="outlined" 
+                        sx={{ borderRadius: 1, height: 24 }}
+                    />
+                </TableCell>
+
+                {/* 2. File */}
+                <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <IconButton
+                         <IconButton
                             aria-label="expand row"
                             size="small"
-                            onClick={() => setOpen(!open)}
-                            sx={{ mr: 1 }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setOpen(!open);
+                            }}
+                            sx={{ mr: 1, p: 0.5 }}
                         >
-                            {open ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+                            {open ? <KeyboardArrowUpIcon fontSize="small" /> : <KeyboardArrowDownIcon fontSize="small" />}
                         </IconButton>
-                        <FolderOpenIcon color="action" sx={{ mr: 1 }} />
+                        <FolderOpenIcon color="action" sx={{ mr: 1, fontSize: 20 }} />
                         <Box>
                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
                                 {group.name ? group.name.replace('s3://', '') : 'Group'}
@@ -411,45 +465,34 @@ function GroupRow({ group }: { group: any }) {
                         </Box>
                     </Box>
                 </TableCell>
+
+                {/* 3. Size */}
                 <TableCell>{formatBytes(totalBytes)}</TableCell>
+
+                {/* 4. Progress */}
                 <TableCell>
-                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <Box sx={{ width: '100%', mr: 1 }}>
-                            <LinearProgress variant="determinate" value={progress} color={statusColor as any} sx={{ height: 4, borderRadius: 1 }} />
+                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ flex: 1, minWidth: 80 }}>
+                            <LinearProgress variant="determinate" value={progress} color={statusColor as any} sx={{ height: 6, borderRadius: 1 }} />
                         </Box>
-                        <Typography variant="caption" color="text.secondary">{Math.round(progress)}%</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 35 }}>{Math.round(progress)}%</Typography>
                     </Box>
                 </TableCell>
-                <TableCell>
-                    <Chip 
-                        label={statusLabel} 
-                        size="small" 
-                        color={statusColor as any} 
-                        variant="outlined" 
-                        sx={{ borderRadius: 1, height: 24 }}
-                    />
-                </TableCell>
-                <TableCell>{/* Finished header place for group */}</TableCell>
-                <TableCell>{/* Elapsed header place for group */}</TableCell>
-                <TableCell align="right">
-                    {/* Bulk actions */}
-                </TableCell>
+                
+                {/* 5. Started */}
+                <TableCell>{startDateStr}</TableCell>
+                {/* 6. Finished */}
+                <TableCell>{finishedDateStr}</TableCell>
+                {/* 7. Elapsed */}
+                <TableCell>{elapsedStr}</TableCell>
+                {/* 8. Actions */}
+                <TableCell></TableCell>
             </TableRow>
-            <TableRow>
-                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={8}>
-                    <Collapse in={open} timeout="auto" unmountOnExit>
-                        <Box sx={{ margin: 1 }}>
-                            <Table size="small" aria-label="files">
-                                <TableBody>
-                                    {items.map((job) => (
-                                        <SingleRow key={job.id} job={job} isNested />
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </Box>
-                    </Collapse>
-                </TableCell>
-            </TableRow>
+            
+            {/* Flattened Children - No nested table! */}
+            {open && items.map((job) => (
+                <SingleRow key={job.id} job={job} isNested />
+            ))}
         </>
     );  
 }

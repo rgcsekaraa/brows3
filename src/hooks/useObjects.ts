@@ -33,6 +33,7 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   
+  const fetchIdRef = useRef(0);
   const lastKey = useRef<string>('');
   const fetchInProgress = useRef(false);
 
@@ -47,6 +48,7 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
   const fetchItems = useCallback(async (bypassCache = false) => {
     if (!bucketName || !activeProfileId) return null;
     
+    const currentFetchId = ++fetchIdRef.current;
     fetchInProgress.current = true;
     setIsLoading(true);
     setError(null);
@@ -64,6 +66,13 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
 
     try {
       const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', undefined, bypassCache);
+      
+      // RACING CONDITION FIX:
+      // If a new fetch started while we were awaiting, ignore this result.
+      if (currentFetchId !== fetchIdRef.current) {
+          return null;
+      }
+
       setData(result);
       setContinuationToken(result.next_continuation_token || null);
       setHasMore(!!result.next_continuation_token);
@@ -74,14 +83,18 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
       
       return result;
     } catch (err: any) {
+      if (currentFetchId !== fetchIdRef.current) return null;
+
       if (process.env.NODE_ENV === 'development') {
         console.warn(`Failed to load bucket "${bucketName}" with prefix "${prefix}":`, err);
       }
       setError(err.message || String(err));
       return null;
     } finally {
-      setIsLoading(false);
-      fetchInProgress.current = false;
+      if (currentFetchId === fetchIdRef.current) {
+        setIsLoading(false);
+        fetchInProgress.current = false;
+      }
     }
   }, [bucketName, activeRegion, prefix, activeProfileId]);
 

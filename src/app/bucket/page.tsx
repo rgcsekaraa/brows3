@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useMemo, useEffect } from 'react';
+import { Suspense, useState, useMemo, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Box,
@@ -97,7 +97,7 @@ function BucketContent() {
   const prefix = searchParams.get('prefix') || '';
   
   const { data, isLoading, error: initialError, stats, refresh, loadMore, isLoadingMore, hasMore } = useObjects(bucketName || '', bucketRegion, prefix);
-  const { addJob } = useTransferStore();
+  const { addJob, jobs } = useTransferStore();
   const { addBucket } = useTabStore();
   
   // Sorting State
@@ -116,6 +116,62 @@ function BucketContent() {
       toast.error(typeof initialError === 'string' ? initialError : 'Failed to load objects');
     }
   }, [initialError]);
+
+  // Track previous job statuses to detect completions
+  const prevJobStatusRef = useRef<Map<string, string>>(new Map());
+  
+  // Refresh debounce ref
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-refresh when uploads to this bucket complete
+  useEffect(() => {
+    if (!bucketName) return;
+    
+    // Cleanup timeout on unmount or dep change
+    return () => {
+        if (refreshTimeoutRef.current) {
+            clearTimeout(refreshTimeoutRef.current);
+        }
+    };
+  }, [bucketName]);
+
+  useEffect(() => {
+    if (!bucketName) return;
+    
+    const prevStatuses = prevJobStatusRef.current;
+    let shouldRefresh = false;
+    
+    for (const job of jobs) {
+      // Only care about uploads to this bucket
+      if (job.transfer_type !== 'Upload' || job.bucket !== bucketName) continue;
+      
+      const prevStatus = prevStatuses.get(job.id);
+      const currentStatus = typeof job.status === 'string' ? job.status : 'Failed';
+      // If job just completed (was something else before, now Completed)
+      if (prevStatus && prevStatus !== 'Completed' && currentStatus === 'Completed') {
+        shouldRefresh = true;
+      }
+    }
+    
+    // Update the ref with current statuses
+    const newMap = new Map<string, string>();
+    for (const job of jobs) {
+      const status = typeof job.status === 'string' ? job.status : 'Failed';
+      newMap.set(job.id, status);
+    }
+    prevJobStatusRef.current = newMap;
+    
+    if (shouldRefresh) {
+      // Debounce refresh (2 seconds)
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+      refreshTimeoutRef.current = setTimeout(() => {
+        refresh();
+        refreshTimeoutRef.current = null;
+      }, 2000);
+    }
+  }, [jobs, bucketName, refresh]);
 
   const handleSearch = async () => {
     if (!bucketName) return;
@@ -418,7 +474,7 @@ function BucketContent() {
               local_path: file,
               total_bytes: 0,
               processed_bytes: 0,
-              status: 'Queued',
+              status: 'Pending',
               created_at: Date.now()
            });
            count++;
@@ -597,7 +653,13 @@ function BucketContent() {
         
         if (savePath) {
           // Use Transfer Queue
-          await transferApi.queueDownload(bucketName, bucketRegion, selectedObject.key, savePath, 0);
+          await transferApi.queueDownload(
+              bucketName, 
+              bucketRegion, 
+              selectedObject.key, 
+              savePath, 
+              (selectedObject as any).size || 0
+          );
           displaySuccess('Download queued');
         }
       }
@@ -951,7 +1013,7 @@ function BucketContent() {
               local_path: savePath,
               total_bytes: 0,
               processed_bytes: 0,
-              status: 'Queued',
+              status: 'Pending',
               created_at: Date.now(),
             });
             displaySuccess(`Downloading: ${filename}`);
@@ -1014,37 +1076,14 @@ function BucketContent() {
             
             if (!folderPath) return;
             
-            // Get all objects under this prefix
             try {
-              displaySuccess('Starting folder download...');
-              const objects = await objectApi.searchObjects(bucketName, bucketRegion, selectedObject.key);
-              const filesToDownload = objects.filter(obj => !obj.key.endsWith('/'));
+              const dir = Array.isArray(folderPath) ? folderPath[0] : folderPath;
+              const folderName = selectedObject.key.split('/').filter(Boolean).pop() || 'folder';
+              const localPath = `${dir}/${folderName}`;
               
-              // Calculate parent prefix to preserve folder structure
-              const parts = selectedObject.key.split('/').filter(Boolean);
-              parts.pop(); 
-              const parentPrefix = parts.length > 0 ? parts.join('/') + '/' : '';
-
-              for (const obj of filesToDownload) {
-                const relativePath = obj.key.substring(parentPrefix.length);
-                const localPath = `${folderPath}/${relativePath}`;
-                
-                const jobId = await transferApi.queueDownload(bucketName, bucketRegion, obj.key, localPath, obj.size);
-                addJob({
-                  id: jobId,
-                  transfer_type: 'Download',
-                  bucket: bucketName,
-                  bucket_region: bucketRegion,
-                  key: obj.key,
-                  local_path: localPath,
-                  total_bytes: obj.size,
-                  processed_bytes: 0,
-                  status: 'Queued',
-                  created_at: Date.now(),
-                });
-              }
-              
-              displaySuccess(`Queued ${filesToDownload.length} files for download`);
+              // Use queueFolderDownload for proper grouping
+              const count = await transferApi.queueFolderDownload(bucketName, bucketRegion, selectedObject.key, localPath);
+              displaySuccess(`Queued ${count} files for download`);
             } catch (err) {
               displayError('Failed to download folder', String(err));
             }
@@ -1140,6 +1179,8 @@ function BucketContent() {
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+            sx={{ mt: 1 }}
+            inputProps={{ autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false }}
           />
         </DialogContent>
         <DialogActions>

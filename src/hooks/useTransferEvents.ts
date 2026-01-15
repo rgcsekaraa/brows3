@@ -36,5 +36,5 @@ export function useTransferEvents() {
         unlistenRef.current = null;
       }
     };
-  }, [updateJob]);
+  }, [updateJob, addJob]);
 }

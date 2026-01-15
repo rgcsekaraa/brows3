@@ -257,7 +257,7 @@ export interface TransferJob {
   local_path: string;
   total_bytes: number;
   processed_bytes: number;
-  status: 'Queued' | 'InProgress' | 'Completed' | { Failed: string } | 'Paused' | 'Cancelled';
+  status: 'Pending' | 'InProgress' | 'Completed' | { Failed: string } | 'Paused' | 'Cancelled';
   created_at: number; // milliseconds
   finished_at?: number; // milliseconds
   parent_group_id?: string;
