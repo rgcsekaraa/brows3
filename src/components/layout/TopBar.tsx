@@ -9,22 +9,14 @@ import {
   Tooltip,
 } from '@mui/material';
 import {
-  Menu as MenuIcon,
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
   SettingsBrightness as AutoModeIcon,
-  Cloud as CloudIcon,
-  Close as CloseIcon,
-  Remove as MinimizeIcon,
-  CropSquare as MaximizeIcon,
-  FilterNone as RestoreIcon,
 } from '@mui/icons-material';
 import { useAppStore } from '@/store/appStore';
 import ProfileSelector from '../profile/ProfileSelector';
 import PathBar from '../navigation/PathBar';
 import { useProfileStore } from '@/store/profileStore';
-// Dynamic import for Tauri to avoid SSR issues
-import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export default function TopBar() {
   const { themeMode, setThemeMode } = useAppStore();

@@ -150,7 +150,7 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
     if (!bucketName || !activeProfileId) return;
     setData(null);
     await fetchItems(true);
-  }, [bucketName, activeRegion, prefix, activeProfileId, fetchItems]);
+  }, [bucketName, activeProfileId, fetchItems]);
 
   return { data, isLoading, error, stats, refresh, loadMore, hasMore, isLoadingMore };
 }

@@ -230,7 +230,7 @@ export default function AppShell({ children }: AppShellProps) {
             px: 2, // Horizontal padding for breathing room
             bgcolor: 'background.default'
           }}>
-            {!mounted || (useProfileStore.getState().isLoading && profiles.length === 0) ? (
+            {!mounted || profiles.length === 0 ? (
               <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <CircularProgress size={32} />
               </Box>
@@ -295,6 +295,7 @@ export default function AppShell({ children }: AppShellProps) {
         
         <ProfileDialog open={profileDialogOpen} onClose={() => setProfileDialogOpen(false)} />
         <ToastContainer />
+        <TransferPanel />
       </Box>
     </Box>
   </ThemeProvider>

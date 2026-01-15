@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.2.18] - 2026-01-16
+
+### Fixed
+- **Unused Imports Cleanup**: Removed 7 unused icon imports and `getCurrentWindow` from TopBar component for smaller bundle size.
+- **React Anti-pattern**: Fixed calling `getState()` during render in AppShell which could cause stale UI.
+- **Error Handling**: Fixed type check order in Tauri invoke wrapper so Error messages are properly extracted.
+- **Hook Dependencies**: Removed stale dependencies from `useObjects` refresh callback.
+- **Transfer Panel**: Added missing `TransferPanel` component render so users can now see file transfer progress.
  
 ## [0.2.17] - 2026-01-15
  

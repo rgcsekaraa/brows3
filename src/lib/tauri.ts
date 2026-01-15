@@ -28,7 +28,9 @@ const invoke = async <T>(cmd: string, args?: any): Promise<T> => {
     store.incrementFailures();
     
     let errorMessage = String(err);
-    if (err && typeof err === 'object') {
+    if (err instanceof Error) {
+      errorMessage = err.message;
+    } else if (err && typeof err === 'object') {
       // Handle serialization of backend errors
       try {
         errorMessage = JSON.stringify(err);
@@ -36,8 +38,6 @@ const invoke = async <T>(cmd: string, args?: any): Promise<T> => {
         // Fallback if circular or not serializable
         errorMessage = String(err);
       }
-    } else if (err instanceof Error) {
-      errorMessage = err.message;
     }
 
     store.addLog('error', cmd, errorMessage);
