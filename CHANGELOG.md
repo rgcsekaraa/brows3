@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.19] - 2026-01-17
+
+### Added
+- **Auto-Edit Mode**: Clicking "Edit" on a file now opens it directly in edit mode (no extra click required).
+- **Freeze Detection & Recovery**: App automatically detects UI freezes and auto-reloads to recover.
+
+### Improved
+- **Simplified Navigation**: Removed redundant "Buckets" nav item, renamed "Explorer" to "Home".
+- **Tab Management**: Fixed tab deduplication so clicking Home/nav items switches to existing tabs instead of creating duplicates.
+- **Search Experience**: Deep search now has 30-second timeout, shows "No Results" toast, and proper error messages.
+- **Transfer Panel**: Moved panel up from bottom edge to be visible above footer.
+- **Toast Notifications**: File save success now shows as toast instead of inline Alert.
+
+### Fixed
+- **Search [object object] Error**: Fixed improper error string conversion in search error display.
+
 ## [0.2.18] - 2026-01-16
 
 ### Fixed

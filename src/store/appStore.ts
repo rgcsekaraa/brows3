@@ -67,8 +67,7 @@ export const useAppStore = create<AppState>()(
       
       addTab: (tab) => set((state) => {
         // Check if a tab with the same path already exists (deduplicate)
-        // EXCEPT for the root path '/' which we allow multiples of (like "New Tab" in browsers)
-        const existingTab = tab.path !== '/' && state.tabs.find(t => t.path === tab.path);
+        const existingTab = state.tabs.find(t => t.path === tab.path);
         if (existingTab) {
           // Just switch to existing tab, don't create duplicate
           return { activeTabId: existingTab.id };

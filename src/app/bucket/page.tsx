@@ -185,11 +185,24 @@ function BucketContent() {
     if (isDeepSearch) {
         setIsSearching(true);
         try {
-            // Server-side deep search (recursive)
-            const results = await objectApi.searchObjects(bucketName, bucketRegion, searchQuery, prefix);
+            // Server-side deep search with timeout to prevent freeze
+            const SEARCH_TIMEOUT_MS = 30000; // 30 seconds max
+            
+            const searchPromise = objectApi.searchObjects(bucketName, bucketRegion, searchQuery, prefix);
+            const timeoutPromise = new Promise<never>((_, reject) => 
+                setTimeout(() => reject(new Error('Search timed out after 30 seconds')), SEARCH_TIMEOUT_MS)
+            );
+            
+            const results = await Promise.race([searchPromise, timeoutPromise]);
             setSearchResults(results);
+            
+            // Show message if no results
+            if (results.length === 0) {
+                toast.info('No Results', `No objects found matching "${searchQuery}"`);
+            }
         } catch (err) {
-            displayError(`Search failed: ${err}`);
+            const errMsg = err instanceof Error ? err.message : String(err);
+            displayError('Search failed', errMsg);
             setSearchResults(null);
         } finally {
             setIsSearching(false);
@@ -255,6 +268,7 @@ function BucketContent() {
   // Preview/Edit Dialog State
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [startInEditMode, setStartInEditMode] = useState(false);
 
   const handlePropertiesOpen = () => {
     handleMenuClose();
@@ -1033,10 +1047,12 @@ function BucketContent() {
           setDeleteConfirmOpen(true);
         }}
         onPreview={(key) => {
+          setStartInEditMode(false);
           setPreviewKey(key);
           setPreviewOpen(true);
         }}
         onEdit={(key) => {
+          setStartInEditMode(true);
           setPreviewKey(key);
           setPreviewOpen(true);
         }}
@@ -1062,6 +1078,7 @@ function BucketContent() {
         {!selectedObject?.isFolder && selectedObject && (selectedObject.key.split('.').pop() || '').match(/^(txt|md|json|xml|html|css|js|ts|py|yaml|yml|log|csv)$/) && (
           <MenuItem onClick={() => {
             if (selectedObject) {
+              setStartInEditMode(true);
               setPreviewKey(selectedObject.key);
               setPreviewOpen(true);
             }
@@ -1232,11 +1249,12 @@ function BucketContent() {
       {/* Preview/Edit Dialog */}
       <ObjectPreviewDialog
         open={previewOpen}
-        onClose={() => { setPreviewOpen(false); setPreviewKey(null); }}
+        onClose={() => { setPreviewOpen(false); setPreviewKey(null); setStartInEditMode(false); }}
         bucketName={bucketName}
         bucketRegion={bucketRegion}
         objectKey={previewKey || ''}
         onSave={() => refresh()}
+        startInEditMode={startInEditMode}
       />
 
       {/* Delete Confirmation Dialog */}

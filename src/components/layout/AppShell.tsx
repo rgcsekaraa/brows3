@@ -30,6 +30,7 @@ import { TransferPanel } from '@/components/transfer/TransferPanel';
 import { useProfileStore } from '@/store/profileStore';
 import ProfileDialog from '@/components/profile/ProfileDialog';
 import ToastContainer from '@/components/common/ToastContainer';
+import { FreezeDetector } from '@/components/common/FreezeDetector';
 import { check } from '@tauri-apps/plugin-updater';
 import { toast } from '@/store/toastStore';
 import { profileApi } from '@/lib/tauri';
@@ -296,6 +297,7 @@ export default function AppShell({ children }: AppShellProps) {
         <ProfileDialog open={profileDialogOpen} onClose={() => setProfileDialogOpen(false)} />
         <ToastContainer />
         <TransferPanel />
+        <FreezeDetector />
       </Box>
     </Box>
   </ThemeProvider>

@@ -38,8 +38,7 @@ import { useBuckets } from '@/hooks/useBuckets';
 import { useAppStore } from '@/store/appStore';
 
 const navItems = [
-  { label: 'Explorer', icon: <ExploreIcon />, path: '/' },
-  { label: 'Buckets', icon: <StorageIcon />, path: '/?view=discovery' },
+  { label: 'Home', icon: <HomeIcon />, path: '/' },
   { label: 'Favorites', icon: <StarIcon />, path: '/favorites' },
   { label: 'Recent', icon: <HistoryIcon />, path: '/recent' },
   { label: 'Downloads', icon: <DownloadIcon />, path: '/downloads' },

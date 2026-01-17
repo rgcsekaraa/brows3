@@ -720,7 +720,7 @@ dependencies = [
 
 [[package]]
 name = "brows3"
-version = "0.2.17"
+version = "0.2.19"
 dependencies = [
  "anyhow",
  "aws-config",

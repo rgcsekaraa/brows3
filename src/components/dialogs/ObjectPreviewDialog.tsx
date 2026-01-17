@@ -23,6 +23,7 @@ import {
 } from '@mui/icons-material';
 import { objectApi } from '@/lib/tauri';
 import Editor, { OnMount } from '@monaco-editor/react';
+import { toast } from '@/store/toastStore';
 
 interface ObjectPreviewDialogProps {
   open: boolean;
@@ -31,6 +32,7 @@ interface ObjectPreviewDialogProps {
   bucketRegion: string;
   objectKey: string;
   onSave?: () => void;
+  startInEditMode?: boolean;
 }
 
 // Get file extension
@@ -115,6 +117,7 @@ export default function ObjectPreviewDialog({
   bucketRegion,
   objectKey,
   onSave,
+  startInEditMode = false,
 }: ObjectPreviewDialogProps) {
   const theme = useTheme();
   const [isLoading, setIsLoading] = useState(false);
@@ -122,9 +125,8 @@ export default function ObjectPreviewDialog({
   const [content, setContent] = useState<string>('');
   const [editedContent, setEditedContent] = useState<string>('');
   const [presignedUrl, setPresignedUrl] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(startInEditMode);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [isImageRendering, setIsImageRendering] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const editorRef = useRef<any>(null);
@@ -145,7 +147,7 @@ export default function ObjectPreviewDialog({
       setContent('');
       setEditedContent('');
       setPresignedUrl(null);
-      setSaveSuccess(false);
+      setIsEditing(startInEditMode); // Reset edit mode based on prop
 
       // Safety timeout to prevent infinite spinner
       const timeoutId = setTimeout(() => {
@@ -199,11 +201,8 @@ export default function ObjectPreviewDialog({
     try {
       await objectApi.putObjectContent(bucketName, bucketRegion, objectKey, editedContent);
       setContent(editedContent);
-      setSaveSuccess(true);
+      toast.success('File Saved', `${objectKey.split('/').pop()} saved successfully`);
       onSave?.();
-      // Keep edit mode open for further edits? Or close it?
-      // Usually keep it open or just show success.
-      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
@@ -272,12 +271,6 @@ export default function ObjectPreviewDialog({
 
         {error && (
           <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>
-        )}
-
-        {saveSuccess && (
-          <Alert severity="success" sx={{ m: 1, pos: 'absolute', top: 0, right: 0, zIndex: 1000 }} onClose={() => setSaveSuccess(false)}>
-            File saved successfully
-          </Alert>
         )}
 
         {/* Image Preview */}

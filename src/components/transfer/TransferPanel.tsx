@@ -60,7 +60,7 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
     <Box 
       sx={{ 
         position: 'fixed', 
-        bottom: 0, 
+        bottom: 32, 
         right: 20, 
         width: 360, 
         zIndex: 1200,
