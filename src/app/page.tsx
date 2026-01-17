@@ -115,9 +115,9 @@ function HomeContent() {
     const { bucket, prefix, hasTrailingSlash } = parsed;
     
     const activeProfile = profiles.find(p => p.id === activeProfileId);
-    // Priority: 1. Discovered region, 2. Profile default
-    const discoveredRegion = useAppStore.getState().discoveredRegions[bucket];
-    const region = discoveredRegion || activeProfile?.region || 'us-east-1';
+    // Priority: 1. Discovered region from store, 2. Profile default
+    const { discoveredRegions } = useAppStore.getState();
+    const region = discoveredRegions[bucket] || activeProfile?.region || 'us-east-1';
     
     // Determine if we should append a slash
     let finalPrefix = prefix;

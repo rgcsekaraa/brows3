@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.20] - 2026-01-17
+
+### Added
+- **Periodic Transfer Sync**: Transfer state now syncs with backend every 5 seconds for consistency.
+- **Visibility-Based Refresh**: Buckets and objects auto-refresh when returning to app (with 30s debounce).
+
+### Fixed
+- **Transfer Panel State**: Panel hidden state now persists across page navigation.
+- **Profile Loading Race**: Removed duplicate profile loading between AppShell and ProfileSelector.
+- **useEffect Dependencies**: Fixed missing/stale dependencies in bucket page and useTransferEvents.
+- **Transfer Event Stability**: Event listeners now use refs to prevent unnecessary re-subscriptions.
+
 ## [0.2.19] - 2026-01-17
 
 ### Added

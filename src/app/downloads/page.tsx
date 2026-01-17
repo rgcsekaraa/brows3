@@ -85,7 +85,12 @@ const getStatusInfo = (status: TransferJob['status']): { label: string; color: '
 };
 
 export default function DownloadsPage() {
-  const { jobs, setJobs } = useTransferStore();
+  const { jobs, refreshJobs, clearCompleted: clearCompletedStore } = useTransferStore();
+  
+  // Refresh jobs on mount to sync with backend
+  useEffect(() => {
+    refreshJobs();
+  }, [refreshJobs]);
   
   // Filter only downloads
   const downloads = useMemo(() => 
@@ -111,13 +116,6 @@ export default function DownloadsPage() {
       progress: totalBytes > 0 ? (processedBytes / totalBytes) * 100 : 0,
     };
   }, [downloads]);
-
-  const { refreshJobs, clearCompleted: clearCompletedStore } = useTransferStore();
-
-  // Refresh jobs on mount to sync with backend
-  useEffect(() => {
-    refreshJobs();
-  }, [refreshJobs]);
 
   // Grouping logic
   const groupedDownloads = useMemo(() => {

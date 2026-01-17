@@ -218,6 +218,7 @@ function BucketContent() {
       if (searchQuery.trim()) {
         handleSearch();
       }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when isDeepSearch toggles
   }, [isDeepSearch]);
 
   // derived data for display (sorting handled by VirtualizedObjectTable)

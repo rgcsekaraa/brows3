@@ -139,6 +139,22 @@ export function useBuckets(options: { enabled?: boolean } = { enabled: true }): 
     };
   }, [fetchBuckets, enabled]);
 
+  // Refresh when tab regains visibility (user returns to app)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && enabled && activeProfileId) {
+        // Check if cache is stale (older than 1 minute)
+        const cached = bucketCache.get(activeProfileId);
+        if (!cached || Date.now() - cached.timestamp > 60000) {
+          fetchBuckets(true);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [enabled, activeProfileId, fetchBuckets]);
+
   const isCached = useMemo(() => {
     return cacheTimestamp !== null && !isLoading;
   }, [cacheTimestamp, isLoading]);

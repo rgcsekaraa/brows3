@@ -121,6 +121,26 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
     return () => { cancelled = true; };
   }, [bucketName, activeRegion, prefix, activeProfileId, fetchItems]);
 
+  // Track last fetch time
+  const lastFetchTime = useRef<number>(0);
+
+  // Refresh when tab regains visibility (user returns to app)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && bucketName && activeProfileId) {
+        // Only refresh if last fetch was > 30 seconds ago
+        const now = Date.now();
+        if (now - lastFetchTime.current > 30000) {
+          lastFetchTime.current = now;
+          fetchItems(true);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [bucketName, activeProfileId, fetchItems]);
+
   const loadMore = useCallback(async () => {
     if (!bucketName || !activeProfileId || !continuationToken || isLoadingMore || fetchInProgress.current) return;
     

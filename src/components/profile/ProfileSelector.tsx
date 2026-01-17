@@ -30,37 +30,14 @@ export default function ProfileSelector() {
   const { 
     profiles, 
     activeProfileId, 
-    setProfiles, 
     setActiveProfileId,
     isLoading,
-    setLoading,
   } = useProfileStore();
   
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   
-  // Load profiles on mount
-  useEffect(() => {
-    const loadProfiles = async () => {
-      try {
-        setLoading(true);
-        const [profileList, activeProfile] = await Promise.all([
-          profileApi.listProfiles(),
-          profileApi.getActiveProfile(),
-        ]);
-        setProfiles(profileList);
-        if (activeProfile) {
-          setActiveProfileId(activeProfile.id);
-        }
-      } catch (error) {
-        console.error('Failed to load profiles:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadProfiles();
-  }, [setProfiles, setActiveProfileId, setLoading]);
+  // Profiles are hydrated by AppShell on mount - no need to load here
   
   const handleProfileChange = async (event: SelectChangeEvent<string>) => {
     const newProfileId = event.target.value;

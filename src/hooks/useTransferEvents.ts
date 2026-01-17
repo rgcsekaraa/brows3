@@ -5,27 +5,52 @@ import { listen } from '@tauri-apps/api/event';
 import { TransferEvent, TransferJob } from '@/lib/tauri';
 import { useTransferStore } from '@/store/transferStore';
 
+const REFRESH_INTERVAL_MS = 5000; // Refresh every 5 seconds
+
 export function useTransferEvents() {
-  const { updateJob, addJob } = useTransferStore();
+  const store = useTransferStore();
   const unlistenRef = useRef<(() => void) | null>(null);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Use refs to store latest callbacks without triggering effect re-runs
+  const callbacksRef = useRef({
+    updateJob: store.updateJob,
+    upsertJob: store.upsertJob,
+    refreshJobs: store.refreshJobs,
+  });
+  
+  // Keep refs in sync
+  callbacksRef.current = {
+    updateJob: store.updateJob,
+    upsertJob: store.upsertJob,
+    refreshJobs: store.refreshJobs,
+  };
 
   useEffect(() => {
     // Setup listener
     const setup = async () => {
       if (unlistenRef.current) return;
       
+      // Initial refresh on mount
+      callbacksRef.current.refreshJobs();
+      
       const unlistenUpdate = await listen<TransferEvent>('transfer-update', (event) => {
-        updateJob(event.payload);
+        callbacksRef.current.updateJob(event.payload);
       });
       
       const unlistenAdded = await listen<TransferJob>('transfer-added', (event) => {
-        addJob(event.payload);
+        callbacksRef.current.upsertJob(event.payload);
       });
       
       unlistenRef.current = () => {
           unlistenUpdate();
           unlistenAdded();
       };
+      
+      // Periodic refresh to stay in sync
+      refreshIntervalRef.current = setInterval(() => {
+        callbacksRef.current.refreshJobs();
+      }, REFRESH_INTERVAL_MS);
     };
 
     setup();
@@ -35,6 +60,12 @@ export function useTransferEvents() {
         unlistenRef.current();
         unlistenRef.current = null;
       }
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
     };
-  }, [updateJob, addJob]);
+  }, []); // Empty deps - runs once on mount
 }
+
+
