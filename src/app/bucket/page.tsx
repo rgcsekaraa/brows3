@@ -661,23 +661,21 @@ function BucketContent() {
     
     setIsDeleting(true);
     try {
-        // Collect all keys to delete - for folders, we need to list all objects inside
+        // Collect all keys to delete - for folders, we need to list ALL objects recursively
         const keysToDelete: string[] = [];
         
         for (const key of selectedKeys) {
           if (key.endsWith('/')) {
-            // It's a folder - list all objects recursively under this prefix
+            // It's a folder - list ALL objects recursively under this prefix
+            // Must use: empty delimiter (to get all nested objects) AND bypassCache (to avoid cached folder structure)
             try {
               let continuationToken: string | undefined;
               do {
-                const result = await objectApi.listObjects(bucketName, bucketRegion, key, '', continuationToken);
-                // Add all objects under this prefix
+                // Empty delimiter = flat list of ALL objects, bypassCache = true = skip folder-structured cache
+                const result = await objectApi.listObjects(bucketName, bucketRegion, key, '', continuationToken, true);
+                // Add all objects under this prefix (since delimiter is empty, no common_prefixes will be returned)
                 for (const obj of result.objects) {
                   keysToDelete.push(obj.key);
-                }
-                // Also add any nested "folders" (common prefixes)
-                for (const prefix of result.common_prefixes) {
-                  keysToDelete.push(prefix);
                 }
                 continuationToken = result.next_continuation_token || undefined;
               } while (continuationToken);
