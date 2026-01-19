@@ -355,6 +355,12 @@ function BucketContent() {
   // Multi-select State
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   
+  // Clear selection when navigating to a different folder
+  useEffect(() => {
+    setSelectedKeys(new Set());
+    setSelectedObject(null);
+  }, [prefix, bucketName]);
+  
   // Selection Handlers - memoized to prevent re-renders
   const handleSelect = useCallback((key: string, checked: boolean) => {
     setSelectedKeys(prev => {
