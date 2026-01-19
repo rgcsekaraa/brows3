@@ -124,8 +124,12 @@ pub async fn list_objects(
     let mut request = client
         .list_objects_v2()
         .bucket(&bucket_name)
-        .prefix(&prefix_str)
-        .delimiter(&delimiter_str);
+        .prefix(&prefix_str);
+    
+    // Only set delimiter if it's non-empty - empty/omitted delimiter returns ALL nested objects (recursive)
+    if !delimiter_str.is_empty() {
+        request = request.delimiter(&delimiter_str);
+    }
 
     if let Some(token) = &continuation_token {
         request = request.continuation_token(token);
@@ -177,8 +181,12 @@ pub async fn list_objects(
                 let mut retry_req = new_client
                     .list_objects_v2()
                     .bucket(&bucket_name)
-                    .prefix(&prefix_str)
-                    .delimiter(&delimiter_str);
+                    .prefix(&prefix_str);
+                
+                // Only set delimiter if it's non-empty
+                if !delimiter_str.is_empty() {
+                    retry_req = retry_req.delimiter(&delimiter_str);
+                }
                     
                 if let Some(token) = &continuation_token {
                     retry_req = retry_req.continuation_token(token);
