@@ -33,15 +33,7 @@ import {
 } from '@mui/icons-material';
 import { TableVirtuoso, type TableComponents } from 'react-virtuoso';
 import { S3Object } from '@/lib/tauri';
-
-// Format bytes - memoized outside component
-const formatSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-};
+import { formatSize } from '@/lib/utils';
 
 // Get extension - simple and fast
 const getExt = (name: string): string => {
@@ -158,7 +150,7 @@ interface Props {
   onSortChange: (field: 'name' | 'size' | 'date' | 'class') => void;
   onDownload?: (key: string) => void;
   onDelete?: (key: string) => void;
-  onPreview?: (key: string) => void;
+  onPreview?: (key: string, size: number) => void;
   onEdit?: (key: string) => void;
   onCopyPath?: (key: string) => void;
   onEndReached?: () => void;
@@ -202,7 +194,7 @@ function RowContent({
   isSelected: boolean;
   onSelect: (key: string, checked: boolean) => void;
   onNavigate: (prefix: string) => void;
-  onPreview?: (key: string) => void;
+  onPreview?: (key: string, size: number) => void;
   onEdit?: (key: string) => void;
   onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
 }) {
@@ -283,7 +275,7 @@ function RowContent({
           ) : (
             <>
               {canPreview && onPreview && (
-                <IconButton size="small" onClick={() => onPreview(row.key)} sx={{ p: 0.5 }} title="Preview">
+                <IconButton size="small" onClick={() => onPreview(row.key, row.size)} sx={{ p: 0.5 }} title="Preview">
                   <PreviewIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               )}

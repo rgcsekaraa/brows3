@@ -51,9 +51,12 @@ export const useHistoryStore = create<HistoryState>()(
         return { recentItems: [newItem, ...filtered].slice(0, 50) };
       }),
       
-      addFavorite: (item) => set((state) => ({ 
-        favorites: [...state.favorites, item] 
-      })),
+      addFavorite: (item) => set((state) => {
+        // Prevent duplicates - check by key AND bucket
+        const exists = state.favorites.some(i => i.key === item.key && i.bucket === item.bucket);
+        if (exists) return state;
+        return { favorites: [...state.favorites, item] };
+      }),
       
       removeFavorite: (key, bucket) => set((state) => ({ 
         favorites: state.favorites.filter(i => !(i.key === key && (bucket ? i.bucket === bucket : true))) 

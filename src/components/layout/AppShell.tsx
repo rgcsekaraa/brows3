@@ -231,7 +231,7 @@ export default function AppShell({ children }: AppShellProps) {
             px: 2, // Horizontal padding for breathing room
             bgcolor: 'background.default'
           }}>
-            {!mounted || profiles.length === 0 ? (
+            {!mounted ? (
               <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <CircularProgress size={32} />
               </Box>

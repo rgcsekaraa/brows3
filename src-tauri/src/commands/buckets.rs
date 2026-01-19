@@ -72,24 +72,28 @@ pub async fn list_buckets_with_regions(
         .await
         .map_err(|e| e.to_string())?;
     
-    // Fetch regions for each bucket (in parallel would be better but keeping simple for now)
-    let mut buckets_with_regions = Vec::with_capacity(buckets.len());
+    // Fetch regions for all buckets in PARALLEL for much faster startup
+    let client_clone = client.clone();
+    let futures: Vec<_> = buckets.into_iter().map(|bucket| {
+        let client_ref = client_clone.clone();
+        let bucket_name = bucket.name.clone();
+        async move {
+            let region = match s3::client::get_bucket_region(&client_ref, &bucket_name).await {
+                Ok(r) => r,
+                Err(_) => "unknown".to_string(),
+            };
+            BucketWithRegion {
+                name: bucket.name,
+                region,
+                creation_date: bucket.creation_date,
+                object_count: bucket.object_count,
+                total_size: bucket.total_size,
+                total_size_formatted: bucket.total_size_formatted,
+            }
+        }
+    }).collect();
     
-    for bucket in buckets {
-        let region = match s3::client::get_bucket_region(client, &bucket.name).await {
-            Ok(r) => r,
-            Err(_) => "unknown".to_string(),
-        };
-        
-        buckets_with_regions.push(BucketWithRegion {
-            name: bucket.name,
-            region,
-            creation_date: bucket.creation_date,
-            object_count: bucket.object_count,
-            total_size: bucket.total_size,
-            total_size_formatted: bucket.total_size_formatted,
-        });
-    }
+    let buckets_with_regions = futures::future::join_all(futures).await;
     
     Ok(buckets_with_regions)
 }

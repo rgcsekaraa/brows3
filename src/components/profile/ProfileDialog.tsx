@@ -1,16 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme, alpha } from '@mui/material';
 import { useSettingsStore } from '@/store/settingsStore';
 import {
   Alert,
   Box,
   Button,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
   FormControl,
   IconButton,
@@ -29,24 +26,25 @@ import {
   Paper,
   Fade,
   Tooltip,
+  Chip,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
   Check as CheckIcon,
-  Close as CloseIcon,
   Cloud as CloudIcon,
   Dns as ProfileIcon,
   Public as RegionIcon,
 } from '@mui/icons-material';
-import { Profile, CredentialType, profileApi, isTauri, TestConnectionResult } from '@/lib/tauri';
+import { Profile, CredentialType, profileApi, TestConnectionResult } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
 import { useAppStore } from '@/store/appStore';
 import { useHistoryStore } from '@/store/historyStore';
 import { useClipboardStore } from '@/store/clipboardStore';
 import { toast } from '@/store/toastStore';
 import { useRouter } from 'next/navigation';
+import { BaseDialog } from '../common/BaseDialog';
 
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -67,7 +65,8 @@ interface ProfileDialogProps {
 
 export default function ProfileDialog({ open, onClose, editProfile }: ProfileDialogProps) {
   const router = useRouter();
-  const { profiles, setProfiles, addProfile, updateProfile, removeProfile, setActiveProfileId } = useProfileStore();
+  const theme = useTheme();
+  const { profiles, addProfile, updateProfile, removeProfile, setActiveProfileId } = useProfileStore();
   const { resetApp } = useAppStore();
   const { clearHistory } = useHistoryStore();
   const { clear: clearClipboard } = useClipboardStore();
@@ -96,30 +95,27 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     if (open) {
         const fetchData = async () => {
             try {
-                const [profiles, env] = await Promise.all([
+                const [discovered, env] = await Promise.all([
                     profileApi.discoverLocalProfiles(),
                     profileApi.checkAwsEnvironment()
                 ]);
                 
-                setDiscoveredProfiles(profiles);
+                setDiscoveredProfiles(discovered);
                 setAwsEnv(env);
                 
                 // Smart default: If we are in "add" mode and haven't started typing a name yet
                 if (mode === 'add' && !formData.name && !editProfile) {
                     if (env.has_access_key) {
-                        setFormData(prev => ({ ...prev, credentialType: 'Environment', name: 'Environment Credentials' }));
-                    } else if (profiles.length > 0) {
-                        const defaultProf = profiles.find(p => p.name === 'default') || profiles[0];
-                        setFormData(prev => ({
+                        setFormData((prev: any) => ({ ...prev, credentialType: 'Environment', name: 'Environment Credentials' }));
+                    } else if (discovered.length > 0) {
+                        const defaultProf = discovered.find((p: any) => p.name === 'default') || discovered[0];
+                        setFormData((prev: any) => ({
                             ...prev,
                             credentialType: 'SharedConfig',
                             profileName: defaultProf.name,
                             region: defaultProf.region || prev.region,
                             name: `Local AWS (${defaultProf.name})`
                         }));
-                        if (defaultProf.region) {
-                            toast.success(`Auto-detected: ${defaultProf.name} (${defaultProf.region})`);
-                        }
                     }
                 }
             } catch (err) {
@@ -129,10 +125,10 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         
         fetchData();
     }
-  }, [open, mode, editProfile]); // Added mode and editProfile to dependencies
+  }, [open, mode, editProfile]);
 
   const updateField = (field: string, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev: any) => ({ ...prev, [field]: value }));
   };
 
   // Reset testing state when form data changes
@@ -252,7 +248,6 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       };
       
       if (mode === 'edit' && selectedProfile) {
-        // Ensure we preserve the ID and other fields
         const profileToUpdate = { 
             ...selectedProfile, 
             ...profileData, 
@@ -261,14 +256,9 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         const updated = await profileApi.updateProfile(selectedProfile.id, profileToUpdate);
         updateProfile(selectedProfile.id, updated);
       } else {
-        // For new profile, backend handles ID or we let it fail if not provided?
-        // Usually addProfile expects a profile object. 
-        // If the Rust add_profile generates ID, we can pass partial. 
-        // But better to let the backend validation handle it.
         const created = await profileApi.addProfile(profileData as Profile);
         addProfile(created);
         
-        // Auto-select first profile: if this is the first profile created, activate it
         if (profiles.length === 0) {
           setActiveProfileId(created.id);
         }
@@ -276,9 +266,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       
       setMode('list');
       resetForm();
-      if (editProfile) onClose(); // Close if we were editing a specific profile
+      if (editProfile) onClose();
     } catch (err) {
-      console.error('Save error:', err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
@@ -286,20 +275,28 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   };
   
   const handleDelete = async (profileID: string, profileName: string) => {
-    if (!confirm(`Delete profile "${profileName}"?`)) return;
+    let confirmed = false;
+    try {
+      const { confirm } = await import('@tauri-apps/plugin-dialog');
+      confirmed = await confirm(`This will permanently delete "${profileName}" and clear all cached data.`, {
+        title: 'Delete Profile?',
+        kind: 'warning',
+      });
+    } catch {
+      confirmed = window.confirm(`Delete profile "${profileName}"?`);
+    }
+    
+    if (!confirmed) return;
     
     try {
       await profileApi.deleteProfile(profileID);
       removeProfile(profileID);
       
-      // Global State Reset as requested by user
       resetApp();
       clearHistory();
       clearClipboard();
       
-      toast.success(`Profile "${profileName}" deleted and state reset.`);
-      
-      // Navigate to root to ensure we're not on a stale bucket page
+      toast.success(`Profile "${profileName}" deleted.`);
       router.push('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete profile');
@@ -311,32 +308,16 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     loadProfileToForm(profile);
     setMode('edit');
   };
+
+  const getDialogTitle = () => {
+    if (mode === 'list' && !editProfile) return "Cloud Profiles";
+    if (mode === 'edit') return "Update Profile";
+    return "New Cloud Connection";
+  };
   
   const renderList = () => (
     <Fade in={mode === 'list'}>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <DialogTitle component="div" sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          pb: 1,
-          px: 3,
-          pt: 3
-        }}>
-          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.5px' }}>
-            Cloud Profiles
-          </Typography>
-          <IconButton onClick={onClose} size="small" sx={{ bgcolor: 'action.hover' }}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </DialogTitle>
-        
-        <DialogContent sx={{ 
-          minWidth: { xs: '100%', sm: 500 }, 
-          maxHeight: '70vh', 
-          overflowY: 'auto',
-          px: 3 
-        }}>
           {profiles.length === 0 ? (
             <Box sx={{ 
               py: 8, 
@@ -347,22 +328,24 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
               justifyContent: 'center'
             }}>
               <Box sx={{ 
-                width: 80, 
-                height: 80, 
-                borderRadius: '50%', 
-                bgcolor: 'primary.main', 
+                width: 100, 
+                height: 100, 
+                borderRadius: 4, 
+                bgcolor: alpha(theme.palette.primary.main, 0.1), 
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'center',
-                color: 'primary.contrastText',
+                color: theme.palette.primary.main,
                 mb: 3,
-                boxShadow: '0 8px 32px rgba(255, 153, 0, 0.3)'
+                boxShadow: `0 12px 32px ${alpha(theme.palette.primary.main, 0.15)}`,
+                border: '1px solid',
+                borderColor: alpha(theme.palette.primary.main, 0.2)
               }}>
-                <CloudIcon sx={{ fontSize: 40 }} />
+                <CloudIcon sx={{ fontSize: 48 }} />
               </Box>
-              <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Setup Your First Profile</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 4, maxWidth: 300 }}>
-                Connect your AWS or S3-compatible account to start browsing your buckets.
+              <Typography variant="h4" sx={{ fontWeight: 800, mb: 1 }}>Connect to Cloud</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 4, maxWidth: 350, fontWeight: 500 }}>
+                Manage your AWS, Wasabi, DigitalOcean, or any S3-compatible accounts in one place.
               </Typography>
               <Button 
                 variant="contained"
@@ -371,93 +354,106 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 onClick={() => setMode('add')}
                 sx={{ 
                   borderRadius: 100, 
-                  px: 4,
-                  py: 1.5,
-                  boxShadow: '0 4px 14px 0 rgba(255, 153, 0, 0.39)',
-                  '&:hover': {
-                    boxShadow: '0 6px 20px rgba(255, 153, 0, 0.23)',
-                  }
+                  px: 6,
+                  py: 1.8,
+                  fontWeight: 800,
+                  boxShadow: `0 8px 24px ${alpha(theme.palette.primary.main, 0.3)}`
                 }}
               >
                 Create New Profile
               </Button>
             </Box>
           ) : (
-            <>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, mb: 1.5, display: 'block' }}>
+            <Box>
+              <Typography variant="caption" sx={{ 
+                fontWeight: 800, 
+                letterSpacing: '0.1em', 
+                color: 'text.secondary', 
+                mb: 2, 
+                display: 'block' 
+              }}>
                 ACTIVE CONNECTIONS
               </Typography>
-              <List sx={{ pt: 0 }}>
+              <List sx={{ pt: 0, px: 0 }}>
                 {profiles.map((profile) => (
                   <Paper 
                     key={profile.id} 
                     elevation={0}
                     sx={{ 
-                      mb: 1.5, 
-                      borderRadius: 1.25, 
-                      bgcolor: 'action.hover',
+                      mb: 2, 
+                      borderRadius: 3, 
+                      bgcolor: alpha(theme.palette.background.paper, 0.4),
                       border: '1px solid',
                       borderColor: 'divider',
-                      transition: 'all 0.2s ease',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                       '&:hover': {
-                        borderColor: 'primary.main',
-                        bgcolor: 'action.selected',
-                        transform: 'translateY(-2px)'
+                        borderColor: alpha(theme.palette.primary.main, 0.5),
+                        bgcolor: alpha(theme.palette.background.paper, 0.6),
+                        transform: 'translateY(-2px)',
+                        boxShadow: `0 12px 24px ${alpha(theme.palette.common.black, 0.05)}`
                       }
                     }}
                   >
                     <ListItem disablePadding>
                       <ListItemButton 
-                        sx={{ py: 2, px: 2 }}
+                        sx={{ py: 2.5, px: 3, borderRadius: 3 }}
                         onClick={() => handleEditMode(profile)}
                       >
-                        <ListItemIcon sx={{ minWidth: 48 }}>
+                        <ListItemIcon sx={{ minWidth: 60 }}>
                           <Box sx={{ 
-                            width: 36, 
-                            height: 36, 
-                            borderRadius: 1, 
-                            bgcolor: 'background.paper',
+                            width: 44, 
+                            height: 44, 
+                            borderRadius: 2, 
+                            bgcolor: alpha(theme.palette.primary.main, 0.1),
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            border: '1px solid',
-                            borderColor: 'divider'
                           }}>
-                            <ProfileIcon color="primary" sx={{ fontSize: 20 }} />
+                            <ProfileIcon sx={{ color: theme.palette.primary.main, fontSize: 24 }} />
                           </Box>
                         </ListItemIcon>
                         <ListItemText 
-                          primary={<Typography component="span" variant="subtitle1" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>{profile.name}</Typography>}
+                          primary={<Typography sx={{ fontWeight: 800, fontSize: '1rem' }}>{profile.name}</Typography>}
                           secondary={
-                              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.8 }}>
+                              <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', mt: 1 }}>
                                   <Box sx={{ 
                                       fontSize: '0.65rem', 
                                       fontWeight: 800,
-                                      bgcolor: 'secondary.main', 
-                                      color: 'secondary.contrastText',
-                                      px: 1, 
-                                      py: 0.3,
-                                      borderRadius: 0.5,
+                                      bgcolor: alpha(theme.palette.secondary.main, 0.1), 
+                                      color: theme.palette.secondary.main,
+                                      px: 1.5, 
+                                      py: 0.5,
+                                      borderRadius: 1,
                                       textTransform: 'uppercase'
                                   }}>
                                       {profile.credential_type.type === 'CustomEndpoint' ? 'S3 COMPAT' : profile.credential_type.type}
                                   </Box>
-                                  <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary', fontWeight: 500 }}>
-                                      <RegionIcon sx={{ fontSize: 13 }} /> {profile.region || 'global'}
-                                  </Typography>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary', opacity: 0.8 }}>
+                                      <RegionIcon sx={{ fontSize: 14 }} /> 
+                                      <Typography variant="caption" sx={{ fontWeight: 700 }}>{profile.region || 'global'}</Typography>
+                                  </Box>
                               </Box>
                           }
                           secondaryTypographyProps={{ component: 'div' }}
                         />
                         <ListItemSecondaryAction sx={{ right: 24 }}>
-                          <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Tooltip title="Edit Settings">
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleEditMode(profile); }} sx={{ bgcolor: 'background.paper' }}>
+                          <Box sx={{ display: 'flex', gap: 1.5 }}>
+                            <Tooltip title="Settings">
+                                <IconButton 
+                                  size="small" 
+                                  onClick={(e) => { e.stopPropagation(); handleEditMode(profile); }}
+                                  sx={{ bgcolor: alpha(theme.palette.action.hover, 0.5), p: 1 }}
+                                >
                                     <EditIcon fontSize="small" />
                                 </IconButton>
                             </Tooltip>
                             <Tooltip title="Delete">
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDelete(profile.id, profile.name); }} color="error" sx={{ bgcolor: 'background.paper' }}>
+                                <IconButton 
+                                  size="small" 
+                                  onClick={(e) => { e.stopPropagation(); handleDelete(profile.id, profile.name); }} 
+                                  color="error"
+                                  sx={{ bgcolor: alpha(theme.palette.error.main, 0.05), p: 1 }}
+                                >
                                     <DeleteIcon fontSize="small" />
                                 </IconButton>
                             </Tooltip>
@@ -468,270 +464,225 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                   </Paper>
                 ))}
               </List>
-            </>
-          )}
-        </DialogContent>
-        {profiles.length > 0 && (
-            <DialogActions sx={{ p: 3, pt: 0 }}>
+              
               <Button 
                 fullWidth 
                 variant="outlined" 
                 startIcon={<AddIcon />}
                 onClick={() => { resetForm(); setMode('add'); }}
                 sx={{ 
-                  borderRadius: 1.25, 
-                  py: 1.2,
-                  fontWeight: 700,
-                  borderWidth: 2,
-                  '&:hover': { borderWidth: 2 }
+                  mt: 1,
+                  borderRadius: 3, 
+                  py: 2,
+                  fontWeight: 800,
+                  borderWidth: '2px !important',
+                  borderColor: alpha(theme.palette.divider, 1)
                 }}
               >
                 Add Another Profile
               </Button>
-            </DialogActions>
-        )}
+            </Box>
+          )}
       </Box>
     </Fade>
   );
   
   const renderForm = () => (
     <Fade in={mode !== 'list'}>
-      <Box sx={{ p: 1 }}>
-        <DialogTitle component="div" sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          pb: 1,
-          px: 2,
-          pt: 1
-        }}>
-          <Typography variant="h6" sx={{ fontWeight: 800 }}>
-            {mode === 'edit' ? 'Update Profile' : 'New Cloud Connection'}
-          </Typography>
-          <IconButton size="small" onClick={() => setMode('list')} sx={{ bgcolor: 'action.hover' }}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent sx={{ 
-          pt: 1, 
-          px: 2,
-          maxHeight: '70vh',
-          overflowY: 'auto'
-        }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
-            <TextField
-              label="Connection Name"
-              placeholder="e.g. Production AWS"
-              value={formData.name}
-              onChange={(e) => updateField('name', e.target.value)}
-              fullWidth
-              required
-              variant="outlined"
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+        <TextField
+          label="Profile Name"
+          placeholder="e.g. Production AWS"
+          value={formData.name}
+          onChange={(e) => updateField('name', e.target.value)}
+          fullWidth
+          required
+          variant="outlined"
+          sx={{ 
+              mt: 1,
+              '& .MuiOutlinedInput-root': { borderRadius: 2, fontWeight: 600 },
+          }}
+        />
+        
+        <FormControl fullWidth>
+          <InputLabel sx={{ fontWeight: 700 }}>Authentication Method</InputLabel>
+          <Select
+            value={formData.credentialType}
+            label="Authentication Method"
+            onChange={(e) => updateField('credentialType', e.target.value)}
+            sx={{ borderRadius: 2, fontWeight: 600 }}
+          >
+            <MenuItem value="Environment">System Environment Variables</MenuItem>
+            <MenuItem value="SharedConfig">Local AWS Config File (~/.aws)</MenuItem>
+            <MenuItem value="Manual">Manual Credentials (AK/SK)</MenuItem>
+            <MenuItem value="CustomEndpoint">Custom S3 / Compatibility Mode</MenuItem>
+          </Select>
+        </FormControl>
+        
+        {formData.credentialType === 'Environment' && (
+            <Alert 
+              severity={awsEnv?.has_access_key ? "success" : "info"}
+              variant="filled" 
               sx={{ 
-                  mt: 1,
-                  '& .MuiOutlinedInput-root': { borderRadius: 1.5 },
-                  '& .MuiInputLabel-root': { fontWeight: 600 }
+                  borderRadius: 2, 
+                  fontWeight: 600,
+                  bgcolor: awsEnv?.has_access_key ? alpha(theme.palette.success.main, 0.2) : alpha(theme.palette.info.main, 0.1),
+                  color: 'text.primary',
+                  border: '1px solid',
+                  borderColor: awsEnv?.has_access_key ? theme.palette.success.main : theme.palette.info.main,
+                  '& .MuiAlert-icon': { color: awsEnv?.has_access_key ? theme.palette.success.main : theme.palette.info.main } 
               }}
-            />
-            
-            <FormControl fullWidth variant="outlined">
-              <InputLabel sx={{ fontWeight: 600 }}>Provider / Auth Method</InputLabel>
-              <Select
-                value={formData.credentialType}
-                label="Provider / Auth Method"
-                onChange={(e) => updateField('credentialType', e.target.value)}
-                sx={{ borderRadius: 1.5 }}
-              >
-                <MenuItem value="Environment">System Environment Variables</MenuItem>
-                <MenuItem value="SharedConfig">Local AWS Config File (~/.aws)</MenuItem>
-                <MenuItem value="Manual">Manual Credentials (AK/SK)</MenuItem>
-                <MenuItem value="CustomEndpoint">Custom S3 / Compatibility Mode</MenuItem>
-              </Select>
-            </FormControl>
-            
-            {formData.credentialType === 'Environment' && (
-                <Alert 
-                  severity={awsEnv?.has_access_key ? "success" : "info"}
-                  variant="outlined" 
-                  sx={{ 
-                      borderRadius: 1.5, 
-                      bgcolor: awsEnv?.has_access_key ? 'success.main' : 'info.main', 
-                      color: awsEnv?.has_access_key ? 'success.contrastText' : 'info.contrastText',
-                      '& .MuiAlert-icon': { color: awsEnv?.has_access_key ? 'success.contrastText' : 'info.contrastText' } 
-                  }}
-                 >
-                   {awsEnv?.has_access_key ? (
-                     <Box>
-                       <Typography variant="body2" sx={{ fontWeight: 700 }}>Real credentials detected in shell!</Typography>
-                       <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                         Using: {awsEnv.has_access_key ? 'AWS_ACCESS_KEY_ID' : ''} 
-                         {awsEnv.has_secret_key ? ' + SECRET' : ''}
-                         {awsEnv.region ? ` (${awsEnv.region})` : ''}
-                       </Typography>
-                     </Box>
-                   ) : (
-                     <Typography variant="body2">No <code>AWS_ACCESS_KEY_ID</code> detected in system environment. This only works if you launched the app from a terminal with these set.</Typography>
-                   )}
-                 </Alert>
+             >
+               {awsEnv?.has_access_key ? (
+                 <Box>
+                   <Typography variant="body2" sx={{ fontWeight: 800 }}>System Credentials Detected</Typography>
+                   <Typography variant="caption" sx={{ fontWeight: 600, opacity: 0.8 }}>
+                     Using: {awsEnv.has_access_key ? 'AWS_ACCESS_KEY_ID' : ''} 
+                     {awsEnv.has_secret_key ? ' + SECRET' : ''}
+                   </Typography>
+                 </Box>
+               ) : (
+                 <Typography variant="body2" sx={{ fontWeight: 600 }}>No <code>AWS_ACCESS_KEY_ID</code> found. Ensure environment variables are set before launch.</Typography>
+               )}
+             </Alert>
+        )}
+        
+        {formData.credentialType === 'SharedConfig' && (
+          <Autocomplete
+            freeSolo
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontWeight: 600 } }}
+            value={formData.profileName}
+            onInputChange={(_, newValue) => updateField('profileName', newValue)}
+            onChange={(_, value) => {
+                if (value) {
+                    updateField('profileName', value);
+                    const found = discoveredProfiles.find((p: any) => p.name === value);
+                    if (found?.region) updateField('region', found.region);
+                }
+            }}
+            options={discoveredProfiles.map((p: any) => p.name)}
+            renderInput={(params) => (
+                <TextField 
+                    {...params} 
+                    label="Local AWS Profile" 
+                    placeholder="default"
+                    fullWidth
+                />
             )}
-            
-            {formData.credentialType === 'SharedConfig' && (
-              <Autocomplete
-                freeSolo
-                value={formData.profileName}
-                onInputChange={(_, newValue) => updateField('profileName', newValue)}
-                onChange={(_, value) => {
-                    if (value) {
-                        updateField('profileName', value);
-                        // Auto-fill region if found in discovered profile
-                        const found = discoveredProfiles.find(p => p.name === value);
-                        if (found?.region) {
-                            updateField('region', found.region);
-                            toast.success(`Region auto-detected: ${found.region}`);
-                        }
-                    }
-                }}
-                options={discoveredProfiles.map(p => p.name)}
-                renderInput={(params) => (
-                    <TextField 
-                        {...params} 
-                        label="Local AWS Profile" 
-                        variant="outlined" 
-                        placeholder="default"
-                        helperText="Found profiles in your local machine"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
-                    />
+          />
+        )}
+        
+        {(formData.credentialType === 'Manual' || formData.credentialType === 'CustomEndpoint') && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, p: 3, borderRadius: 3, border: '1px dashed', borderColor: 'divider', bgcolor: alpha(theme.palette.background.paper, 0.3) }}>
+                {formData.credentialType === 'CustomEndpoint' && (
+                  <TextField
+                    label="Endpoint URL"
+                    value={formData.endpointUrl}
+                    onChange={(e) => updateField('endpointUrl', e.target.value)}
+                    fullWidth
+                    placeholder="https://s3.us-east-1.amazonaws.com"
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 } }}
+                  />
                 )}
-                fullWidth
+                <TextField
+                    label="Access Key ID"
+                    value={formData.accessKeyId}
+                    onChange={(e) => updateField('accessKeyId', e.target.value)}
+                    fullWidth
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 } }}
+                />
+                <TextField
+                    label="Secret Access Key"
+                    type="password"
+                    value={formData.secretAccessKey}
+                    onChange={(e) => updateField('secretAccessKey', e.target.value)}
+                    fullWidth
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 } }}
+                />
+          </Box>
+        )}
+        
+        <FormControl fullWidth>
+          <InputLabel sx={{ fontWeight: 700 }}>Default Region</InputLabel>
+          <Select
+            value={formData.region}
+            label="Default Region"
+            onChange={(e) => updateField('region', e.target.value)}
+            sx={{ borderRadius: 2, fontWeight: 600 }}
+            MenuProps={{ PaperProps: { sx: { maxHeight: 300, borderRadius: 2, border: '1px solid', borderColor: 'divider' } } }}
+          >
+            {AWS_REGIONS.map((region) => (
+              <MenuItem key={region} value={region} sx={{ fontWeight: 600 }}>{region}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Button
+              variant="text"
+              onClick={handleTestConnection}
+              disabled={testing}
+              startIcon={testing ? <CircularProgress size={16} /> : <CheckIcon fontSize="small" />}
+              sx={{ borderRadius: 100, fontWeight: 700, px: 2 }}
+            >
+              Test Connection
+            </Button>
+            
+            {testResult && (
+              <Chip 
+                label={testResult.success ? "Connection OK" : "Failed"} 
+                color={testResult.success ? "success" : "error"}
+                size="small"
+                sx={{ fontWeight: 800, borderRadius: 1 }}
               />
             )}
-            
-            {(formData.credentialType === 'Manual' || formData.credentialType === 'CustomEndpoint') && (
-              <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 1.25, borderStyle: 'dashed' }}>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                    {formData.credentialType === 'CustomEndpoint' && (
-                      <TextField
-                        label="Endpoint URL"
-                        value={formData.endpointUrl}
-                        onChange={(e) => updateField('endpointUrl', e.target.value)}
-                        fullWidth
-                        placeholder="https://s3.us-east-1.amazonaws.com"
-                        variant="outlined"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.25, bgcolor: 'background.paper' } }}
-                      />
-                    )}
-                    <TextField
-                        label="Access Key ID"
-                        value={formData.accessKeyId}
-                        onChange={(e) => updateField('accessKeyId', e.target.value)}
-                        fullWidth
-                        variant="outlined"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.25, bgcolor: 'background.paper' } }}
-                    />
-                    <TextField
-                        label="Secret Access Key"
-                        type="password"
-                        value={formData.secretAccessKey}
-                        onChange={(e) => updateField('secretAccessKey', e.target.value)}
-                        fullWidth
-                        variant="outlined"
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper' } }}
-                    />
-                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 500 }}>
-                        <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'success.main' }} />
-                        Stored securely in your system's native keychain.
-                    </Typography>
-                </Box>
-              </Paper>
-            )}
-            
-            <FormControl fullWidth variant="outlined">
-              <InputLabel>Default Region</InputLabel>
-              <Select
-                value={formData.region}
-                label="Default Region"
-                onChange={(e) => updateField('region', e.target.value)}
-                sx={{ borderRadius: 1.5 }}
-                MenuProps={{ PaperProps: { sx: { maxHeight: 300 } } }}
-              >
-                {AWS_REGIONS.map((region) => (
-                  <MenuItem key={region} value={region}>{region}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              <Button
-                variant="outlined"
-                onClick={handleTestConnection}
-                disabled={testing}
-                startIcon={testing ? <CircularProgress size={16} /> : <CheckIcon fontSize="small" />}
-                sx={{ 
-                    alignSelf: 'flex-start', 
-                    borderRadius: 100, 
-                    px: 3, 
-                    fontWeight: 700,
-                    textTransform: 'none'
-                }}
-              >
-                Test Connection
-              </Button>
-              
-              {testResult && (
-                <Alert 
-                  severity={testResult.success ? 'success' : 'error'} 
-                  sx={{ borderRadius: 1.25, fontWeight: 600 }}
-                >
-                  {testResult.message}
-                </Alert>
-              )}
-            </Box>
-            
-            {error && (
-              <Alert severity="error" variant="filled" sx={{ borderRadius: 1.5 }}>{error}</Alert>
-            )}
           </Box>
-        </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 1, justifyContent: 'space-between' }}>
-          <Button onClick={() => setMode('list')} disabled={saving} variant="text" sx={{ fontWeight: 700 }}>
-              Cancel
-          </Button>
-          <Button 
-            variant="contained" 
-            onClick={handleSave}
-            disabled={saving}
-            startIcon={saving ? <CircularProgress size={16} color="inherit" /> : null}
-            sx={{ 
-                px: 5, 
-                py: 1.2,
-                borderRadius: 100, 
-                fontWeight: 800,
-                boxShadow: 4
-            }}
-          >
-            {mode === 'edit' ? 'Update Profile' : 'Connect Account'}
-          </Button>
-        </DialogActions>
+          
+          {error && (
+            <Alert severity="error" variant="filled" sx={{ borderRadius: 2, fontWeight: 600 }}>{error}</Alert>
+          )}
+        </Box>
       </Box>
     </Fade>
   );
   
   return (
-    <Dialog 
-        open={open} 
-        onClose={onClose} 
-        maxWidth="sm" 
-        fullWidth
-        PaperProps={{
-            sx: { 
-                borderRadius: 2, 
-                boxShadow: '0 24px 80px rgba(0,0,0,0.2)',
-                backgroundImage: 'none',
-                bgcolor: 'background.paper',
-            }
-        }}
+    <BaseDialog 
+      open={open} 
+      onClose={onClose} 
+      title={getDialogTitle()}
+      maxWidth="sm"
+      fullWidth
+      actions={
+        mode !== 'list' ? (
+          <Box sx={{ display: 'flex', width: '100%', justifyContent: 'space-between', px: 1 }}>
+            <Button 
+              onClick={() => setMode('list')} 
+              disabled={saving} 
+              sx={{ fontWeight: 700, color: 'text.secondary' }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="contained" 
+              onClick={handleSave}
+              disabled={saving}
+              sx={{ 
+                  px: 5, 
+                  py: 1,
+                  borderRadius: 100, 
+                  fontWeight: 800,
+                  boxShadow: `0 8px 20px ${alpha(theme.palette.primary.main, 0.2)}`
+              }}
+            >
+              {saving ? 'Saving...' : mode === 'edit' ? 'Update Profile' : 'Connect Account'}
+            </Button>
+          </Box>
+        ) : null
+      }
     >
       {mode === 'list' && !editProfile ? renderList() : renderForm()}
-    </Dialog>
+    </BaseDialog>
   );
 }

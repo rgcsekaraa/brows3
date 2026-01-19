@@ -4,11 +4,10 @@ use crate::transfer::{TransferJob, TransferManager, TransferType};
 use crate::error::Result;
 use tauri::{State, AppHandle};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::path::PathBuf;
 
 // We need to store the TransferManager in Tauri state
-pub type TransferState = Arc<RwLock<TransferManager>>;
+pub type TransferState = Arc<TransferManager>;
 
 fn validate_path(path: &std::path::Path) -> Result<()> {
     // Basic check for path traversal
@@ -56,12 +55,8 @@ pub async fn queue_upload(
     let job_id = job.id.clone();
     
     // Add to manager
-    {
-        let mut manager = transfer_state.write().await;
-        // Ensure app handle is set
-        manager.set_app_handle(app_handle.clone());
-        manager.add_job(job).await;
-    } // Drop lock
+    transfer_state.set_app_handle(app_handle.clone()).await;
+    transfer_state.add_job(job).await;
     
     // Trigger processing (async)
     let t_state = transfer_state.inner().clone();
@@ -73,8 +68,7 @@ pub async fn queue_upload(
         let profile_manager = p_state.read().await;
         if let Ok(Some(profile)) = profile_manager.get_active_profile().await {
             drop(profile_manager);
-            let manager = t_state.read().await;
-            manager.process_queue(s_state, &profile).await;
+            t_state.process_queue(s_state, profile).await;
         }
     });
 
@@ -108,11 +102,8 @@ pub async fn queue_download(
     let job_id = job.id.clone();
     
     // Add to manager
-    {
-        let mut manager = transfer_state.write().await;
-        manager.set_app_handle(app_handle.clone());
-        manager.add_job(job).await;
-    }
+    transfer_state.set_app_handle(app_handle.clone()).await;
+    transfer_state.add_job(job).await;
     
     // Trigger processing
     let t_state = transfer_state.inner().clone();
@@ -123,8 +114,7 @@ pub async fn queue_download(
         let profile_manager = p_state.read().await;
         if let Ok(Some(profile)) = profile_manager.get_active_profile().await {
              drop(profile_manager);
-             let manager = t_state.read().await;
-             manager.process_queue(s_state, &profile).await;
+             t_state.process_queue(s_state, profile).await;
         }
     });
 
@@ -135,8 +125,7 @@ pub async fn queue_download(
 pub async fn list_transfers(
     transfer_state: State<'_, TransferState>,
 ) -> Result<Vec<TransferJob>> {
-    let manager = transfer_state.read().await;
-    Ok(manager.list_jobs().await)
+    Ok(transfer_state.list_jobs().await)
 }
 
 #[tauri::command]
@@ -181,8 +170,8 @@ pub async fn queue_folder_upload(
         found
     }).await.map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
     
-    let mut manager = transfer_state.write().await;
-    manager.set_app_handle(app_handle.clone());
+    let current_manager = transfer_state.clone();
+    current_manager.set_app_handle(app_handle.clone()).await;
     
     let count = jobs_data.len() as u32;
     let group_id = uuid::Uuid::new_v4().to_string();
@@ -198,10 +187,10 @@ pub async fn queue_folder_upload(
             size
         ).with_group(group_id.clone(), group_name.clone());
         
-        manager.add_job(job).await;
+        current_manager.add_job(job).await;
     }
     
-    // Spawn worker to process 'count' jobs sequentially
+    // Trigger processing
     let t_state = transfer_state.inner().clone();
     let p_state = profile_state.inner().clone();
     let s_state = s3_state.inner().clone();
@@ -210,10 +199,7 @@ pub async fn queue_folder_upload(
         let profile_manager = p_state.read().await;
         if let Ok(Some(profile)) = profile_manager.get_active_profile().await {
             drop(profile_manager);
-            let manager = t_state.read().await;
-            for _ in 0..count {
-                 manager.process_queue(s_state.clone(), &profile).await;
-            }
+            t_state.process_queue(s_state, profile).await;
         }
     });
 
@@ -241,9 +227,6 @@ pub async fn queue_folder_download(
         
     let objects = {
         let mut s3 = s3_state.write().await;
-        // We need a helper to list ALL objects recursively pattern
-        // For now, we can reuse the existing logic or add a new helper
-        // Let's use fetch_all_objects style but return the list
         
         let client = if let Some(ref region) = bucket_region {
             s3.get_client_for_region(&profile, region).await?
@@ -291,25 +274,15 @@ pub async fn queue_folder_download(
     let count = objects.len() as u32;
     let root_path = PathBuf::from(&local_path); // This is the destination folder
     
-    let mut manager = transfer_state.write().await;
-    manager.set_app_handle(app_handle.clone());
+    transfer_state.set_app_handle(app_handle.clone()).await;
     
     for (key, size) in objects {
-        // Calculate local path
-        // key = "prefix/subdir/file.txt"
-        // prefix = "prefix/"
-        // relative = "subdir/file.txt"
-        // local = root_path / relative
-        
-        // Remove the prefix from the key to get relative path
-        // Be careful with slashes
         let relative_key = if key.starts_with(&prefix) {
             &key[prefix.len()..]
         } else {
             &key
         };
         
-        // Skip if empty (likely the folder itself)
         if relative_key.is_empty() { continue; }
         
         let file_path = root_path.join(relative_key);
@@ -324,23 +297,19 @@ pub async fn queue_folder_download(
             size
         ).with_group(group_id.clone(), group_name.clone());
         
-        manager.add_job(job).await;
+        transfer_state.add_job(job).await;
     }
     
-    // Spawn worker
+    // Trigger processing
     let t_state = transfer_state.inner().clone();
     let p_state = profile_state.inner().clone();
     let s_state = s3_state.inner().clone();
     
     tauri::async_runtime::spawn(async move {
-        // Small delay to let UI update?
         let profile_manager = p_state.read().await;
         if let Ok(Some(profile)) = profile_manager.get_active_profile().await {
             drop(profile_manager);
-            let manager = t_state.read().await;
-            for _ in 0..count {
-                manager.process_queue(s_state.clone(), &profile).await;
-            }
+            t_state.process_queue(s_state, profile).await;
         }
     });
 
@@ -352,8 +321,7 @@ pub async fn cancel_transfer(
     job_id: String,
     transfer_state: State<'_, TransferState>,
 ) -> Result<bool> {
-    let manager = transfer_state.read().await;
-    Ok(manager.cancel_job(&job_id).await)
+    Ok(transfer_state.cancel_job(&job_id).await)
 }
 
 #[tauri::command]
@@ -364,13 +332,10 @@ pub async fn retry_transfer(
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<Option<String>> {
-    let new_id = {
-        let manager = transfer_state.read().await;
-        manager.retry_job(&job_id).await
-    };
+    let new_id = transfer_state.retry_job(&job_id).await;
     
     // If retry created a new job, trigger processing
-    if new_id.is_some() {
+    if let Some(_id) = &new_id {
         let t_state = transfer_state.inner().clone();
         let p_state = profile_state.inner().clone();
         let s_state = s3_state.inner().clone();
@@ -379,8 +344,7 @@ pub async fn retry_transfer(
             let profile_manager = p_state.read().await;
             if let Ok(Some(profile)) = profile_manager.get_active_profile().await {
                 drop(profile_manager);
-                let manager = t_state.read().await;
-                manager.process_queue(s_state, &profile).await;
+                t_state.process_queue(s_state, profile).await;
             }
         });
     }
@@ -393,14 +357,12 @@ pub async fn remove_transfer(
     job_id: String,
     transfer_state: State<'_, TransferState>,
 ) -> Result<bool> {
-    let manager = transfer_state.read().await;
-    Ok(manager.remove_job(&job_id).await)
+    Ok(transfer_state.remove_job(&job_id).await)
 }
 
 #[tauri::command]
 pub async fn clear_completed_transfers(
     transfer_state: State<'_, TransferState>,
 ) -> Result<usize> {
-    let manager = transfer_state.read().await;
-    Ok(manager.clear_completed().await)
+    Ok(transfer_state.clear_completed().await)
 }

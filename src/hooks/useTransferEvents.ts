@@ -19,12 +19,18 @@ export function useTransferEvents() {
     refreshJobs: store.refreshJobs,
   });
   
-  // Keep refs in sync
-  callbacksRef.current = {
-    updateJob: store.updateJob,
-    upsertJob: store.upsertJob,
-    refreshJobs: store.refreshJobs,
-  };
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    // Keep refs in sync
+    callbacksRef.current = {
+      updateJob: store.updateJob,
+      upsertJob: store.upsertJob,
+      refreshJobs: store.refreshJobs,
+    };
+    
+    return () => { isMounted.current = false; };
+  }, [store.updateJob, store.upsertJob, store.refreshJobs]);
 
   useEffect(() => {
     // Setup listener
@@ -35,12 +41,18 @@ export function useTransferEvents() {
       callbacksRef.current.refreshJobs();
       
       const unlistenUpdate = await listen<TransferEvent>('transfer-update', (event) => {
-        callbacksRef.current.updateJob(event.payload);
+        if (isMounted.current) callbacksRef.current.updateJob(event.payload);
       });
       
       const unlistenAdded = await listen<TransferJob>('transfer-added', (event) => {
-        callbacksRef.current.upsertJob(event.payload);
+         if (isMounted.current) callbacksRef.current.upsertJob(event.payload);
       });
+      
+      if (!isMounted.current) {
+          unlistenUpdate();
+          unlistenAdded();
+          return;
+      }
       
       unlistenRef.current = () => {
           unlistenUpdate();
@@ -49,7 +61,7 @@ export function useTransferEvents() {
       
       // Periodic refresh to stay in sync
       refreshIntervalRef.current = setInterval(() => {
-        callbacksRef.current.refreshJobs();
+        if (isMounted.current) callbacksRef.current.refreshJobs();
       }, REFRESH_INTERVAL_MS);
     };
 

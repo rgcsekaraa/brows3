@@ -9,8 +9,6 @@ import {
   LinearProgress,
   Badge,
   Paper,
-  Divider,
-  Tooltip,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -19,7 +17,6 @@ import {
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
   SwapVert as SwapIcon,
-  ClearAll as ClearIcon,
 } from '@mui/icons-material';
 import { useTransferStore } from '@/store/transferStore';
 import { TransferJob } from '@/lib/tauri';
@@ -42,14 +39,6 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
     if (status === 'Completed') return <CheckCircleIcon color="success" fontSize="small" />;
     if (typeof status === 'object' && 'Failed' in status) return <ErrorIcon color="error" fontSize="small" />;
     return <SwapIcon color="primary" fontSize="small" className="spin-animation" />;
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   // Don't show if no jobs or user closed it
@@ -180,5 +169,3 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
     </Box>
   );
 }
-
-

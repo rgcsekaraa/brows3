@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ListObjectsResult, objectApi, S3Object } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
 import { useAppStore } from '@/store/appStore';
+import { useSettingsStore } from '@/store/settingsStore';
 
 interface BucketStats {
   isCached: boolean;
@@ -37,12 +38,21 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
   const lastKey = useRef<string>('');
   const fetchInProgress = useRef(false);
 
-  const activeRegion = useMemo(() => {
-    if (bucketName && discoveredRegions[bucketName]) {
-      return discoveredRegions[bucketName];
-    }
-    return bucketRegion;
+  // STABILIZATION: Use a ref for activeRegion to avoid circular dependency
+  // logic: fetch -> updates store -> discoveredRegions changes -> activeRegion changes -> fetch triggers again
+  // We only want to transform the region once or when bucket/region props explicitly change
+  const activeRegionRef = useRef(bucketRegion);
+  useEffect(() => {
+      if (bucketName && discoveredRegions[bucketName]) {
+          activeRegionRef.current = discoveredRegions[bucketName];
+      } else if (bucketRegion) {
+          activeRegionRef.current = bucketRegion;
+      }
   }, [discoveredRegions, bucketName, bucketRegion]);
+  
+  // Use the ref in the fetch function, don't expose it as a dependency that triggers re-run
+  // Only props should trigger re-run
+  const activeRegion = activeRegionRef.current;
 
   // Core fetch function
   const fetchItems = useCallback(async (bypassCache = false) => {
@@ -125,9 +135,11 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
   const lastFetchTime = useRef<number>(0);
 
   // Refresh when tab regains visibility (user returns to app)
+  const autoRefreshOnFocus = useSettingsStore(state => state.autoRefreshOnFocus);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && bucketName && activeProfileId) {
+      if (document.visibilityState === 'visible' && bucketName && activeProfileId && autoRefreshOnFocus) {
         // Only refresh if last fetch was > 30 seconds ago
         const now = Date.now();
         if (now - lastFetchTime.current > 30000) {
@@ -139,7 +151,7 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [bucketName, activeProfileId, fetchItems]);
+  }, [bucketName, activeProfileId, fetchItems, autoRefreshOnFocus]);
 
   const loadMore = useCallback(async () => {
     if (!bucketName || !activeProfileId || !continuationToken || isLoadingMore || fetchInProgress.current) return;

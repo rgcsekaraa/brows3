@@ -31,8 +31,9 @@ export const useTabStore = create<TabStore>((set, get) => ({
             b.name === name ? { ...b, prefix } : b
           )
         }));
+        return true; // Prefix was updated - something DID change
       }
-      return false; // Already open
+      return false; // Truly no change
     }
     
     set(state => ({

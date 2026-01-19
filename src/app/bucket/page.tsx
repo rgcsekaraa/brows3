@@ -78,15 +78,11 @@ import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
 import { VirtualizedObjectTable } from '@/components/common/VirtualizedObjectTable';
 import { toast } from '@/store/toastStore';
 import { useHistoryStore } from '@/store/historyStore';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { formatSize } from '@/lib/utils';
 
-// Simple format bytes function
-const formatSize = (bytes: number) => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
+// Concurrent paste batch size
+const PASTE_CONCURRENCY = 5;
 
 function BucketContent() {
   const searchParams = useSearchParams();
@@ -122,6 +118,7 @@ function BucketContent() {
   
   // Refresh debounce ref
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchSequenceRef = useRef<number>(0);
 
   // Auto-refresh when uploads to this bucket complete
   useEffect(() => {
@@ -179,11 +176,14 @@ function BucketContent() {
     // If empty query, clear everything
     if (!searchQuery.trim()) {
         setSearchResults(null);
+        setIsSearching(false);
         return;
     }
     
     if (isDeepSearch) {
         setIsSearching(true);
+        const currentSequence = ++searchSequenceRef.current;
+        
         try {
             // Server-side deep search with timeout to prevent freeze
             const SEARCH_TIMEOUT_MS = 30000; // 30 seconds max
@@ -194,18 +194,26 @@ function BucketContent() {
             );
             
             const results = await Promise.race([searchPromise, timeoutPromise]);
-            setSearchResults(results);
             
-            // Show message if no results
-            if (results.length === 0) {
-                toast.info('No Results', `No objects found matching "${searchQuery}"`);
+            // CRITICAL FIX: Only update if this is still the latest search request
+            if (currentSequence === searchSequenceRef.current) {
+                setSearchResults(results as any);
+                
+                // Show message if no results
+                if ((results as any).length === 0) {
+                    toast.info('No Results', `No objects found matching "${searchQuery}"`);
+                }
             }
         } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            displayError('Search failed', errMsg);
-            setSearchResults(null);
+            if (currentSequence === searchSequenceRef.current) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                displayError('Search failed', errMsg);
+                setSearchResults(null);
+            }
         } finally {
-            setIsSearching(false);
+            if (currentSequence === searchSequenceRef.current) {
+                setIsSearching(false);
+            }
         }
     } else {
         // Local search is handled by useMemo (displayData), so we just clear server results
@@ -269,6 +277,7 @@ function BucketContent() {
   // Preview/Edit Dialog State
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [previewSize, setPreviewSize] = useState<number | undefined>(undefined);
   const [startInEditMode, setStartInEditMode] = useState(false);
 
   const handlePropertiesOpen = () => {
@@ -409,29 +418,32 @@ function BucketContent() {
     if (!bucketName || clipboardItems.length === 0) return;
     let successCount = 0;
     
-    // We can't really do bulk copy via API yet, so iterate
-    // Ideally this should be a backend Loop or Job in Phase 6+
-    // For now, let's keep it simple: one by one (slow but works)
+    // Process paste operations in parallel batches for better performance
+    const items = [...clipboardItems];
     
     try {
-      for (const item of clipboardItems) {
-        const fileName = item.key.split('/').filter(Boolean).pop();
-        let destKey = prefix + fileName + (item.isFolder ? '/' : '');
+      for (let i = 0; i < items.length; i += PASTE_CONCURRENCY) {
+        const batch = items.slice(i, i + PASTE_CONCURRENCY);
         
-        // Check for same location paste
-        if (item.bucket === bucketName && item.region === bucketRegion && destKey === item.key) {
-           // Auto-rename
-           const namePart = fileName?.split('.').slice(0, -1).join('.') || fileName;
-           const extPart = (fileName?.split('.').length ?? 0) > 1 ? '.' + fileName?.split('.').pop() : '';
-           destKey = prefix + namePart + `-${Date.now()}` + extPart + (item.isFolder ? '/' : '');
-        }
-        
-        if (clipboardMode === 'copy') {
-          await operationsApi.copyObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey);
-        } else {
-          await operationsApi.moveObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey);
-        }
-        successCount++;
+        await Promise.all(batch.map(async (item) => {
+          const fileName = item.key.split('/').filter(Boolean).pop();
+          let destKey = prefix + fileName + (item.isFolder ? '/' : '');
+          
+          // Check for same location paste
+          if (item.bucket === bucketName && item.region === bucketRegion && destKey === item.key) {
+             // Auto-rename
+             const namePart = fileName?.split('.').slice(0, -1).join('.') || fileName;
+             const extPart = (fileName?.split('.').length ?? 0) > 1 ? '.' + fileName?.split('.').pop() : '';
+             destKey = prefix + namePart + `-${Date.now()}` + extPart + (item.isFolder ? '/' : '');
+          }
+          
+          if (clipboardMode === 'copy') {
+            await operationsApi.copyObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey);
+          } else {
+            await operationsApi.moveObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey);
+          }
+          successCount++;
+        }));
       }
       displaySuccess(`Pasted ${successCount} items`);
       if (clipboardMode === 'move') clearClipboard();
@@ -1125,9 +1137,10 @@ function BucketContent() {
           setSelectedKeys(new Set([key]));
           setDeleteConfirmOpen(true);
         }}
-        onPreview={(key) => {
+        onPreview={(key, size) => {
           setStartInEditMode(false);
           setPreviewKey(key);
+          setPreviewSize(size);
           setPreviewOpen(true);
         }}
         onEdit={(key) => {
@@ -1283,14 +1296,35 @@ function BucketContent() {
             variant="outlined"
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault(); // Prevent double submission
+                    if (newFolderName.trim() && !newFolderName.includes('/') && !newFolderName.includes('\\')) {
+                        handleCreateFolder();
+                    }
+                }
+            }}
+            error={newFolderName.includes('/') || newFolderName.includes('\\')}
+            helperText={
+                (newFolderName.includes('/') || newFolderName.includes('\\')) 
+                ? "Folder names cannot contain slashes" 
+                : ""
+            }
             sx={{ mt: 1 }}
             inputProps={{ autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false }}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
-          <Button onClick={handleCreateFolder} disabled={isCreatingFolder || !newFolderName.trim()}>
+          <Button 
+            onClick={handleCreateFolder} 
+            disabled={
+                isCreatingFolder || 
+                !newFolderName.trim() || 
+                newFolderName.includes('/') || 
+                newFolderName.includes('\\')
+            }
+          >
             {isCreatingFolder ? 'Creating...' : 'Create'}
           </Button>
         </DialogActions>
@@ -1308,12 +1342,34 @@ function BucketContent() {
              variant="outlined"
              value={renameValue}
              onChange={(e) => setRenameValue(e.target.value)}
-             onKeyDown={(e) => e.key === 'Enter' && handleRename()}
+             onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (renameValue.trim() && !renameValue.includes('/') && !renameValue.includes('\\')) {
+                        handleRename();
+                    }
+                }
+             }}
+             error={renameValue.includes('/') || renameValue.includes('\\')}
+             helperText={
+                (renameValue.includes('/') || renameValue.includes('\\')) 
+                ? "Names cannot contain slashes" 
+                : ""
+             }
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRenameOpen(false)}>Cancel</Button>
-          <Button onClick={handleRename} disabled={!renameValue.trim()}>Rename</Button>
+          <Button 
+            onClick={handleRename} 
+            disabled={
+                !renameValue.trim() || 
+                renameValue.includes('/') || 
+                renameValue.includes('\\')
+            }
+          >
+            Rename
+          </Button>
         </DialogActions>
       </Dialog>
       
@@ -1333,33 +1389,33 @@ function BucketContent() {
         bucketName={bucketName}
         bucketRegion={bucketRegion}
         objectKey={previewKey || ''}
+        objectSize={previewSize}
         onSave={() => refresh()}
         startInEditMode={startInEditMode}
       />
 
-      {/* Delete Confirmation Dialog */}
-       <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
-        <DialogTitle>Delete Confirmation</DialogTitle>
-        <DialogContent>
-          <Typography component="div">
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={() => {
+           if (selectedObject) handleDelete();
+           else handleBulkDelete();
+        }}
+        title="Delete Confirmation"
+        message={
+          <>
             Are you sure you want to delete <strong>{selectedObject ? selectedObject.key.split('/').filter(Boolean).pop() : `${selectedKeys.size} items`}</strong>?
             {(selectedObject?.isFolder || (selectedKeys.size > 0)) && (
-               <Box component="span" sx={{ display: 'block', mt: 1, color: 'warning.main', fontSize: '0.9em' }}>
+               <Box component="span" sx={{ display: 'block', mt: 1, color: 'warning.main', fontSize: '0.9em', fontWeight: 600 }}>
                  Warning: This action cannot be undone.
                </Box>
             )}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={() => {
-             if (selectedObject) handleDelete();
-             else handleBulkDelete();
-          }} color="error" disabled={isDeleting}>
-            {isDeleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+          </>
+        }
+        confirmLabel={isDeleting ? 'Deleting...' : 'Delete'}
+        isDestructive
+        isLoading={isDeleting}
+      />
 
       <style jsx global>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

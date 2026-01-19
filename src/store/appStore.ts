@@ -74,12 +74,12 @@ export const useAppStore = create<AppState>()(
         }
         
         // If it's a discovery path, ensure title is "Buckets"
-        let finalTab = { ...tab };
+        const finalTab = { ...tab };
         if (tab.path.includes('view=discovery')) {
           finalTab.title = 'Buckets';
         }
         
-        const id = Math.random().toString(36).substring(7);
+        const id = crypto.randomUUID();
         const newTab = { ...finalTab, id };
         return {
           tabs: [...state.tabs, newTab],

@@ -1,6 +1,6 @@
 [package]
 name = "brows3"
-version = "0.2.20"
+version = "0.2.21"
 description = "Premium, Secure S3 Browser for macOS, Windows, and Linux."
 authors = ["Brows3 Team"]
 license = "MIT"
@@ -53,6 +53,7 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 urlencoding = "2.1.3"
 walkdir = "2.5.0"
+futures = "0.3"
 tauri-plugin-clipboard-manager = "2.3.2"
 
 [features]

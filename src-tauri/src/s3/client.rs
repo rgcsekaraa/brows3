@@ -14,7 +14,7 @@ pub struct S3Object {
     pub storage_class: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FolderContent {
     pub objects: Vec<S3Object>,
     pub common_prefixes: Vec<String>,
@@ -160,40 +160,64 @@ impl S3ClientManager {
         let profile_id_str = profile_id.to_string();
         let bucket_name_str = bucket_name.to_string();
         
-        // Build folder cache
+        // Build folder cache in a single pass O(N)
         let mut folders: HashMap<String, FolderContent> = HashMap::new();
         // Ensure root exists
         folders.insert("".to_string(), FolderContent { objects: Vec::new(), common_prefixes: Vec::new() });
         
+        // Track unique prefixes per folder to avoid O(M) contains check (M = parts)
+        let mut folder_prefixes: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
+
         for obj in &objects {
             let key = &obj.key;
-            let parts: Vec<&str> = key.split('/').collect();
             
-            let mut current_prefix = "".to_string();
-            // Up to the last part (which is the file name or empty if key ends with /)
-            for i in 0..parts.len() - 1 {
-                let next_part = parts[i];
-                let parent_prefix = current_prefix.clone();
-                current_prefix = format!("{}{}/", current_prefix, next_part);
-                
-                // Add this folder to its parent's common_prefixes
-                let parent_content = folders.entry(parent_prefix).or_insert(FolderContent { 
-                    objects: Vec::new(), 
-                    common_prefixes: Vec::new() 
-                });
-                
-                if !parent_content.common_prefixes.contains(&current_prefix) {
-                    parent_content.common_prefixes.push(current_prefix.clone());
+            // Find the immediate parent prefix
+            let parent_prefix = if let Some(last_slash) = key.rfind('/') {
+                // If the key itself ends with /, the parent is the substring BEFORE that slash (if any)
+                if key.ends_with('/') {
+                    let without_last = &key[..last_slash];
+                    if let Some(prev_slash) = without_last.rfind('/') {
+                        &key[..prev_slash + 1]
+                    } else {
+                        ""
+                    }
+                } else {
+                    &key[..last_slash + 1]
                 }
-            }
-            
-            // If it's not a folder placeholder, add it to objects
+            } else {
+                ""
+            };
+
+            // Add object to its parent folder (if it's not a folder placeholder)
             if !key.ends_with('/') {
-                let folder_content = folders.entry(current_prefix).or_insert(FolderContent { 
-                    objects: Vec::new(), 
-                    common_prefixes: Vec::new() 
-                });
-                folder_content.objects.push(obj.clone());
+                folders.entry(parent_prefix.to_string())
+                    .or_insert_with(|| FolderContent { objects: Vec::new(), common_prefixes: Vec::new() })
+                    .objects.push(obj.clone());
+            }
+
+            // Build the prefix tree up to the root
+            // We only need to iterate if there are slashes
+            if key.contains('/') {
+                let parts_vec: Vec<&str> = key.split('/').collect();
+                // If it's a folder "a/b/", parts are ["a", "b", ""]
+                // If it's a file "a/b/c.txt", parts are ["a", "b", "c.txt"]
+                let depth = if key.ends_with('/') { parts_vec.len() - 2 } else { parts_vec.len() - 1 };
+                
+                let mut path = String::new();
+                for i in 0..depth {
+                    let parent = path.clone();
+                    path.push_str(parts_vec[i]);
+                    path.push('/');
+                    
+                    // Add this folder to parent's common_prefixes
+                    let seen_prefixes = folder_prefixes.entry(parent.clone()).or_default();
+                    if !seen_prefixes.contains(&path) {
+                        seen_prefixes.insert(path.clone());
+                        folders.entry(parent)
+                            .or_default()
+                            .common_prefixes.push(path.clone());
+                    }
+                }
             }
         }
         
@@ -327,6 +351,12 @@ pub async fn list_all_objects_recursive(client: &Client, bucket: &str) -> Result
                 size: obj.size().unwrap_or_default(),
                 storage_class: obj.storage_class().map(|s: &aws_sdk_s3::types::ObjectStorageClass| s.as_str().to_string()),
             });
+        }
+
+        // SAFEGUARD: Don't load more than 100k objects into memory
+        if objects.len() >= 100_000 {
+            log::warn!("Bucket {} is too large. Truncating listing at 100,000 objects to prevent OOM.", bucket);
+            break;
         }
 
         if response.is_truncated().unwrap_or(false) {

@@ -1,25 +1,24 @@
 import { useEffect, useState } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   Button,
   TextField,
   Box,
   Typography,
   InputAdornment,
+  Alert,
 } from '@mui/material';
 import { DriveFileRenameOutline as RenameIcon } from '@mui/icons-material';
+import { BaseDialog } from '../common/BaseDialog';
 
 interface RenameDialogProps {
   open: boolean;
   onClose: () => void;
   onRename: (newName: string) => Promise<void>;
   currentName: string;
+  isFolder?: boolean;
 }
 
-export default function RenameDialog({ open, onClose, onRename, currentName }: RenameDialogProps) {
+export default function RenameDialog({ open, onClose, onRename, currentName, isFolder = false }: RenameDialogProps) {
   const [value, setValue] = useState(currentName);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,50 +47,61 @@ export default function RenameDialog({ open, onClose, onRename, currentName }: R
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <RenameIcon color="primary" />
-        Rename Object
-      </DialogTitle>
-      
-      <DialogContent>
-        <Box sx={{ pt: 1 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Enter a new name for <strong>{currentName}</strong>. 
-                Warning: This effectively copies the object to a new key and deletes the old one.
-            </Typography>
-            
-            <TextField
-                autoFocus
-                fullWidth
-                label="New Name"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                error={!!error}
-                helperText={error}
-                disabled={isSubmitting}
-                InputProps={{
-                    startAdornment: (
-                        <InputAdornment position="start">
-                            <RenameIcon fontSize="small" color="action" />
-                        </InputAdornment>
-                    )
-                }}
-            />
-        </Box>
-      </DialogContent>
-      
-      <DialogActions sx={{ p: 2 }}>
-         <Button onClick={onClose} disabled={isSubmitting}>Cancel</Button>
-         <Button 
+    <BaseDialog 
+      open={open} 
+      onClose={onClose} 
+      title="Rename Object"
+      maxWidth="sm"
+      actions={
+        <>
+          <Button 
+            onClick={onClose} 
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button 
             onClick={handleSubmit} 
             variant="contained" 
             disabled={!value.trim() || value === currentName || isSubmitting}
-         >
+          >
             {isSubmitting ? 'Renaming...' : 'Rename'}
-         </Button>
-      </DialogActions>
-    </Dialog>
+          </Button>
+        </>
+      }
+    >
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+            Enter a new name for <strong>{currentName}</strong>. 
+            <Box component="span" sx={{ display: 'block', mt: 0.5, fontSize: '0.8rem', opacity: 0.8 }}>
+              Note: This copies the object to a new key and deletes the old one.
+            </Box>
+            {isFolder && (
+              <Alert severity="warning" sx={{ mt: 1.5, py: 0, '& .MuiAlert-message': { fontSize: '0.8rem' } }}>
+                Warning: Renaming a folder moves all contained objects. For large folders, this may take a significant amount of time.
+              </Alert>
+            )}
+        </Typography>
+        
+        <TextField
+            autoFocus
+            fullWidth
+            label="New Name"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            error={!!error}
+            helperText={error}
+            disabled={isSubmitting}
+            InputProps={{
+                startAdornment: (
+                    <InputAdornment position="start">
+                        <RenameIcon fontSize="small" color="action" />
+                    </InputAdornment>
+                )
+            }}
+        />
+      </Box>
+    </BaseDialog>
   );
 }

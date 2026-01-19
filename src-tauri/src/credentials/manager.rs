@@ -115,9 +115,17 @@ impl ProfileManager {
     
     fn save(&self) -> Result<()> {
         let profiles_path = self.config_dir.join(PROFILES_FILE);
-        log::info!("Saving profiles to {:?}", profiles_path);
+        let temp_path = profiles_path.with_extension("tmp");
+        
+        log::info!("Saving profiles atomically to {:?}", profiles_path);
+        
+        // 1. Write to temp file
         let content = serde_json::to_string_pretty(&self.data)?;
-        std::fs::write(profiles_path, content)?;
+        std::fs::write(&temp_path, content)?;
+        
+        // 2. Rename to final destination (atomic on most OSs)
+        std::fs::rename(temp_path, profiles_path)?;
+        
         Ok(())
     }
     

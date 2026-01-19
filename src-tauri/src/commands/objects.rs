@@ -301,7 +301,7 @@ pub async fn search_objects(
     // 2. Fallback to S3
     
     // Check cache for bucket region first
-    let mut bucket_region = {
+    let bucket_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(&bucket_name)
     }.or(bucket_region);

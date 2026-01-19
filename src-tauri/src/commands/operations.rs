@@ -253,13 +253,17 @@ pub async fn delete_objects(
     for chunk in keys.chunks(1000) {
         let mut delete_ids = Vec::new();
         for key in chunk {
-            delete_ids.push(aws_sdk_s3::types::ObjectIdentifier::builder().key(key).build().unwrap());
+            let obj_id = aws_sdk_s3::types::ObjectIdentifier::builder()
+                .key(key)
+                .build()
+                .map_err(|e| crate::error::AppError::S3Error(format!("Invalid object key '{}': {}", key, e)))?;
+            delete_ids.push(obj_id);
         }
         
         let delete = aws_sdk_s3::types::Delete::builder()
             .set_objects(Some(delete_ids))
             .build()
-            .unwrap();
+            .map_err(|e| crate::error::AppError::S3Error(format!("Failed to build delete request: {}", e)))?;
 
         let result = client
             .delete_objects()
@@ -315,28 +319,113 @@ pub async fn move_object(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
-     // 1. Copy
-     copy_object(
-        source_bucket.clone(),
-        source_region.clone(),
-        source_key.clone(),
-        destination_bucket.clone(),
-        destination_region.clone(),
-        destination_key.clone(),
-        profile_state.clone(),
-        s3_state.clone()
-     ).await?;
-     
-     // 2. Delete source
-     delete_object(
-        source_bucket,
-        source_region,
-        source_key,
-        profile_state,
-        s3_state
-     ).await?;
-     
-     Ok(())
+    // Check if this is a folder move (key ends with /)
+    if source_key.ends_with('/') {
+        // RECURSIVE FOLDER MOVE
+        let profile_manager = profile_state.read().await;
+        let active_profile = profile_manager
+            .get_active_profile()
+            .await?
+            .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
+        drop(profile_manager);
+        
+        // Get client for listing source bucket
+        let client = {
+            let mut s3_manager = s3_state.write().await;
+            if let Some(ref r) = source_region {
+                s3_manager.get_client_for_region(&active_profile, r).await?.clone()
+            } else {
+                s3_manager.get_client(&active_profile).await?.clone()
+            }
+        };
+        
+        // List all objects under the source prefix
+        let mut continuation_token = None;
+        let mut all_keys = Vec::new();
+        
+        loop {
+            let mut req = client.list_objects_v2()
+                .bucket(&source_bucket)
+                .prefix(&source_key);
+            
+            if let Some(token) = continuation_token {
+                req = req.continuation_token(token);
+            }
+            
+            let resp = req.send().await
+                .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+            
+            if let Some(contents) = resp.contents {
+                for obj in contents {
+                    if let Some(key) = obj.key {
+                        all_keys.push(key);
+                    }
+                }
+            }
+            
+            if resp.is_truncated.unwrap_or(false) {
+                continuation_token = resp.next_continuation_token;
+            } else {
+                break;
+            }
+        }
+        
+        // Move each object individually
+        for key in &all_keys {
+            // Calculate destination key by replacing source prefix with destination prefix
+            let relative_path = key.strip_prefix(&source_key).unwrap_or(key);
+            let new_key = format!("{}{}", destination_key, relative_path);
+            
+            // Copy
+            copy_object(
+                source_bucket.clone(),
+                source_region.clone(),
+                key.clone(),
+                destination_bucket.clone(),
+                destination_region.clone(),
+                new_key,
+                profile_state.clone(),
+                s3_state.clone()
+            ).await?;
+        }
+        
+        // Delete all source objects at once
+        if !all_keys.is_empty() {
+            delete_objects(
+                source_bucket,
+                source_region,
+                all_keys,
+                profile_state,
+                s3_state
+            ).await?;
+        }
+        
+        Ok(())
+    } else {
+        // Single file move (original behavior)
+        // 1. Copy
+        copy_object(
+            source_bucket.clone(),
+            source_region.clone(),
+            source_key.clone(),
+            destination_bucket.clone(),
+            destination_region.clone(),
+            destination_key.clone(),
+            profile_state.clone(),
+            s3_state.clone()
+        ).await?;
+        
+        // 2. Delete source
+        delete_object(
+            source_bucket,
+            source_region,
+            source_key,
+            profile_state,
+            s3_state
+        ).await?;
+        
+        Ok(())
+    }
 }
 
 #[derive(serde::Serialize)]

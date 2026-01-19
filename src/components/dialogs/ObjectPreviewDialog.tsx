@@ -1,11 +1,5 @@
-'use client';
-
 import { useState, useEffect, useRef } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   Button,
   Box,
   Typography,
@@ -13,9 +7,9 @@ import {
   IconButton,
   Alert,
   useTheme,
+  alpha,
 } from '@mui/material';
 import {
-  Close as CloseIcon,
   Edit as EditIcon,
   Save as SaveIcon,
   ContentCopy as CopyIcon,
@@ -24,6 +18,7 @@ import {
 import { objectApi } from '@/lib/tauri';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { toast } from '@/store/toastStore';
+import { BaseDialog } from '../common/BaseDialog';
 
 interface ObjectPreviewDialogProps {
   open: boolean;
@@ -31,6 +26,7 @@ interface ObjectPreviewDialogProps {
   bucketName: string;
   bucketRegion: string;
   objectKey: string;
+  objectSize?: number;
   onSave?: () => void;
   startInEditMode?: boolean;
 }
@@ -59,7 +55,6 @@ const isPdf = (filename: string): boolean => {
   return getExtension(filename) === 'pdf';
 };
 
-// Check if file is text/editable
 // Check if file is text/editable
 const isTextFile = (filename: string): boolean => {
   const ext = getExtension(filename);
@@ -116,6 +111,7 @@ export default function ObjectPreviewDialog({
   bucketName,
   bucketRegion,
   objectKey,
+  objectSize,
   onSave,
   startInEditMode = false,
 }: ObjectPreviewDialogProps) {
@@ -149,6 +145,14 @@ export default function ObjectPreviewDialog({
       setPresignedUrl(null);
       setIsEditing(startInEditMode); // Reset edit mode based on prop
 
+      // 2MB Limit check for text files
+      const MAX_PREVIEW_SIZE = 2 * 1024 * 1024; // 2MB
+      if (isText && objectSize && objectSize > MAX_PREVIEW_SIZE) {
+          setIsLoading(false);
+          setError(`File is too large to preview (${(objectSize / 1024 / 1024).toFixed(2)} MB). Please download to view locally.`);
+          return;
+      }
+
       // Safety timeout to prevent infinite spinner
       const timeoutId = setTimeout(() => {
         if (isLoading) {
@@ -175,9 +179,6 @@ export default function ObjectPreviewDialog({
           // Even if empty, it's valid content
           setContent(textContent || '');
           setEditedContent(textContent || '');
-        } else {
-             // Not a recognized preview type, but maybe accessible as text?
-             // We won't auto-load to save bandwidth/confusion, just show "Preview not available"
         }
       } catch (err) {
         console.error("Failed to load object content:", err);
@@ -189,10 +190,9 @@ export default function ObjectPreviewDialog({
     };
 
     loadContent();
-  }, [open, objectKey, bucketName, bucketRegion, isImageFile, isVideoFile, isPdfFile, isText]);
+  }, [open, objectKey, bucketName, bucketRegion, isImageFile, isVideoFile, isPdfFile, isText, objectSize]);
 
   const handleSave = async () => {
-    // Only save if content changed or if we just want to force save (user might format and save)
     if (!isEditing) return;
 
     setIsSaving(true);
@@ -201,7 +201,7 @@ export default function ObjectPreviewDialog({
     try {
       await objectApi.putObjectContent(bucketName, bucketRegion, objectKey, editedContent);
       setContent(editedContent);
-      toast.success('File Saved', `${objectKey.split('/').pop()} saved successfully`);
+      toast.success('File Saved', `${filename} saved successfully`);
       onSave?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
@@ -212,6 +212,7 @@ export default function ObjectPreviewDialog({
 
   const handleCopyContent = () => {
     navigator.clipboard.writeText(isEditing ? editedContent : content);
+    toast.info('Copied', 'Content copied to clipboard');
   };
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
@@ -232,186 +233,212 @@ export default function ObjectPreviewDialog({
   const isFormattable = ['json', 'html', 'xml', 'css', 'js', 'ts', 'jsx', 'tsx'].includes(ext);
 
   return (
-    <Dialog 
+    <BaseDialog 
       open={open} 
       onClose={handleClose} 
-      maxWidth="lg" 
-      fullWidth
-      PaperProps={{ sx: { height: '75vh', maxHeight: '900px' } }}
-    >
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1, borderBottom: 1, borderColor: 'divider' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="subtitle1" fontWeight={600} noWrap sx={{ maxWidth: 500 }}>
+      title={
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Typography variant="h4" sx={{ 
+            fontSize: '1.1rem', 
+            fontWeight: 800,
+            maxWidth: { xs: 200, sm: 400, md: 600 },
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}>
             {filename}
           </Typography>
           {ext && (
-            <Typography variant="caption" sx={{ bgcolor: 'action.hover', px: 1, py: 0.25, borderRadius: 1 }}>
-              {ext.toUpperCase()}
-            </Typography>
+            <Box sx={{ 
+              bgcolor: alpha(theme.palette.primary.main, 0.1), 
+              color: theme.palette.primary.main,
+              px: 1, 
+              py: 0.2, 
+              borderRadius: 1,
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              border: '1px solid',
+              borderColor: alpha(theme.palette.primary.main, 0.2)
+            }}>
+              {ext}
+            </Box>
           )}
         </Box>
-        <Box>
-            {isText && (
-                <IconButton onClick={handleCopyContent} size="small" title="Copy Content">
-                    <CopyIcon fontSize="small" />
-                </IconButton>
-            )}
-            <IconButton onClick={handleClose} size="small">
-                <CloseIcon />
-            </IconButton>
-        </Box>
-      </DialogTitle>
-
-      <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
+      }
+      maxWidth="lg"
+      fullWidth
+      PaperProps={{ sx: { height: '80vh', maxHeight: '1000px' } }}
+      actions={
+        isText ? (
+          <Box sx={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              {isEditing && isFormattable && (
+                <Button 
+                  startIcon={<FormatIcon />} 
+                  onClick={handleFormat} 
+                  size="small"
+                  sx={{ color: theme.palette.text.secondary, fontWeight: 600 }}
+                >
+                  Format
+                </Button>
+              )}
+              <Button 
+                startIcon={<CopyIcon />} 
+                onClick={handleCopyContent} 
+                size="small"
+                sx={{ color: theme.palette.text.secondary, fontWeight: 600 }}
+              >
+                Copy
+              </Button>
+            </Box>
+            
+            <Box sx={{ display: 'flex', gap: 1.5 }}>
+              {!isEditing ? (
+                <Button 
+                  startIcon={<EditIcon />} 
+                  onClick={() => setIsEditing(true)} 
+                  variant="contained" 
+                  size="small"
+                >
+                  Edit File
+                </Button>
+              ) : (
+                <>
+                  <Button 
+                    onClick={() => { setIsEditing(false); setEditedContent(content); }} 
+                    sx={{ color: theme.palette.text.secondary, fontWeight: 600 }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    startIcon={<SaveIcon />} 
+                    onClick={handleSave} 
+                    variant="contained" 
+                    disabled={isSaving || editedContent === content}
+                  >
+                    {isSaving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                </>
+              )}
+            </Box>
+          </Box>
+        ) : null
+      }
+    >
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 1 }}>
         {isLoading && (
-          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <CircularProgress />
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+            <CircularProgress size={40} thickness={4} />
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>Fetching content...</Typography>
           </Box>
         )}
 
         {error && (
-          <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>
-        )}
-
-        {/* Image Preview */}
-        {!isLoading && !error && isImageFile && presignedUrl && (
-          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2, overflow: 'auto', position: 'relative' }}>
-            {isImageRendering && (
-                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default', zIndex: 1 }}>
-                    <CircularProgress size={32} />
-                </Box>
-            )}
-            <img 
-              src={presignedUrl} 
-              alt={filename}
-              onLoad={() => setIsImageRendering(false)}
-              style={{ 
-                maxWidth: '100%', 
-                maxHeight: '100%', 
-                objectFit: 'contain',
-                opacity: isImageRendering ? 0 : 1,
-                transition: 'opacity 0.2s ease-in-out'
-              }}
-            />
+          <Box sx={{ p: 4 }}>
+            <Alert severity="error" variant="filled" sx={{ borderRadius: 2 }}>{error}</Alert>
           </Box>
         )}
 
-        {/* Video Preview */}
-        {!isLoading && !error && isVideoFile && presignedUrl && (
-          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 0, bgcolor: 'black' }}>
-             <video 
-                controls 
-                src={presignedUrl} 
-                style={{ width: '100%', height: '100%' }}
-                onError={() => setError('This video format is not supported by your browser.')}
-             >
-                Your browser does not support the video tag.
-             </video>
-          </Box>
-        )}
-
-        {/* PDF Preview */}
-        {/* PDF Preview */}
-        {!isLoading && !error && isPdfFile && presignedUrl && (
-             <Box sx={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
-                {isPdfLoading && (
-                    <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default', zIndex: 1, gap: 2 }}>
-                        <CircularProgress size={32} />
-                        <Typography variant="caption" color="text.secondary">Loading PDF...</Typography>
-                    </Box>
-                )}
-                {/* Fallback frame error message isn't easy to catch cross-origin, but we can offer a download link if it looks stuck or user wants external view */}
-                <embed 
-                    src={`${presignedUrl}#toolbar=0&navpanes=0&view=FitH`} 
-                    title={filename}
-                    width="100%" 
-                    height="100%" 
-                    type="application/pdf"
-                    style={{ border: 'none' }} 
-                    onLoad={() => setIsPdfLoading(false)}
-                    onError={() => {
-                        setIsPdfLoading(false);
-                        setError("Failed to load PDF preview.");
-                    }}
+        {!isLoading && !error && (
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Image Preview */}
+            {isImageFile && presignedUrl && (
+              <Box sx={{ 
+                flex: 1, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                p: 2, 
+                position: 'relative',
+                bgcolor: alpha(theme.palette.background.paper, 0.5)
+              }}>
+                {isImageRendering && <CircularProgress size={32} sx={{ position: 'absolute' }} />}
+                <img 
+                  src={presignedUrl} 
+                  alt={filename}
+                  onLoad={() => setIsImageRendering(false)}
+                  style={{ 
+                    maxWidth: '100%', 
+                    maxHeight: '100%', 
+                    objectFit: 'contain',
+                    borderRadius: 4,
+                    opacity: isImageRendering ? 0 : 1,
+                    transition: 'opacity 0.3s'
+                  }}
                 />
-             </Box>
-        )}
+              </Box>
+            )}
 
-        {/* Monaco Editor (Text) */}
-        {!isLoading && !error && isText && (
-           <Box sx={{ flex: 1, height: '100%', overflow: 'hidden' }}>
-             <Editor 
-                height="100%"
-                defaultLanguage={getLanguage(filename)}
-                value={isEditing ? editedContent : content}
-                options={{ 
-                    readOnly: !isEditing, 
-                    minimap: { enabled: true },
-                    scrollBeyondLastLine: false,
-                    fontSize: 14,
-                    wordWrap: 'on',
-                    automaticLayout: true,
-                }}
-                theme={theme.palette.mode === 'dark' ? 'vs-dark' : 'light'}
-                onChange={(val) => setEditedContent(val || '')}
-                onMount={handleEditorDidMount}
-                loading={
-                  <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <CircularProgress size={32} />
-                  </Box>
-                }
-             />
-           </Box>
-        )}
+            {/* Video Preview */}
+            {isVideoFile && presignedUrl && (
+              <Box sx={{ flex: 1, bgcolor: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                 <video 
+                    controls 
+                    src={presignedUrl} 
+                    style={{ width: '100%', height: '100%', maxHeight: 'calc(80vh - 120px)' }}
+                 >
+                    Your browser does not support the video tag.
+                 </video>
+              </Box>
+            )}
 
-        {!isLoading && !error && !isImageFile && !isVideoFile && !isPdfFile && !isText && (
-          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 4 }}>
-            <Typography color="text.secondary">
-              Preview not available for this file type ({ext || 'unknown'})
-            </Typography>
+            {/* PDF Preview */}
+            {isPdfFile && presignedUrl && (
+                 <Box sx={{ flex: 1, width: '100%', position: 'relative' }}>
+                    {isPdfLoading && (
+                        <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: theme.palette.background.default, zIndex: 1, gap: 2 }}>
+                            <CircularProgress size={32} />
+                            <Typography variant="caption" color="text.secondary">Loading PDF...</Typography>
+                        </Box>
+                    )}
+                    <embed 
+                        src={`${presignedUrl}#toolbar=0&navpanes=0&view=FitH`} 
+                        title={filename}
+                        width="100%" 
+                        height="100%" 
+                        type="application/pdf"
+                        style={{ border: 'none' }} 
+                        onLoad={() => setIsPdfLoading(false)}
+                    />
+                 </Box>
+            )}
+
+            {/* Monaco Editor (Text) */}
+            {isText && (
+               <Box sx={{ flex: 1, border: '1px solid', borderColor: 'divider', borderRadius: 0.5, overflow: 'hidden' }}>
+                 <Editor 
+                    height="100%"
+                    defaultLanguage={getLanguage(filename)}
+                    value={isEditing ? editedContent : content}
+                    options={{ 
+                        readOnly: !isEditing, 
+                        minimap: { enabled: true },
+                        scrollBeyondLastLine: false,
+                        fontSize: 14,
+                        wordWrap: 'on',
+                        automaticLayout: true,
+                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                        padding: { top: 16, bottom: 16 }
+                    }}
+                    theme={theme.palette.mode === 'dark' ? 'vs-dark' : 'light'}
+                    onChange={(val) => setEditedContent(val || '')}
+                    onMount={handleEditorDidMount}
+                    loading={<CircularProgress size={32} />}
+                 />
+               </Box>
+            )}
+
+            {!isImageFile && !isVideoFile && !isPdfFile && !isText && (
+              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 4 }}>
+                <Typography color="text.secondary" variant="body1" sx={{ fontWeight: 500 }}>
+                  Preview not available for this file type ({ext || 'unknown'})
+                </Typography>
+              </Box>
+            )}
           </Box>
         )}
-      </DialogContent>
-
-      {isText && (
-        <DialogActions sx={{ px: 2, py: 1, borderTop: 1, borderColor: 'divider' }}>
-          <Box sx={{ flex: 1, display: 'flex', gap: 1 }}>
-              {isFormattable && isEditing && (
-                  <Button 
-                      startIcon={<FormatIcon />} 
-                      onClick={handleFormat} 
-                      size="small"
-                      title="Format Document"
-                  >
-                      Format
-                  </Button>
-              )}
-          </Box>
-          
-          {!isEditing && (
-            <Button startIcon={<EditIcon />} onClick={() => setIsEditing(true)} variant="contained" size="small">
-              Edit
-            </Button>
-          )}
-          
-          {isEditing && (
-            <>
-              <Button onClick={() => { setIsEditing(false); setEditedContent(content); }} color="inherit">
-                Cancel
-              </Button>
-              <Button 
-                startIcon={<SaveIcon />} 
-                onClick={handleSave} 
-                variant="contained" 
-                color="primary"
-                disabled={isSaving || editedContent === content}
-              >
-                {isSaving ? 'Saving...' : 'Save'}
-              </Button>
-            </>
-          )}
-        </DialogActions>
-      )}
-    </Dialog>
+      </Box>
+    </BaseDialog>
   );
 }

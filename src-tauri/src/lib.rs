@@ -19,7 +19,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Arc::new(RwLock::new(S3ClientManager::new())))
-        .manage(Arc::new(RwLock::new(TransferManager::new())))
+        .manage(Arc::new(TransferManager::new()))
         .setup(|app| {
             // Add native menu on macOS to enable Copy/Paste/Cut/SelectAll/Undo/Redo shortcuts
             // Add native menu to enable standard shortcuts and window controls

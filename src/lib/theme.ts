@@ -124,7 +124,7 @@ export const lightTheme = createTheme({
     button: { fontWeight: 700, letterSpacing: '-0.01em' },
   },
   shape: {
-    borderRadius: 6,
+    borderRadius: 4,
   },
   components: {
     ...baseComponents,
@@ -189,7 +189,7 @@ export const darkTheme = createTheme({
     button: { fontWeight: 700, letterSpacing: '-0.01em' },
   },
   shape: {
-    borderRadius: 6,
+    borderRadius: 4,
   },
   components: {
     ...baseComponents,

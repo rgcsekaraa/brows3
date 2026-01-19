@@ -14,6 +14,7 @@ import {
   MenuItem, 
   TextField, 
   Slider, 
+  Switch,
   Container,
   Button,
   Chip,
@@ -43,7 +44,8 @@ export default function SettingsPage() {
   // Other settings from settingsStore
   const { 
     defaultRegion, setDefaultRegion, 
-    maxConcurrentTransfers, setMaxConcurrentTransfers 
+    maxConcurrentTransfers, setMaxConcurrentTransfers,
+    autoRefreshOnFocus, setAutoRefreshOnFocus
   } = useSettingsStore();
   
   const [version, setVersion] = useState<string>('...');
@@ -146,13 +148,12 @@ export default function SettingsPage() {
         </List>
       </Paper>
 
-      {/* Performance Section */}
       <Paper variant="outlined" sx={{ mb: 3 }}>
         <Box sx={{ p: 2, bgcolor: 'action.hover', borderBottom: 1, borderColor: 'divider' }}>
-          <Typography variant="subtitle1" fontWeight={600}>Performance</Typography>
+          <Typography variant="subtitle1" fontWeight={600}>Performance & Behavior</Typography>
         </Box>
         <List>
-          <ListItem>
+          <ListItem divider>
             <ListItemText 
               primary="Max Concurrent Transfers" 
               secondary={`Allow up to ${maxConcurrentTransfers} simultaneous uploads/downloads`} 
@@ -167,6 +168,22 @@ export default function SettingsPage() {
                  onChange={(_, val) => setMaxConcurrentTransfers(val as number)}
                />
             </Box>
+          </ListItem>
+          <ListItem>
+            <ListItemText 
+              primary="Auto-refresh on Focus" 
+              secondary="Automatically refresh object list when returning to the app" 
+            />
+            <ListItemSecondaryAction>
+              <Switch
+                edge="end"
+                checked={autoRefreshOnFocus}
+                onChange={(e) => {
+                  setAutoRefreshOnFocus(e.target.checked);
+                  toast.success('Behavior updated', `Auto-refresh ${e.target.checked ? 'enabled' : 'disabled'}`);
+                }}
+              />
+            </ListItemSecondaryAction>
           </ListItem>
         </List>
       </Paper>

@@ -3,6 +3,7 @@ import { TransferJob } from '@/lib/tauri';
 
 interface TransferState {
   jobs: TransferJob[];
+  jobsMap: Map<string, TransferJob>; // Internal map for O(1) access
   isPanelOpen: boolean;
   isPanelHidden: boolean;
   addJob: (job: TransferJob) => void;
@@ -25,63 +26,81 @@ import { transferApi } from '@/lib/tauri';
 
 export const useTransferStore = create<TransferState>((set, get) => ({
   jobs: [],
+  jobsMap: new Map(),
   isPanelOpen: false,
   isPanelHidden: false,
   
   addJob: (job) => set((state) => {
-    // Prevent duplicates
-    if (state.jobs.some(j => j.id === job.id)) return state;
+    if (state.jobsMap.has(job.id)) return state;
+    
+    const newMap = new Map(state.jobsMap);
+    newMap.set(job.id, job);
     
     return { 
+      jobsMap: newMap,
       jobs: [job, ...state.jobs],
       isPanelOpen: true 
     };
   }),
   
-  // Upsert - add if not exists, update if exists
   upsertJob: (job) => set((state) => {
-    const existingIndex = state.jobs.findIndex(j => j.id === job.id);
-    if (existingIndex === -1) {
-      // Add new job
-      return { 
-        jobs: [job, ...state.jobs],
-        isPanelOpen: true 
-      };
-    }
-    // Update existing
-    const newJobs = [...state.jobs];
-    newJobs[existingIndex] = { ...newJobs[existingIndex], ...job };
-    return { jobs: newJobs };
+    const newMap = new Map(state.jobsMap);
+    newMap.set(job.id, job);
+    
+    // Convert to array for compatibility (sorted by created_at)
+    const newJobs = Array.from(newMap.values()).sort((a, b) => 
+      (b.created_at || 0) - (a.created_at || 0)
+    );
+    
+    return { 
+      jobsMap: newMap,
+      jobs: newJobs,
+      isPanelOpen: true 
+    };
   }),
   
   updateJob: (event) => set((state) => {
-    const jobIndex = state.jobs.findIndex(j => j.id === event.job_id);
+    const job = state.jobsMap.get(event.job_id);
     
-    if (jobIndex === -1) {
-      // Job not found - this can happen due to race condition
-      // Trigger a refresh to sync with backend
-      setTimeout(() => get().refreshJobs(), 100);
+    if (!job) {
+      // Throttled refresh to prevent storm
+      const stateAny = get() as any;
+      if (!stateAny._isRefreshing) {
+          stateAny._isRefreshing = true;
+          setTimeout(() => {
+             get().refreshJobs().finally(() => { stateAny._isRefreshing = false; });
+          }, 500);
+      }
       return state;
     }
     
-    const job = state.jobs[jobIndex];
-    // Skip update if nothing changed (prevents unnecessary re-renders)
     if (job.processed_bytes === event.processed_bytes && job.status === event.status) {
       return state;
     }
     
-    // Create new array only if there's an actual change
-    const newJobs = [...state.jobs];
-    newJobs[jobIndex] = { 
+    const updatedJob = { 
       ...job, 
       processed_bytes: event.processed_bytes,
       total_bytes: event.total_bytes, 
       status: event.status 
     };
-    return { jobs: newJobs };
+    
+    const newMap = new Map(state.jobsMap);
+    newMap.set(event.job_id, updatedJob);
+    
+    // Efficiently update the array without full sort if possible
+    const newJobs = state.jobs.map(j => j.id === event.job_id ? updatedJob : j);
+    
+    return { 
+      jobsMap: newMap,
+      jobs: newJobs 
+    };
   }),
   
-  setJobs: (jobs) => set({ jobs }),
+  setJobs: (jobs) => set({ 
+    jobs,
+    jobsMap: new Map(jobs.map(j => [j.id, j]))
+  }),
   
   togglePanel: () => set((state) => ({ isPanelOpen: !state.isPanelOpen })),
   
@@ -92,7 +111,10 @@ export const useTransferStore = create<TransferState>((set, get) => ({
   refreshJobs: async () => {
     try {
       const jobs = await transferApi.listTransfers();
-      set({ jobs });
+      set({ 
+        jobs,
+        jobsMap: new Map(jobs.map(j => [j.id, j]))
+      });
     } catch (err) {
       console.error('Failed to refresh jobs:', err);
     }
@@ -110,7 +132,14 @@ export const useTransferStore = create<TransferState>((set, get) => ({
   
   removeJob: async (id) => {
     await transferApi.removeTransfer(id);
-    set((state) => ({ jobs: state.jobs.filter(j => j.id !== id) }));
+    set((state) => {
+      const newMap = new Map(state.jobsMap);
+      newMap.delete(id);
+      return {
+        jobsMap: newMap,
+        jobs: state.jobs.filter(j => j.id !== id)
+      };
+    });
   },
   
   clearCompleted: async () => {

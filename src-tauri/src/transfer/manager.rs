@@ -5,16 +5,19 @@ use tauri::{AppHandle, Emitter};
 use crate::credentials::Profile;
 use crate::s3::S3ClientManager;
 use super::{TransferJob, TransferStatus, TransferType, TransferEvent};
-// chrono::Utc removed - not needed
 use aws_sdk_s3::primitives::ByteStream;
-use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+use tokio::fs::File;
+
+
 
 // Define a safe shared state for the manager
 pub struct TransferManager {
     jobs: Arc<RwLock<HashMap<String, TransferJob>>>,
     queue: Arc<Mutex<Vec<String>>>, // List of Job IDs
-    app_handle: Option<AppHandle>,
+    abort_handles: Arc<RwLock<HashMap<String, tokio::task::AbortHandle>>>,
+    concurrency_semaphore: Arc<tokio::sync::Semaphore>,
+    app_handle: Arc<RwLock<Option<AppHandle>>>,
 }
 
 impl TransferManager {
@@ -22,12 +25,15 @@ impl TransferManager {
         Self {
             jobs: Arc::new(RwLock::new(HashMap::new())),
             queue: Arc::new(Mutex::new(Vec::new())),
-            app_handle: None,
+            abort_handles: Arc::new(RwLock::new(HashMap::new())),
+            concurrency_semaphore: Arc::new(tokio::sync::Semaphore::new(5)),
+            app_handle: Arc::new(RwLock::new(None)),
         }
     }
 
-    pub fn set_app_handle(&mut self, app_handle: AppHandle) {
-        self.app_handle = Some(app_handle);
+    pub async fn set_app_handle(&self, app_handle: AppHandle) {
+        let mut handle = self.app_handle.write().await;
+        *handle = Some(app_handle);
     }
 
     pub async fn add_job(&self, job: TransferJob) {
@@ -40,12 +46,12 @@ impl TransferManager {
         queue.push(job.id.clone());
         
         // Emit added event with full job data
-        if let Some(app) = &self.app_handle {
+        if let Some(app) = self.app_handle.read().await.as_ref() {
             let _ = app.emit("transfer-added", &job);
         }
         
         // Also emit initial status update
-        self.emit_update(&job);
+        self.emit_update(&job).await;
     }
     
     pub async fn get_job(&self, id: &str) -> Option<TransferJob> {
@@ -69,8 +75,17 @@ impl TransferManager {
                 TransferStatus::Pending | TransferStatus::InProgress => {
                     job.status = TransferStatus::Cancelled;
                     let job_clone = job.clone();
+                    
+                    // CRITICAL FIX: Abort the actual tokio task to stop Phantom I/O
+                    let mut handles = self.abort_handles.write().await;
+                    if let Some(handle) = handles.remove(id) {
+                        handle.abort();
+                        log::info!("Aborted job task: {}", id);
+                    }
+                    
+                    drop(handles);
                     drop(jobs);
-                    self.emit_update(&job_clone);
+                    self.emit_update(&job_clone).await;
                     return true;
                 }
                 _ => return false,
@@ -130,8 +145,8 @@ impl TransferManager {
         None
     }
 
-    fn emit_update(&self, job: &TransferJob) {
-        if let Some(app) = &self.app_handle {
+    async fn emit_update(&self, job: &TransferJob) {
+        if let Some(app) = self.app_handle.read().await.as_ref() {
             let event = TransferEvent {
                 job_id: job.id.clone(),
                 processed_bytes: job.processed_bytes,
@@ -143,29 +158,66 @@ impl TransferManager {
         }
     }
     
-    // Process the queue - this would ideally be a background loop
-    // For MVP, we'll trigger processing when a job is added
-    pub async fn process_queue(&self, s3_manager: Arc<RwLock<S3ClientManager>>, profile: &Profile) {
-        // Simplified processing: Pick one queued job
-        let next_id = {
-            let mut queue = self.queue.lock().await;
-            if queue.is_empty() { return; }
-            queue.remove(0)
-        };
-
-        // Update status to InProgress
-        self.update_job_status(&next_id, TransferStatus::InProgress).await;
+    // Process the queue using a worker pool that respects max concurrency
+    pub async fn process_queue(self: Arc<Self>, s3_manager: Arc<RwLock<S3ClientManager>>, profile: Profile) {
+        let manager = self.clone();
         
-        // Run the job
-        let job_opt = self.get_job(&next_id).await;
-        if let Some(job) = job_opt {
-             match self.execute_job(&job, s3_manager, profile).await {
-                 Ok(_) => self.update_job_status(&next_id, TransferStatus::Completed).await,
-                 Err(e) => self.update_job_status(&next_id, TransferStatus::Failed(e.to_string())).await,
-             }
-        }
+        tokio::spawn(async move {
+            loop {
+                // 1. Get next job from queue
+                let next_id = {
+                    let mut queue = manager.queue.lock().await;
+                    if queue.is_empty() { break; }
+                    queue.remove(0)
+                };
+
+                // 2. Wait for a slot in the concurrency limit
+                let permit = match manager.concurrency_semaphore.clone().acquire_owned().await {
+                    Ok(p) => p,
+                    Err(_) => break, // Semaphore closed
+                };
+
+                // 3. Spawn the task
+                let manager_inner = manager.clone();
+                let s3_inner = s3_manager.clone();
+                let profile_inner = profile.clone();
+                let id_inner = next_id.clone();
+
+                let handle = tokio::spawn(async move {
+                    // Update status to InProgress
+                    manager_inner.update_job_status(&id_inner, TransferStatus::InProgress).await;
+                    
+                    // Run the job
+                    let job_opt = manager_inner.get_job(&id_inner).await;
+                    if let Some(job) = job_opt {
+                        match manager_inner.execute_job(&job, s3_inner, &profile_inner).await {
+                            Ok(_) => {
+                                // Double check if it was cancelled while we were working
+                                if let Some(current_job) = manager_inner.get_job(&id_inner).await {
+                                    if !matches!(current_job.status, TransferStatus::Cancelled) {
+                                        manager_inner.update_job_status(&id_inner, TransferStatus::Completed).await;
+                                    }
+                                }
+                            },
+                            Err(e) => manager_inner.update_job_status(&id_inner, TransferStatus::Failed(e.to_string())).await,
+                        }
+                    }
+                    
+                    // Remove abort handle when done
+                    let mut handles = manager_inner.abort_handles.write().await;
+                    handles.remove(&id_inner);
+                    
+                    // Permit is dropped here, freeing a slot
+                    drop(permit);
+                });
+
+                // 4. Store the abort handle so we can cancel it later
+                let mut handles = manager.abort_handles.write().await;
+                handles.insert(next_id, handle.abort_handle());
+            }
+        });
     }
-    
+
     async fn update_job_status(&self, id: &str, status: TransferStatus) {
         {
             let mut jobs = self.jobs.write().await;
@@ -180,11 +232,8 @@ impl TransferManager {
                 }
             }
         }
-        // Re-read or just emit from what we had? The previous code emitted from the ref.
-        // Let's refetch to emit to be safe/clean or just emit inside scope.
-        // Emitting inside scope is fine.
         if let Some(job) = self.get_job(id).await {
-             self.emit_update(&job);
+             self.emit_update(&job).await;
         }
     }
     
@@ -196,7 +245,7 @@ impl TransferManager {
             }
         }
         if let Some(job) = self.get_job(id).await {
-            self.emit_update(&job);
+            self.emit_update(&job).await;
         }
     }
 
@@ -208,17 +257,19 @@ impl TransferManager {
             }
         }
         if let Some(job) = self.get_job(id).await {
-            self.emit_update(&job);
+            self.emit_update(&job).await;
         }
     }
 
     async fn execute_job(&self, job: &TransferJob, s3_manager: Arc<RwLock<S3ClientManager>>, profile: &Profile) -> crate::error::Result<()> {
-        let mut s3 = s3_manager.write().await;
-        
-        let client = if let Some(ref region) = job.bucket_region {
-            s3.get_client_for_region(profile, region).await?
-        } else {
-            s3.get_client(profile).await?
+        let client = {
+            let mut s3 = s3_manager.write().await;
+            let c = if let Some(ref region) = job.bucket_region {
+                s3.get_client_for_region(profile, region).await?
+            } else {
+                s3.get_client(profile).await?
+            };
+            c.clone()
         };
         
         match job.transfer_type {
@@ -233,6 +284,10 @@ impl TransferManager {
                     .send()
                     .await
                     .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+
+                 if let Ok(meta) = std::fs::metadata(&job.local_path) {
+                     self.update_job_progress(&job.id, meta.len()).await;
+                 }
             }
             TransferType::Download => {
                 let mut output = client.get_object()
@@ -253,8 +308,7 @@ impl TransferManager {
                 let mut downloaded: u64 = 0;
                 let mut last_update = std::time::Instant::now();
                 
-                // Emitting progress implies we need to intercept the stream
-                // For MVP, chunking it manually or using a wrapper
+
                 while let Some(bytes) = output.body.try_next().await
                     .map_err(|e| crate::error::AppError::S3Error(e.to_string()))? 
                 {
@@ -263,17 +317,13 @@ impl TransferManager {
                     
                     downloaded += bytes.len() as u64;
                     
-                    // Throttle progress updates to avoid freezing the UI
-                    if last_update.elapsed() >= std::time::Duration::from_millis(300) {
+                    if last_update.elapsed() >= std::time::Duration::from_millis(100) {
                         self.update_job_progress(&job.id, downloaded).await;
                         last_update = std::time::Instant::now();
                     }
                 }
                 
-                // Ensure final 100% progress is sent
                 self.update_job_progress(&job.id, downloaded).await;
-                
-                // If we didn't know total_bytes initially (e.g. single file download), update it now
                 if job.total_bytes == 0 {
                     self.update_job_total_size(&job.id, downloaded).await;
                 }
