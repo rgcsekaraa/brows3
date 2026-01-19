@@ -432,10 +432,19 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
       {/* Table Body Area */}
       <Box sx={{ flex: 1, overflow: 'hidden' }}>
         {isLoading ? (
-          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-            <CircularProgress size={32} />
-            <Typography variant="caption" color="text.secondary">Loading...</Typography>
-          </Box>
+          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: '100%' }}>
+            <TableHead>{headerContent()}</TableHead>
+            <TableBody>
+              <TableRow>
+                <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                    <CircularProgress size={32} />
+                    <Typography variant="caption" color="text.secondary">Loading...</Typography>
+                  </Box>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         ) : rows.length === 0 ? (
           <Table size="small">
             <TableHead>{headerContent()}</TableHead>

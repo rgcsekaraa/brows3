@@ -781,7 +781,8 @@ function BucketContent() {
   };
 
   const handleDeletePrompt = () => {
-    handleMenuClose();
+    // Close the menu popup but preserve selectedObject for the delete confirmation
+    setMenuAnchorEl(null);
     if (selectedObject) {
        setSelectedKeys(new Set([selectedObject.key]));
        setDeleteConfirmOpen(true);
@@ -1396,10 +1397,14 @@ function BucketContent() {
 
       <ConfirmDialog
         open={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
+        onClose={() => {
+          setDeleteConfirmOpen(false);
+          setSelectedObject(null);
+        }}
         onConfirm={() => {
-           if (selectedObject) handleDelete();
-           else handleBulkDelete();
+           // Always use bulk delete - it handles both single items and folders recursively
+           handleBulkDelete();
+           setSelectedObject(null);
         }}
         title="Delete Confirmation"
         message={
