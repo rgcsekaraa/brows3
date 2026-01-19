@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.22] - 2026-01-20
+
+### Fixed
+- **Recursive Folder Delete**: True recursive deletion implemented. Bypassing cache and proper delimiter handling ensures all nested files and subfolders are fully removed.
+- **Selection State Persistence**: Folders and files are now automatically deselected when navigating between different bucket paths or prefixes.
+- **UI Polish - Table Headers**: Fixed an issue where table headers would disappear during the loading/refresh state.
+- **Delete Action Reliability**: Fixed a bug where confirming a delete action from the context menu would sometimes fail to trigger the operation.
+- **Dependencies**: Aligned `@tauri-apps/plugin-dialog` NPM package version with the Rust crate to resolve build failures.
+
 ## [0.2.21] - 2026-01-20
 
 ### Fixed
