@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useMemo, useEffect, useRef } from 'react';
+import { Suspense, useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Box,
@@ -346,15 +346,17 @@ function BucketContent() {
   // Multi-select State
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   
-  // Selection Handlers
-  const handleSelect = (key: string, checked: boolean) => {
-    const newSelected = new Set(selectedKeys);
-    if (checked) newSelected.add(key);
-    else newSelected.delete(key);
-    setSelectedKeys(newSelected);
-  };
+  // Selection Handlers - memoized to prevent re-renders
+  const handleSelect = useCallback((key: string, checked: boolean) => {
+    setSelectedKeys(prev => {
+      const newSelected = new Set(prev);
+      if (checked) newSelected.add(key);
+      else newSelected.delete(key);
+      return newSelected;
+    });
+  }, []);
 
-  const handleSelectAll = (checked: boolean) => {
+  const handleSelectAll = useCallback((checked: boolean) => {
     if (checked && displayData) {
       const allKeys = [
         ...displayData.common_prefixes, 
@@ -364,16 +366,21 @@ function BucketContent() {
     } else {
       setSelectedKeys(new Set());
     }
-  };
+  }, [displayData]);
 
-  const clearSelection = () => setSelectedKeys(new Set());
+  const clearSelection = useCallback(() => setSelectedKeys(new Set()), []);
 
   // Clipboard State
   const { items: clipboardItems, mode: clipboardMode, copy, cut, clear: clearClipboard } = useClipboardStore();
 
-  const handleCopy = () => {
-     if (selectedKeys.size === 0) return;
-     const items = Array.from(selectedKeys).map(key => ({
+  // Memoized clipboard handlers using refs to access latest state
+  const selectedKeysRef = useRef(selectedKeys);
+  selectedKeysRef.current = selectedKeys;
+
+  const handleCopy = useCallback(() => {
+     const keys = selectedKeysRef.current;
+     if (keys.size === 0) return;
+     const items = Array.from(keys).map(key => ({
        bucket: bucketName || '',
        region: bucketRegion,
        key,
@@ -382,11 +389,12 @@ function BucketContent() {
      copy(items);
      clearSelection();
      displaySuccess(`Copied ${items.length} items`);
-  };
+  }, [bucketName, bucketRegion, copy, clearSelection]);
 
-  const handleCut = () => {
-    if (selectedKeys.size === 0) return;
-    const items = Array.from(selectedKeys).map(key => ({
+  const handleCut = useCallback(() => {
+    const keys = selectedKeysRef.current;
+    if (keys.size === 0) return;
+    const items = Array.from(keys).map(key => ({
       bucket: bucketName || '',
       region: bucketRegion,
       key,
@@ -395,7 +403,7 @@ function BucketContent() {
     cut(items);
     clearSelection();
     displaySuccess(`Cut ${items.length} items to clipboard`);
-  };
+  }, [bucketName, bucketRegion, cut, clearSelection]);
 
   const handlePaste = async () => {
     if (!bucketName || clipboardItems.length === 0) return;
@@ -429,41 +437,51 @@ function BucketContent() {
       if (clipboardMode === 'move') clearClipboard();
       refresh();
     } catch (err) {
-      displayError(`Paste failed: ${err}`);
+      const errorMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
+      displayError(`Paste failed: ${errorMsg}`);
     }
   };
 
   // Actions
 
-  // Keyboard Shortcuts
+  // Store refs to handlers for keyboard listener
+  const handleCopyRef = useRef(handleCopy);
+  const handleCutRef = useRef(handleCut);
+  const handlePasteRef = useRef(handlePaste);
+  
+  useEffect(() => {
+    handleCopyRef.current = handleCopy;
+    handleCutRef.current = handleCut;
+    handlePasteRef.current = handlePaste;
+  });
+
+  // Keyboard Shortcuts - use refs to always get latest function
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
        // Copy: Cmd+C
        if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
          e.preventDefault();
-         handleCopy();
+         handleCopyRef.current();
        }
        // Cut: Cmd+X
        if ((e.metaKey || e.ctrlKey) && e.key === 'x') {
          e.preventDefault();
-         handleCut();
+         handleCutRef.current();
        }
        // Paste: Cmd+V
        if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
          e.preventDefault();
-         handlePaste();
+         handlePasteRef.current();
        }
-       // Delete: Delete/Backspace (if verified)
-       // Be careful with Backspace as it is nav back usually. allow only Del key or if explicitly focused
-       // Let's stick to Delete key explicitly
-       if (e.key === 'Delete' && selectedKeys.size > 0) {
+       // Delete: Delete key
+       if (e.key === 'Delete' && selectedKeysRef.current.size > 0) {
          setDeleteConfirmOpen(true);
        }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedKeys, bucketName, clipboardItems, clipboardMode, propertiesOpen]); // Re-bind on dependency change
+  }, []); // Empty deps - we use refs for latest values
 
   // Restored Actions
   const handleUploadFiles = async () => {
@@ -575,24 +593,41 @@ function BucketContent() {
 
     setIsUploading(true);
     let count = 0;
+    
+    // Convert to array for batching
+    const keysArray = Array.from(selectedKeys);
+    const BATCH_SIZE = 5;
+    const BATCH_DELAY = 100; // ms between batches
+
     try {
-      for (const key of Array.from(selectedKeys)) {
-        // Find if it's an object or folder in the current display
-        const isSelectedObject = displayData?.objects.find(o => o.key === key);
-        const isSelectedFolder = displayData?.common_prefixes ? (displayData as any).common_prefixes.find((p: string) => p === key) : null;
+      // Process in batches to prevent WebKit from crashing
+      for (let i = 0; i < keysArray.length; i += BATCH_SIZE) {
+        const batch = keysArray.slice(i, i + BATCH_SIZE);
         
-        if (isSelectedFolder) {
+        // Process batch items concurrently
+        await Promise.all(batch.map(async (key) => {
+          const isSelectedObject = displayData?.objects.find(o => o.key === key);
+          const isSelectedFolder = displayData?.common_prefixes?.includes(key);
+          
+          if (isSelectedFolder) {
             const folderName = key.split('/').filter(Boolean).pop() || 'folder';
             const localPath = `${downloadDir}/${folderName}`;
             await transferApi.queueFolderDownload(bucketName || '', bucketRegion, key, localPath);
             count++;
-        } else if (isSelectedObject) {
-          const fileName = key.split('/').pop() || 'file';
-          const localPath = `${downloadDir}/${fileName}`;
-          await transferApi.queueDownload(bucketName || '', bucketRegion, key, localPath, isSelectedObject.size);
-          count++;
+          } else if (isSelectedObject) {
+            const fileName = key.split('/').pop() || 'file';
+            const localPath = `${downloadDir}/${fileName}`;
+            await transferApi.queueDownload(bucketName || '', bucketRegion, key, localPath, isSelectedObject.size);
+            count++;
+          }
+        }));
+        
+        // Small delay between batches to let WebKit breathe
+        if (i + BATCH_SIZE < keysArray.length) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
         }
       }
+      
       displaySuccess(`Queued ${count} items for download.`, '/downloads');
       setSelectedKeys(new Set());
     } catch (err) {
@@ -601,19 +636,61 @@ function BucketContent() {
       setIsUploading(false);
     }
   };
+
   
   const handleBulkDelete = async () => {
     if (!bucketName || selectedKeys.size === 0) return;
     
     setIsDeleting(true);
     try {
-        await operationsApi.deleteObjects(bucketName, bucketRegion, Array.from(selectedKeys));
-        displaySuccess(`Successfully deleted ${selectedKeys.size} items`);
+        // Collect all keys to delete - for folders, we need to list all objects inside
+        const keysToDelete: string[] = [];
+        
+        for (const key of selectedKeys) {
+          if (key.endsWith('/')) {
+            // It's a folder - list all objects recursively under this prefix
+            try {
+              let continuationToken: string | undefined;
+              do {
+                const result = await objectApi.listObjects(bucketName, bucketRegion, key, '', continuationToken);
+                // Add all objects under this prefix
+                for (const obj of result.objects) {
+                  keysToDelete.push(obj.key);
+                }
+                // Also add any nested "folders" (common prefixes)
+                for (const prefix of result.common_prefixes) {
+                  keysToDelete.push(prefix);
+                }
+                continuationToken = result.next_continuation_token || undefined;
+              } while (continuationToken);
+              // Also delete the folder marker itself
+              keysToDelete.push(key);
+            } catch (listErr) {
+              console.error(`Failed to list folder contents: ${key}`, listErr);
+              // Still try to delete the folder marker
+              keysToDelete.push(key);
+            }
+          } else {
+            // It's a file - just add it
+            keysToDelete.push(key);
+          }
+        }
+        
+        if (keysToDelete.length === 0) {
+          displaySuccess('No items to delete');
+          setDeleteConfirmOpen(false);
+          return;
+        }
+        
+        // Delete all collected keys
+        await operationsApi.deleteObjects(bucketName, bucketRegion, keysToDelete);
+        displaySuccess(`Successfully deleted ${keysToDelete.length} items`);
         setSelectedKeys(new Set());
         refresh();
-        setDeleteConfirmOpen(false); // Close dialog if open
+        setDeleteConfirmOpen(false);
     } catch (err) {
-        displayError(err instanceof Error ? err.message : 'Bulk delete failed');
+        const errorMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
+        displayError(`Bulk delete failed: ${errorMsg}`);
     } finally {
         setIsDeleting(false);
     }
@@ -964,6 +1041,7 @@ function BucketContent() {
             onClose={() => setUploadMenuAnchor(null)}
             transformOrigin={{ horizontal: 'right', vertical: 'top' }}
             anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            transitionDuration={0}
         >
             <MenuItem onClick={handleUploadFiles}>
                 <ListItemIcon><FileIcon fontSize="small" /></ListItemIcon>
@@ -1069,6 +1147,7 @@ function BucketContent() {
         anchorEl={menuAnchorEl}
         open={Boolean(menuAnchorEl)}
         onClose={handleMenuClose}
+        transitionDuration={0}
       >
         {!selectedObject?.isFolder && (
           <MenuItem onClick={handleDownload}>

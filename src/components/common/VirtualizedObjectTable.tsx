@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useMemo, useCallback } from 'react';
+import { memo, useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import {
   Box,
   Table,
@@ -11,10 +11,8 @@ import {
   Checkbox,
   IconButton,
   Typography,
-  Tooltip,
   Stack,
   Divider,
-  Chip,
   CircularProgress,
 } from '@mui/material';
 import {
@@ -28,11 +26,8 @@ import {
   TextSnippet as TextIcon,
   InsertDriveFile as FileIcon,
   Archive as ArchiveIcon,
-  Download as DownloadIcon,
-  Delete as DeleteIcon,
   Visibility as PreviewIcon,
   Edit as EditIcon,
-  ContentCopy as CopyIcon,
   MoreVert as MoreVertIcon,
   OpenInNew as OpenIcon,
 } from '@mui/icons-material';
@@ -139,6 +134,7 @@ const EDIT_EXTS = new Set([
   'gradle', 'sql', 'prisma', 'graphql', 'gql', 'log', 'csv', 'tsv', 'lock', 'gitignore', 
   'dockerfile', 'makefile', 'cmake', 'tf', 'hcl', 'lua', 'dart', 'r', 'ex', 'exs'
 ]);
+
 // Row data type
 interface RowData {
   key: string;
@@ -168,65 +164,73 @@ interface Props {
   onEndReached?: () => void;
 }
 
-// Lightweight table components - no Paper wrapper, minimal styling
+// Lightweight table components with explicit backgrounds for WebKit
 const VirtuosoComponents: TableComponents<RowData> = {
   Scroller: memo(({ style, ...props }: any) => (
     <Box 
       {...props} 
       style={style}
       sx={{ 
+        bgcolor: 'background.paper',
         '&::-webkit-scrollbar': { width: 6, height: 6 },
         '&::-webkit-scrollbar-thumb': { bgcolor: 'grey.600', borderRadius: 3 },
+        willChange: 'transform',
       }} 
     />
   )),
   Table: memo((props: any) => (
-    <Table {...props} size="small" sx={{ tableLayout: 'fixed', minWidth: '100%' }} />
+    <Table {...props} size="small" sx={{ tableLayout: 'fixed', minWidth: '100%', bgcolor: 'background.paper' }} />
   )),
-  TableHead: memo((props: any) => <TableHead {...props} />),
-  TableRow: memo(({ item, ...props }: any) => <TableRow hover {...props} />),
-  TableBody: memo((props: any) => <TableBody {...props} />),
+  TableHead: memo((props: any) => <TableHead {...props} sx={{ bgcolor: 'background.default' }} />),
+  TableRow: memo(({ item, ...props }: any) => <TableRow hover {...props} sx={{ bgcolor: 'background.paper' }} />),
+  TableBody: memo((props: any) => <TableBody {...props} sx={{ bgcolor: 'background.paper' }} />),
 };
 
-// Memoized row component for maximum performance
-const RowContent = memo(function RowContent({
+// Simple row component - NOT memoized to ensure proper updates
+function RowContent({
   row,
+  rowIndex,
   isSelected,
   onSelect,
   onNavigate,
-  onDownload,
-  onDelete,
   onPreview,
   onEdit,
-  onCopyPath,
   onMenuOpen,
 }: {
   row: RowData;
+  rowIndex: number;
   isSelected: boolean;
   onSelect: (key: string, checked: boolean) => void;
   onNavigate: (prefix: string) => void;
-  onDownload?: (key: string) => void;
-  onDelete?: (key: string) => void;
   onPreview?: (key: string) => void;
   onEdit?: (key: string) => void;
-  onCopyPath?: (key: string) => void;
   onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
 }) {
   const ext = getExt(row.name);
   const canPreview = !row.isFolder && PREVIEW_EXTS.has(ext);
   const canEdit = !row.isFolder && EDIT_EXTS.has(ext);
 
+  // Debounce checkbox to prevent rapid clicking
+  const handleCheckboxChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    onSelect(row.key, e.target.checked);
+  }, [onSelect, row.key]);
+
   return (
     <>
-      <TableCell padding="checkbox" sx={{ width: 40, py: 0 }}>
+      {/* Row number column */}
+      <TableCell sx={{ width: 40, py: 0.5, textAlign: 'center', color: 'text.secondary', fontSize: '0.75rem', fontFamily: 'monospace', bgcolor: 'background.paper' }}>
+        {rowIndex + 1}
+      </TableCell>
+      <TableCell padding="checkbox" sx={{ width: 40, py: 0, bgcolor: 'background.paper' }}>
         <Checkbox
           checked={isSelected}
-          onChange={(e) => onSelect(row.key, e.target.checked)}
+          onChange={handleCheckboxChange}
           size="small"
           sx={{ p: 0.5 }}
         />
       </TableCell>
-      <TableCell sx={{ width: 32, py: 0.5 }}>
+      <TableCell sx={{ width: 32, py: 0.5, bgcolor: 'background.paper' }}>
         {getIcon(row.name, row.isFolder)}
       </TableCell>
       <TableCell 
@@ -236,6 +240,7 @@ const RowContent = memo(function RowContent({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          bgcolor: 'background.paper',
         }}
         onClick={row.isFolder ? () => onNavigate(row.key) : undefined}
       >
@@ -263,13 +268,13 @@ const RowContent = memo(function RowContent({
           </Typography>
         )}
       </TableCell>
-      <TableCell align="right" sx={{ width: 80, py: 0.5, fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+      <TableCell align="right" sx={{ width: 80, py: 0.5, fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'nowrap', bgcolor: 'background.paper' }}>
         {row.isFolder ? '—' : formatSize(row.size)}
       </TableCell>
-      <TableCell align="right" sx={{ width: 100, py: 0.5, fontSize: '0.75rem', color: 'text.secondary' }}>
+      <TableCell align="right" sx={{ width: 100, py: 0.5, fontSize: '0.75rem', color: 'text.secondary', bgcolor: 'background.paper' }}>
         {row.modified || '—'}
       </TableCell>
-      <TableCell sx={{ width: 80, py: 0.25 }}>
+      <TableCell sx={{ width: 80, py: 0.25, bgcolor: 'background.paper' }}>
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', opacity: 0.7, '&:hover': { opacity: 1 } }}>
           {row.isFolder ? (
             <IconButton size="small" onClick={() => onNavigate(row.key)} sx={{ p: 0.5 }}>
@@ -296,7 +301,7 @@ const RowContent = memo(function RowContent({
       </TableCell>
     </>
   );
-});
+}
 
 export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   folders = [],
@@ -310,11 +315,8 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   onSelectAll,
   onMenuOpen,
   onSortChange,
-  onDownload,
-  onDelete,
   onPreview,
   onEdit,
-  onCopyPath,
   onEndReached,
 }: Props) {
   // Build rows - highly optimized
@@ -360,12 +362,30 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
     return result;
   }, [folders, objects, sortField, sortDirection]);
 
+  // Memoize selection state for header
   const allSelected = rows.length > 0 && selectedKeys.size === rows.length;
   const someSelected = selectedKeys.size > 0 && selectedKeys.size < rows.length;
 
-  // Fixed header
+  // Stable callback refs to avoid recreating
+  const onSelectRef = useRef(onSelect);
+  const onNavigateRef = useRef(onNavigate);
+  const onPreviewRef = useRef(onPreview);
+  const onEditRef = useRef(onEdit);
+  const onMenuOpenRef = useRef(onMenuOpen);
+  
+  // Update refs on each render
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+    onNavigateRef.current = onNavigate;
+    onPreviewRef.current = onPreview;
+    onEditRef.current = onEdit;
+    onMenuOpenRef.current = onMenuOpen;
+  });
+
+  // Fixed header - memoized
   const headerContent = useCallback(() => (
     <TableRow sx={{ bgcolor: 'background.default' }}>
+      <TableCell sx={{ width: 40, bgcolor: 'background.default', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>#</TableCell>
       <TableCell padding="checkbox" sx={{ width: 40, bgcolor: 'background.default' }}>
         <Checkbox
           indeterminate={someSelected}
@@ -400,21 +420,20 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
     </TableRow>
   ), [allSelected, someSelected, sortField, sortDirection, onSelectAll, onSortChange]);
 
-  // Row renderer - returns memoized component
-  const rowContent = useCallback((_index: number, row: RowData) => (
+  // Row renderer using stable refs - key pattern forces update on selection change
+  const rowContent = useCallback((index: number, row: RowData) => (
     <RowContent
+      key={`${row.key}-${selectedKeys.has(row.key)}`}
       row={row}
+      rowIndex={index}
       isSelected={selectedKeys.has(row.key)}
-      onSelect={onSelect}
-      onNavigate={onNavigate}
-      onDownload={onDownload}
-      onDelete={onDelete}
-      onPreview={onPreview}
-      onEdit={onEdit}
-      onCopyPath={onCopyPath}
-      onMenuOpen={onMenuOpen}
+      onSelect={onSelectRef.current}
+      onNavigate={onNavigateRef.current}
+      onPreview={onPreviewRef.current}
+      onEdit={onEditRef.current}
+      onMenuOpen={onMenuOpenRef.current}
     />
-  ), [selectedKeys, onSelect, onNavigate, onDownload, onDelete, onPreview, onEdit, onCopyPath, onMenuOpen]);
+  ), [selectedKeys]);
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
@@ -430,7 +449,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
             <TableHead>{headerContent()}</TableHead>
             <TableBody>
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
                   <Typography color="text.secondary">Empty folder</Typography>
                 </TableCell>
               </TableRow>
@@ -443,8 +462,8 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
             fixedHeaderContent={headerContent}
             itemContent={rowContent}
             style={{ height: '100%' }}
-            overscan={50}
-            increaseViewportBy={{ top: 200, bottom: 200 }}
+            overscan={20}
+            increaseViewportBy={{ top: 100, bottom: 100 }}
             endReached={onEndReached}
           />
         )}
@@ -483,14 +502,6 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
         </Stack>
 
         <Stack direction="row" spacing={2} alignItems="center">
-          {selectedKeys.size > 0 && (
-            <Chip 
-              label={`${selectedKeys.size} selected`} 
-              size="small" 
-              color="primary" 
-              sx={{ height: 18, fontSize: '0.65rem', fontWeight: 700, borderRadius: 0.5 }}
-            />
-          )}
           {onEndReached && (
             <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', fontSize: '0.7rem' }}>
               Scroll for more

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Alert,
@@ -29,14 +29,18 @@ interface ToastItemProps {
 }
 
 function ToastItem({ toast, onClose, onShowDetails }: ToastItemProps) {
+  // Store onClose in a ref to prevent timer reset when parent re-renders
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (toast.autoHide) {
       const timer = setTimeout(() => {
-        onClose();
+        onCloseRef.current();
       }, toast.duration || 5000);
       return () => clearTimeout(timer);
     }
-  }, [toast.autoHide, toast.duration, onClose]);
+  }, [toast.id, toast.autoHide, toast.duration]); // onClose intentionally removed - use ref
 
   const hasDetails = !!toast.details || toast.message.length > 100;
 
@@ -138,13 +142,18 @@ export default function ToastContainer() {
     toast: null,
   });
 
-  const handleShowDetails = (toast: Toast) => {
+  const handleShowDetails = useCallback((toast: Toast) => {
     setDetailsDialog({ open: true, toast });
-  };
+  }, []);
 
-  const handleCloseDetails = () => {
+  const handleCloseDetails = useCallback(() => {
     setDetailsDialog({ open: false, toast: null });
-  };
+  }, []);
+
+  // Memoize the remove function to prevent re-creating callbacks
+  const handleRemoveToast = useCallback((id: string) => {
+    removeToast(id);
+  }, [removeToast]);
 
   return (
     <>
@@ -164,7 +173,7 @@ export default function ToastContainer() {
             <ToastItem
               key={toast.id}
               toast={toast}
-              onClose={() => removeToast(toast.id)}
+              onClose={() => handleRemoveToast(toast.id)}
               onShowDetails={() => handleShowDetails(toast)}
             />
           ))}
