@@ -180,7 +180,7 @@ export const objectApi = {
       bucketName, 
       bucketRegion,
       prefix: prefix || null, 
-      delimiter: delimiter || null,
+      delimiter: delimiter === undefined ? null : delimiter,
       continuationToken: continuationToken || null,
       bypassCache
     });

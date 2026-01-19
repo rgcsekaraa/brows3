@@ -219,8 +219,13 @@ pub async fn list_objects(
         .filter(|obj| {
             let key = obj.key().unwrap_or_default();
             let size = obj.size().unwrap_or(0);
-            // Exclude folder markers: zero-byte objects whose key ends with '/'
-            !(key.ends_with('/') && size == 0)
+            
+            // Exclude folder markers (zero-byte objects ending with '/') ONLY if we are using a delimiter (structured view).
+            // In recursive view (no delimiter), we want ALL markers so they can be managed/deleted.
+            if !delimiter_str.is_empty() && key.ends_with('/') && size == 0 {
+                return false;
+            }
+            true
         })
         .map(|obj| S3Object {
             key: obj.key().unwrap_or_default().to_string(),
