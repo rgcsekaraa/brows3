@@ -305,6 +305,12 @@ pub async fn delete_objects(
         }
     }
 
+    // Invalidate cache for this bucket after successful deletion
+    {
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.remove_bucket_cache(&active_profile.id, &bucket_name);
+    }
+
     Ok(())
 }
 
