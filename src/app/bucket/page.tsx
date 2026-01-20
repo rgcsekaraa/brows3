@@ -93,7 +93,7 @@ function BucketContent() {
   const prefix = searchParams.get('prefix') || '';
   
   const { data, isLoading, error: initialError, stats, refresh, loadMore, isLoadingMore, hasMore } = useObjects(bucketName || '', bucketRegion, prefix);
-  const { addJob, jobs } = useTransferStore();
+  const addJob = useTransferStore(state => state.addJob);
   const { addBucket } = useTabStore();
   
   // Sorting State
@@ -114,6 +114,7 @@ function BucketContent() {
   }, [initialError]);
 
   // Track previous job statuses to detect completions
+  // We use a ref to track status without causing re-renders
   const prevJobStatusRef = useRef<Map<string, string>>(new Map());
   
   // Refresh debounce ref
@@ -121,54 +122,63 @@ function BucketContent() {
   const searchSequenceRef = useRef<number>(0);
 
   // Auto-refresh when uploads to this bucket complete
+  // OPTIMIZED: Use subscription to avoid re-rendering component on every progress tick
   useEffect(() => {
     if (!bucketName) return;
     
-    // Cleanup timeout on unmount or dep change
+    // Initialize ref with current state without causing render
+    const currentJobs = useTransferStore.getState().jobs;
+    const initialMap = new Map<string, string>();
+    for (const job of currentJobs) {
+        if (job.transfer_type === 'Upload' && job.bucket === bucketName) {
+            initialMap.set(job.id, typeof job.status === 'string' ? job.status : 'Failed');
+        }
+    }
+    prevJobStatusRef.current = initialMap;
+
+    const unsubscribe = useTransferStore.subscribe((state) => {
+        const jobs = state.jobs;
+        let shouldRefresh = false;
+        const currentStatuses = new Map<string, string>();
+        
+        for (const job of jobs) {
+            // Only care about uploads to this bucket
+            if (job.transfer_type !== 'Upload' || job.bucket !== bucketName) continue;
+            
+            const prevStatus = prevJobStatusRef.current.get(job.id);
+            const currentStatus = typeof job.status === 'string' ? job.status : 'Failed';
+            
+            // Store current status for next comparison
+            currentStatuses.set(job.id, currentStatus);
+            
+            // If job just completed (was something else before, now Completed)
+            if (prevStatus && prevStatus !== 'Completed' && currentStatus === 'Completed') {
+                shouldRefresh = true;
+            }
+        }
+        
+        // Update ref
+        prevJobStatusRef.current = currentStatuses;
+        
+        if (shouldRefresh) {
+            // Debounce refresh (2 seconds)
+            if (refreshTimeoutRef.current) {
+                clearTimeout(refreshTimeoutRef.current);
+            }
+            refreshTimeoutRef.current = setTimeout(() => {
+                refresh();
+                refreshTimeoutRef.current = null;
+            }, 2000);
+        }
+    });
+    
     return () => {
+        unsubscribe();
         if (refreshTimeoutRef.current) {
             clearTimeout(refreshTimeoutRef.current);
         }
     };
-  }, [bucketName]);
-
-  useEffect(() => {
-    if (!bucketName) return;
-    
-    const prevStatuses = prevJobStatusRef.current;
-    let shouldRefresh = false;
-    
-    for (const job of jobs) {
-      // Only care about uploads to this bucket
-      if (job.transfer_type !== 'Upload' || job.bucket !== bucketName) continue;
-      
-      const prevStatus = prevStatuses.get(job.id);
-      const currentStatus = typeof job.status === 'string' ? job.status : 'Failed';
-      // If job just completed (was something else before, now Completed)
-      if (prevStatus && prevStatus !== 'Completed' && currentStatus === 'Completed') {
-        shouldRefresh = true;
-      }
-    }
-    
-    // Update the ref with current statuses
-    const newMap = new Map<string, string>();
-    for (const job of jobs) {
-      const status = typeof job.status === 'string' ? job.status : 'Failed';
-      newMap.set(job.id, status);
-    }
-    prevJobStatusRef.current = newMap;
-    
-    if (shouldRefresh) {
-      // Debounce refresh (2 seconds)
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-      refreshTimeoutRef.current = setTimeout(() => {
-        refresh();
-        refreshTimeoutRef.current = null;
-      }, 2000);
-    }
-  }, [jobs, bucketName, refresh]);
+  }, [bucketName, refresh]);
 
   const handleSearch = async () => {
     if (!bucketName) return;

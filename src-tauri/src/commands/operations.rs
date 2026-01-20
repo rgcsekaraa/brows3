@@ -166,7 +166,7 @@ pub async fn delete_object(
 #[tauri::command]
 pub async fn copy_object(
     source_bucket: String,
-    _source_region: Option<String>,
+    source_region: Option<String>,
     source_key: String,
     destination_bucket: String,
     destination_region: Option<String>,
@@ -181,32 +181,137 @@ pub async fn copy_object(
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
 
+    // Check if this is a folder copy (key ends with /)
+    if source_key.ends_with('/') {
+        // RECURSIVE FOLDER COPY
+        log::info!("Starting recursive folder copy from {}/{} to {}/{}", 
+                   source_bucket, source_key, destination_bucket, destination_key);
+        
+        // Get client for listing source bucket
+        let source_region_resolved = {
+            let s3_manager = s3_state.read().await;
+            s3_manager.get_bucket_region(&source_bucket)
+        }.or(source_region.clone());
+        
+        let client = {
+            let mut s3_manager = s3_state.write().await;
+            if let Some(ref r) = source_region_resolved {
+                s3_manager.get_client_for_region(&active_profile, r).await?.clone()
+            } else {
+                s3_manager.get_client(&active_profile).await?.clone()
+            }
+        };
+        
+        // List all objects under the source prefix
+        let mut continuation_token = None;
+        let mut all_keys = Vec::new();
+        
+        loop {
+            let mut req = client.list_objects_v2()
+                .bucket(&source_bucket)
+                .prefix(&source_key);
+            
+            if let Some(token) = continuation_token {
+                req = req.continuation_token(token);
+            }
+            
+            let resp = req.send().await
+                .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+            
+            if let Some(contents) = resp.contents {
+                for obj in contents {
+                    if let Some(key) = obj.key {
+                        all_keys.push(key);
+                    }
+                }
+            }
+            
+            if resp.is_truncated.unwrap_or(false) {
+                continuation_token = resp.next_continuation_token;
+            } else {
+                break;
+            }
+        }
+        
+        log::info!("Found {} objects to copy in folder", all_keys.len());
+        
+        // Copy each object individually
+        for key in &all_keys {
+            // Calculate destination key by replacing source prefix with destination prefix
+            let relative_path = key.strip_prefix(&source_key).unwrap_or(key);
+            let new_key = format!("{}{}", destination_key, relative_path);
+            
+            // Perform the copy using internal helper (non-recursive single file copy)
+            copy_single_object(
+                &source_bucket,
+                key,
+                &destination_bucket,
+                destination_region.clone(),
+                &new_key,
+                &active_profile,
+                &s3_state,
+            ).await?;
+        }
+        
+        // Also copy the folder marker itself (empty object)
+        copy_single_object(
+            &source_bucket,
+            &source_key,
+            &destination_bucket,
+            destination_region,
+            &destination_key,
+            &active_profile,
+            &s3_state,
+        ).await?;
+        
+        log::info!("Recursive folder copy completed: {} objects copied", all_keys.len() + 1);
+        Ok(())
+    } else {
+        // Single file copy
+        copy_single_object(
+            &source_bucket,
+            &source_key,
+            &destination_bucket,
+            destination_region,
+            &destination_key,
+            &active_profile,
+            &s3_state,
+        ).await
+    }
+}
+
+/// Internal helper for copying a single object (non-recursive)
+async fn copy_single_object(
+    source_bucket: &str,
+    source_key: &str,
+    destination_bucket: &str,
+    destination_region: Option<String>,
+    destination_key: &str,
+    active_profile: &crate::credentials::Profile,
+    s3_state: &State<'_, S3State>,
+) -> Result<()> {
     // Check cache for bucket region first
     let destination_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&destination_bucket)
+        s3_manager.get_bucket_region(destination_bucket)
     }.or(destination_region);
 
     let mut s3_manager = s3_state.write().await;
     // We need the client for the DESTINATION region to initiate copy
     let client = if let Some(ref d) = destination_region {
-        s3_manager.get_client_for_region(&active_profile, d).await?
+        s3_manager.get_client_for_region(active_profile, d).await?
     } else {
-        s3_manager.get_client(&active_profile).await?
+        s3_manager.get_client(active_profile).await?
     };
 
     // Copy source must be URL encoded
-    // aws-sdk-s3 expects "bucket/key"
-    // Simple URL encoding (basic chars) - for robust solution use a library
-    // But aws-sdk might handle basic text. Let's send as is first or url-encode key if needed.
-    // Correct format: bucket/url_encoded_key
-    let key_encoded = urlencoding::encode(&source_key).into_owned();
+    let key_encoded = urlencoding::encode(source_key).into_owned();
     let final_source = format!("{}/{}", source_bucket, key_encoded);
 
     client
         .copy_object()
-        .bucket(&destination_bucket)
-        .key(&destination_key)
+        .bucket(destination_bucket)
+        .key(destination_key)
         .copy_source(final_source)
         .send()
         .await

@@ -18,7 +18,7 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'system',
       defaultRegion: 'us-east-1',
       maxConcurrentTransfers: 5,
-      autoRefreshOnFocus: true,
+      autoRefreshOnFocus: false, // Disabled by default - can cause freezing on Ubuntu
       setTheme: (theme) => set({ theme }),
       setDefaultRegion: (defaultRegion) => set({ defaultRegion }),
       setMaxConcurrentTransfers: (maxConcurrentTransfers) => set({ maxConcurrentTransfers }),

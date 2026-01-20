@@ -178,8 +178,8 @@ const VirtuosoComponents: TableComponents<RowData> = {
   TableBody: memo((props: any) => <TableBody {...props} sx={{ bgcolor: 'background.paper' }} />),
 };
 
-// Simple row component - NOT memoized to ensure proper updates
-function RowContent({
+// Memoized row component for performance - prevents flickering on Ubuntu/WebKitGTK
+const RowContent = memo(function RowContent({
   row,
   rowIndex,
   isSelected,
@@ -293,7 +293,14 @@ function RowContent({
       </TableCell>
     </>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render if these specific props changed
+  return prevProps.isSelected === nextProps.isSelected &&
+         prevProps.row.key === nextProps.row.key &&
+         prevProps.rowIndex === nextProps.rowIndex &&
+         prevProps.row.size === nextProps.row.size &&
+         prevProps.row.modified === nextProps.row.modified;
+});
 
 export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   folders = [],
@@ -365,6 +372,11 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   const onEditRef = useRef(onEdit);
   const onMenuOpenRef = useRef(onMenuOpen);
   
+  // Use ref for selectedKeys to avoid callback recreation on selection change
+  // This prevents flickering on Ubuntu/WebKitGTK
+  const selectedKeysRef = useRef(selectedKeys);
+  selectedKeysRef.current = selectedKeys;
+  
   // Update refs on each render
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -412,10 +424,12 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
     </TableRow>
   ), [allSelected, someSelected, sortField, sortDirection, onSelectAll, onSortChange]);
 
-  // Row renderer using stable refs - key pattern forces update on selection change
+  // Row renderer using stable refs - stable callback prevents flickering
+  // Uses stable key (just row.key) to avoid remounting on selection change
+  // selectedKeys in deps ensures re-render, but memoized RowContent only updates if isSelected changed
   const rowContent = useCallback((index: number, row: RowData) => (
     <RowContent
-      key={`${row.key}-${selectedKeys.has(row.key)}`}
+      key={row.key}
       row={row}
       rowIndex={index}
       isSelected={selectedKeys.has(row.key)}
@@ -425,7 +439,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
       onEdit={onEditRef.current}
       onMenuOpen={onMenuOpenRef.current}
     />
-  ), [selectedKeys]);
+  ), [selectedKeys]); // selectedKeys in deps for visual updates, memoized RowContent handles performance
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>

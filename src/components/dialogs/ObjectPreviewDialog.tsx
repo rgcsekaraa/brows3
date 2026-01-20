@@ -13,7 +13,6 @@ import {
   Edit as EditIcon,
   Save as SaveIcon,
   ContentCopy as CopyIcon,
-  AutoFixHigh as FormatIcon,
 } from '@mui/icons-material';
 import { objectApi } from '@/lib/tauri';
 import Editor, { OnMount } from '@monaco-editor/react';
@@ -126,6 +125,8 @@ export default function ObjectPreviewDialog({
   const [isImageRendering, setIsImageRendering] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const editorRef = useRef<any>(null);
+  const initialVersionIdRef = useRef<number>(0);
+  const [currentVersionId, setCurrentVersionId] = useState<number>(0);
 
   const filename = objectKey.split('/').pop() || objectKey;
   const ext = getExtension(filename);
@@ -133,6 +134,13 @@ export default function ObjectPreviewDialog({
   const isVideoFile = isVideo(filename);
   const isPdfFile = isPdf(filename);
   const isText = isTextFile(filename);
+  
+  // Compute whether content has actually changed from original
+  // Uses Monaco's version ID for accurate undo/redo tracking when available
+  // Version ID comparison handles undo correctly - when version matches initial, no changes
+  const hasChanges = editorRef.current 
+    ? currentVersionId !== initialVersionIdRef.current 
+    : editedContent !== content;
 
   useEffect(() => {
     if (!open || !objectKey) return;
@@ -144,6 +152,9 @@ export default function ObjectPreviewDialog({
       setEditedContent('');
       setPresignedUrl(null);
       setIsEditing(startInEditMode); // Reset edit mode based on prop
+      // Reset version tracking for fresh content
+      initialVersionIdRef.current = 0;
+      setCurrentVersionId(0);
 
       // 2MB Limit check for text files
       const MAX_PREVIEW_SIZE = 2 * 1024 * 1024; // 2MB
@@ -201,6 +212,15 @@ export default function ObjectPreviewDialog({
     try {
       await objectApi.putObjectContent(bucketName, bucketRegion, objectKey, editedContent);
       setContent(editedContent);
+      // Reset version tracking - current state is now the new baseline
+      if (editorRef.current) {
+        const model = editorRef.current.getModel();
+        if (model) {
+          const newVersionId = model.getAlternativeVersionId();
+          initialVersionIdRef.current = newVersionId;
+          setCurrentVersionId(newVersionId);
+        }
+      }
       toast.success('File Saved', `${filename} saved successfully`);
       onSave?.();
     } catch (err) {
@@ -217,20 +237,18 @@ export default function ObjectPreviewDialog({
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
-  };
-
-  const handleFormat = () => {
-      if (editorRef.current) {
-          editorRef.current.getAction('editor.action.formatDocument').run();
-      }
+    // Store the initial version ID when editor mounts with content
+    // This allows us to compare against the original state even after undo
+    const model = editor.getModel();
+    if (model) {
+      initialVersionIdRef.current = model.getAlternativeVersionId();
+    }
   };
 
   const handleClose = () => {
     setIsEditing(false);
     onClose();
   };
-
-  const isFormattable = ['json', 'html', 'xml', 'css', 'js', 'ts', 'jsx', 'tsx'].includes(ext);
 
   return (
     <BaseDialog 
@@ -273,16 +291,6 @@ export default function ObjectPreviewDialog({
         isText ? (
           <Box sx={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
             <Box sx={{ display: 'flex', gap: 1 }}>
-              {isEditing && isFormattable && (
-                <Button 
-                  startIcon={<FormatIcon />} 
-                  onClick={handleFormat} 
-                  size="small"
-                  sx={{ color: theme.palette.text.secondary, fontWeight: 600 }}
-                >
-                  Format
-                </Button>
-              )}
               <Button 
                 startIcon={<CopyIcon />} 
                 onClick={handleCopyContent} 
@@ -315,7 +323,11 @@ export default function ObjectPreviewDialog({
                     startIcon={<SaveIcon />} 
                     onClick={handleSave} 
                     variant="contained" 
-                    disabled={isSaving || editedContent === content}
+                    disabled={isSaving || !hasChanges}
+                    sx={{
+                      // Visual feedback: dim when no changes
+                      opacity: !hasChanges ? 0.6 : 1,
+                    }}
                   >
                     {isSaving ? 'Saving...' : 'Save Changes'}
                   </Button>
@@ -422,7 +434,16 @@ export default function ObjectPreviewDialog({
                         padding: { top: 16, bottom: 16 }
                     }}
                     theme={theme.palette.mode === 'dark' ? 'vs-dark' : 'light'}
-                    onChange={(val) => setEditedContent(val || '')}
+                    onChange={(val) => {
+                      setEditedContent(val || '');
+                      // Track version ID for accurate undo detection
+                      if (editorRef.current) {
+                        const model = editorRef.current.getModel();
+                        if (model) {
+                          setCurrentVersionId(model.getAlternativeVersionId());
+                        }
+                      }
+                    }}
                     onMount={handleEditorDidMount}
                     loading={<CircularProgress size={32} />}
                  />

@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.22] - 2026-01-20
+
+## [0.2.23] - 2026-01-21
+
+### Performance
+- **Zero-Lag Transfers**: Fixed a critical performance bottleneck where the UI would re-render at 60fps during file transfers. The app now remains buttery smooth even during massive uploads/downloads.
+- **Smart Background Throttling**: Implemented intelligent background resource management. The app now pauses expensive progress updates when minimized (saving CPU/Battery) but *instantly* processes completion events, ensuring "Download Complete" notifications still fire in the background.
+
+### Fixed
+- **Recursive Copy**: Added native support for recursive folder copying. You can now copy/paste deep folder structures with thousands of files reliably.
+- **App Freezing**: Resolved the "freeze on focus" issue by optimizing how the application handles data refreshing when returning from background.
+- **Editor Stability**: Fixed the "Save Changes" button state logic and removed the "Format" option to prevent editor hangs.
+- **Auto-Reloads**: Removed the overly aggressive `FreezeDetector` which caused unnecessary page reloads.
+
+
 
 ### Fixed
 - **Recursive Folder Delete**: True recursive deletion implemented. Bypassing cache and proper delimiter handling ensures all nested files and subfolders are fully removed.
