@@ -219,7 +219,15 @@ const RowContent = memo(function RowContent({
           checked={isSelected}
           onChange={handleCheckboxChange}
           size="small"
-          sx={{ p: 0.5 }}
+          disableRipple
+          sx={{ 
+            p: 0.5,
+            // Disable animations that can crash WebKitGTK
+            transition: 'none',
+            '& .MuiSvgIcon-root': {
+              transition: 'none',
+            }
+          }}
         />
       </TableCell>
       <TableCell sx={{ width: 32, py: 0.5, bgcolor: 'background.paper' }}>
@@ -396,7 +404,12 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
           checked={allSelected}
           onChange={(e) => onSelectAll(e.target.checked)}
           size="small"
-          sx={{ p: 0.5 }}
+          disableRipple
+          sx={{ 
+            p: 0.5,
+            transition: 'none',
+            '& .MuiSvgIcon-root': { transition: 'none' }
+          }}
         />
       </TableCell>
       <TableCell sx={{ width: 32, bgcolor: 'background.default' }} />
@@ -424,22 +437,33 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
     </TableRow>
   ), [allSelected, someSelected, sortField, sortDirection, onSelectAll, onSortChange]);
 
-  // Row renderer using stable refs - stable callback prevents flickering
-  // Uses stable key (just row.key) to avoid remounting on selection change
-  // selectedKeys in deps ensures re-render, but memoized RowContent only updates if isSelected changed
-  const rowContent = useCallback((index: number, row: RowData) => (
+  // Optimize Context for Virtuoso
+  // We pass changing values via context so rowContent callback can remain stable
+  const context = useMemo(() => ({
+      selectedKeys,
+      onSelect: onSelectRef.current,
+      onNavigate: onNavigateRef.current,
+      onPreview: onPreviewRef.current,
+      onEdit: onEditRef.current,
+      onMenuOpen: onMenuOpenRef.current
+  }), [selectedKeys]); // Only recreates when selection changes
+
+  // Row renderer - COMPLETELY STABLE (no deps)
+  // This is the key fix for Ubuntu crashes: Virtuoso sees the same function reference
+  // and efficiently propagates context changes only to rows that need it.
+  const rowContent = useCallback((index: number, row: RowData, context: any) => (
     <RowContent
       key={row.key}
       row={row}
       rowIndex={index}
-      isSelected={selectedKeys.has(row.key)}
-      onSelect={onSelectRef.current}
-      onNavigate={onNavigateRef.current}
-      onPreview={onPreviewRef.current}
-      onEdit={onEditRef.current}
-      onMenuOpen={onMenuOpenRef.current}
+      isSelected={context.selectedKeys.has(row.key)}
+      onSelect={context.onSelect}
+      onNavigate={context.onNavigate}
+      onPreview={context.onPreview}
+      onEdit={context.onEdit}
+      onMenuOpen={context.onMenuOpen}
     />
-  ), [selectedKeys]); // selectedKeys in deps for visual updates, memoized RowContent handles performance
+  ), []);
 
   return (
     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
@@ -473,6 +497,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
         ) : (
           <TableVirtuoso
             data={rows}
+            context={context}
             components={VirtuosoComponents}
             fixedHeaderContent={headerContent}
             itemContent={rowContent}

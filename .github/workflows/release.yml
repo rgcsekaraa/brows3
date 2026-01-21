@@ -106,11 +106,15 @@ jobs:
           
           echo "Updating manifest for version $VERSION ($TAG)"
           
-          # Wait for GitHub to process the assets
-          sleep 15
+          # Wait longer for GitHub to process the assets
+          sleep 30
           
           # Get the release ID and assets
           RELEASE_INFO=$(gh api repos/${{ github.repository }}/releases/tags/$TAG)
+          
+          # Debug: List all assets found
+          echo "Found Assets:"
+          echo "$RELEASE_INFO" | jq -r '.assets[] | .name'
           
           # Start building the platforms object
           PLATFORMS="{}"
@@ -122,25 +126,42 @@ jobs:
             local SIG_PATTERN=$3
             
             # Find the asset URL
-            ASSET_URL=$(echo "$RELEASE_INFO" | jq -r ".assets[] | select(.name | test(\"$PATTERN\")) | .browser_download_url" | head -1)
+            ASSET_URL=$(echo "$RELEASE_INFO" | jq -r ".assets[] | select(.name | test(\"$PATTERN\"; \"i\")) | .browser_download_url" | head -1)
             
             if [ -n "$ASSET_URL" ] && [ "$ASSET_URL" != "null" ]; then
               # Download the signature
-              SIG_URL=$(echo "$RELEASE_INFO" | jq -r ".assets[] | select(.name | test(\"$SIG_PATTERN\")) | .browser_download_url" | head -1)
+              SIG_URL=$(echo "$RELEASE_INFO" | jq -r ".assets[] | select(.name | test(\"$SIG_PATTERN\"; \"i\")) | .browser_download_url" | head -1)
               
               if [ -n "$SIG_URL" ] && [ "$SIG_URL" != "null" ]; then
                 SIG=$(curl -sL "$SIG_URL")
+                # Escape quotes in signature just in case
+                SIG=$(echo "$SIG" | jq -R '.')
+                # Remove enclosing quotes from jq output as we construct JSON manually/jq
+                SIG="${SIG%\"}"
+                SIG="${SIG#\"}"
+                
                 PLATFORMS=$(echo "$PLATFORMS" | jq --arg p "$PLATFORM" --arg u "$ASSET_URL" --arg s "$SIG" '.[$p] = {"url": $u, "signature": $s}')
-                echo "Added $PLATFORM: $ASSET_URL"
+                echo "✅ Added $PLATFORM: $ASSET_URL"
+              else
+                 echo "⚠️ Found asset for $PLATFORM but missing signature ($SIG_PATTERN)"
               fi
+            else
+               echo "❌ Could not find asset for $PLATFORM (pattern: $PATTERN)"
             fi
           }
           
-          # Add each platform (looking for .tar.gz for macOS/Linux, .msi or NSIS for Windows)
+          # Add each platform (case insensitive regex)
+          # macOS Apple Silicon (aarch64)
           add_platform "darwin-aarch64" "aarch64.*\\.app\\.tar\\.gz$" "aarch64.*\\.app\\.tar\\.gz\\.sig$"
-          add_platform "darwin-x86_64" "x86_64.*\\.app\\.tar\\.gz$" "x86_64.*\\.app\\.tar\\.gz\\.sig$"
+          
+          # macOS Intel (x64 or x86_64) - robust match
+          add_platform "darwin-x86_64" "(x64|x86_64).*\\.app\\.tar\\.gz$" "(x64|x86_64).*\\.app\\.tar\\.gz\\.sig$"
+          
+          # Linux (AppImage)
           add_platform "linux-x86_64" "\\.AppImage$" "\\.AppImage\\.sig$"
-          add_platform "windows-x86_64" "_x64-setup\\.exe$" "_x64-setup\\.exe\\.sig$"
+          
+          # Windows (NSIS or MSI)
+          add_platform "windows-x86_64" "setup\\.exe$" "setup\\.exe\\.sig$"
           
           # Build final update.json
           PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)

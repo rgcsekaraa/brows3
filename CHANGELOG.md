@@ -5,20 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-
-## [0.2.23] - 2026-01-21
-
-### Performance
-- **Zero-Lag Transfers**: Fixed a critical performance bottleneck where the UI would re-render at 60fps during file transfers. The app now remains buttery smooth even during massive uploads/downloads.
-- **Smart Background Throttling**: Implemented intelligent background resource management. The app now pauses expensive progress updates when minimized (saving CPU/Battery) but *instantly* processes completion events, ensuring "Download Complete" notifications still fire in the background.
+## [0.2.24] - 2026-01-21
 
 ### Fixed
-- **Recursive Copy**: Added native support for recursive folder copying. You can now copy/paste deep folder structures with thousands of files reliably.
-- **App Freezing**: Resolved the "freeze on focus" issue by optimizing how the application handles data refreshing when returning from background.
-- **Editor Stability**: Fixed the "Save Changes" button state logic and removed the "Format" option to prevent editor hangs.
-- **Auto-Reloads**: Removed the overly aggressive `FreezeDetector` which caused unnecessary page reloads.
+- **Ubuntu Crash on Checkbox Click**: Critical fix for WebKitGTK crashes when selecting items. Disabled MUI checkbox ripple effects and CSS transitions that were overwhelming the GPU compositor.
+- **Ubuntu Flickering on Selection**: Refactored `VirtualizedObjectTable` to use `react-virtuoso`'s `context` prop for stable row rendering. Selection state no longer causes full callback recreation.
+- **App Freezing on Window Return**: Disabled aggressive auto-refresh on focus by default. Added smart throttling to `useTransferEvents` - progress updates are paused when hidden but terminal events (Complete/Failed) always process.
+- **Editor Save Button State**: Properly tracks Monaco Editor's internal version ID for accurate undo/redo detection.
+- **Folder Copy Not Recursive**: Backend `copy_object` now recursively copies all nested objects when copying a folder.
+- **Transfer Progress CPU Storm**: Bucket page no longer re-renders on every transfer progress tick (was 60fps). Uses `subscribe` instead of reactive state.
 
+### Changed
+- **Removed FreezeDetector**: The auto-reload component was removed as it was causing disruptive reloads instead of helping.
+- **Removed Format Button**: Removed the Format button from the editor dialog as requested.
+- **Auto-Refresh Off by Default**: `autoRefreshOnFocus` is now disabled by default in settings to prevent freezes.
 
+### Improved
+- **Release Workflow**: Enhanced `update.json` generation with better asset matching, debugging output, and support for x64/x86_64 naming variations.
+
+## [0.2.22] - 2026-01-20
 
 ### Fixed
 - **Recursive Folder Delete**: True recursive deletion implemented. Bypassing cache and proper delimiter handling ensures all nested files and subfolders are fully removed.
