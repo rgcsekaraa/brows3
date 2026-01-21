@@ -136,6 +136,16 @@ interface RowData {
   modified: string;
 }
 
+// Context type for Virtuoso table
+interface ContextType {
+  selectedKeys: Set<string>;
+  onSelect: (key: string, checked: boolean) => void;
+  onNavigate: (prefix: string) => void;
+  onPreview?: (key: string, size: number) => void;
+  onEdit?: (key: string) => void;
+  onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
+}
+
 interface Props {
   folders: string[];
   objects: S3Object[];
@@ -157,7 +167,7 @@ interface Props {
 }
 
 // Lightweight table components with explicit backgrounds for WebKit
-const VirtuosoComponents: TableComponents<RowData> = {
+const VirtuosoComponents: TableComponents<RowData, ContextType> = {
   Scroller: memo(({ style, ...props }: any) => (
     <Box 
       {...props} 
@@ -373,26 +383,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   const allSelected = rows.length > 0 && selectedKeys.size === rows.length;
   const someSelected = selectedKeys.size > 0 && selectedKeys.size < rows.length;
 
-  // Stable callback refs to avoid recreating
-  const onSelectRef = useRef(onSelect);
-  const onNavigateRef = useRef(onNavigate);
-  const onPreviewRef = useRef(onPreview);
-  const onEditRef = useRef(onEdit);
-  const onMenuOpenRef = useRef(onMenuOpen);
-  
-  // Use ref for selectedKeys to avoid callback recreation on selection change
-  // This prevents flickering on Ubuntu/WebKitGTK
-  const selectedKeysRef = useRef(selectedKeys);
-  selectedKeysRef.current = selectedKeys;
-  
-  // Update refs on each render
-  useEffect(() => {
-    onSelectRef.current = onSelect;
-    onNavigateRef.current = onNavigate;
-    onPreviewRef.current = onPreview;
-    onEditRef.current = onEdit;
-    onMenuOpenRef.current = onMenuOpen;
-  });
+
 
   // Fixed header - memoized
   const headerContent = useCallback(() => (
@@ -437,31 +428,44 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
     </TableRow>
   ), [allSelected, someSelected, sortField, sortDirection, onSelectAll, onSortChange]);
 
-  // Optimize Context for Virtuoso
-  // We pass changing values via context so rowContent callback can remain stable
-  const context = useMemo(() => ({
-      selectedKeys,
-      onSelect: onSelectRef.current,
-      onNavigate: onNavigateRef.current,
-      onPreview: onPreviewRef.current,
-      onEdit: onEditRef.current,
-      onMenuOpen: onMenuOpenRef.current
-  }), [selectedKeys]); // Only recreates when selection changes
+  // CRITICAL FIX FOR UBUNTU/WEBKITGTK CRASH:
+  // We use a STABLE context ref that never changes identity.
+  // The context object itself is mutable and we update its properties directly.
+  // This prevents Virtuoso from detecting context changes and triggering a full re-render.
+  const contextRef = useRef({
+    selectedKeys,
+    onSelect,
+    onNavigate,
+    onPreview,
+    onEdit,
+    onMenuOpen,
+  });
+  
+  // Update the context ref properties on every render (but object identity stays same)
+  contextRef.current.selectedKeys = selectedKeys;
+  contextRef.current.onSelect = onSelect;
+  contextRef.current.onNavigate = onNavigate;
+  contextRef.current.onPreview = onPreview;
+  contextRef.current.onEdit = onEdit;
+  contextRef.current.onMenuOpen = onMenuOpen;
+  
+  // The context passed to Virtuoso - always the same object reference
+  const context = contextRef.current;
 
   // Row renderer - COMPLETELY STABLE (no deps)
   // This is the key fix for Ubuntu crashes: Virtuoso sees the same function reference
-  // and efficiently propagates context changes only to rows that need it.
-  const rowContent = useCallback((index: number, row: RowData, context: any) => (
+  // AND the same context object, preventing render cascades on WebKitGTK.
+  const rowContent = useCallback((index: number, row: RowData, ctx: typeof context) => (
     <RowContent
       key={row.key}
       row={row}
       rowIndex={index}
-      isSelected={context.selectedKeys.has(row.key)}
-      onSelect={context.onSelect}
-      onNavigate={context.onNavigate}
-      onPreview={context.onPreview}
-      onEdit={context.onEdit}
-      onMenuOpen={context.onMenuOpen}
+      isSelected={ctx.selectedKeys.has(row.key)}
+      onSelect={ctx.onSelect}
+      onNavigate={ctx.onNavigate}
+      onPreview={ctx.onPreview}
+      onEdit={ctx.onEdit}
+      onMenuOpen={ctx.onMenuOpen}
     />
   ), []);
 
@@ -498,7 +502,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
           <TableVirtuoso
             data={rows}
             context={context}
-            components={VirtuosoComponents}
+            components={VirtuosoComponents as any}
             fixedHeaderContent={headerContent}
             itemContent={rowContent}
             style={{ height: '100%' }}

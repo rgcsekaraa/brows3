@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.25] - 2026-01-22
+
+### Fixed
+- **Ubuntu Crash on Multiple Checkbox Selection**: Critical fix for WebKitGTK crash when clicking multiple checkboxes in the object table. Root cause was `useMemo` recreating the Virtuoso context object on every selection change, triggering a full re-render cascade that overwhelmed WebKitGTK. Fixed by using a stable `useRef` pattern that maintains the same context object identity across renders.
+
 ## [0.2.24] - 2026-01-21
 
 ### Fixed
