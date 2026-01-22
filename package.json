@@ -1,6 +1,6 @@
 {
   "name": "brows3",
-  "version": "0.2.30",
+  "version": "0.2.31",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001",
