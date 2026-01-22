@@ -8,7 +8,6 @@ import {
   TableCell,
   TableHead,
   TableRow,
-  Checkbox,
   IconButton,
   Typography,
   Stack,
@@ -225,18 +224,17 @@ const RowContent = memo(function RowContent({
         {rowIndex + 1}
       </TableCell>
       <TableCell padding="checkbox" sx={{ width: 40, py: 0, bgcolor: 'background.paper' }}>
-        <Checkbox
+        {/* Native checkbox for WebKitGTK stability - MUI Checkbox causes crashes on Ubuntu */}
+        <input
+          type="checkbox"
           checked={isSelected}
           onChange={handleCheckboxChange}
-          size="small"
-          disableRipple
-          sx={{ 
-            p: 0.5,
-            // Disable animations that can crash WebKitGTK
-            transition: 'none',
-            '& .MuiSvgIcon-root': {
-              transition: 'none',
-            }
+          style={{
+            width: 18,
+            height: 18,
+            margin: 4,
+            cursor: 'pointer',
+            accentColor: '#1976d2',
           }}
         />
       </TableCell>
@@ -390,16 +388,20 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
     <TableRow sx={{ bgcolor: 'background.default' }}>
       <TableCell sx={{ width: 40, bgcolor: 'background.default', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>#</TableCell>
       <TableCell padding="checkbox" sx={{ width: 40, bgcolor: 'background.default' }}>
-        <Checkbox
-          indeterminate={someSelected}
+        {/* Native checkbox for WebKitGTK stability */}
+        <input
+          type="checkbox"
+          ref={(el) => {
+            if (el) el.indeterminate = someSelected;
+          }}
           checked={allSelected}
           onChange={(e) => onSelectAll(e.target.checked)}
-          size="small"
-          disableRipple
-          sx={{ 
-            p: 0.5,
-            transition: 'none',
-            '& .MuiSvgIcon-root': { transition: 'none' }
+          style={{
+            width: 18,
+            height: 18,
+            margin: 4,
+            cursor: 'pointer',
+            accentColor: '#1976d2',
           }}
         />
       </TableCell>
