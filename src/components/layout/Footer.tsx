@@ -13,8 +13,9 @@ import { useProfileStore } from '@/store/profileStore';
 import { useTransferStore } from '@/store/transferStore';
 import { useAppStore } from '@/store/appStore';
 import { useBuckets } from '@/hooks/useBuckets';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { getVersion } from '@tauri-apps/api/app';
 
 function formatCacheAge(ms: number | null): string {
   if (ms === null) return '';
@@ -32,6 +33,12 @@ export default function Footer() {
   const { discoveredRegions } = useAppStore();
   const { buckets, isCached, cacheAge, isLoading } = useBuckets();
   const searchParams = useSearchParams();
+  const [appVersion, setAppVersion] = useState('');
+  
+  // Fetch app version from Tauri
+  useEffect(() => {
+    getVersion().then(v => setAppVersion(v)).catch(() => setAppVersion('dev'));
+  }, []);
   
   const bucketName = searchParams.get('name');
   const activeProfile = profiles.find(p => p.id === activeProfileId);
@@ -140,7 +147,7 @@ export default function Footer() {
 
       {/* Production Version */}
       <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1, fontSize: '0.65rem' }}>
-        Brows3 v0.2.22
+        Brows3 v{appVersion || '...'}
       </Typography>
     </Box>
   );
