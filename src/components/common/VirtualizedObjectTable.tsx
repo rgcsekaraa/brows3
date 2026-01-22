@@ -33,6 +33,7 @@ import {
 import { TableVirtuoso, type TableComponents } from 'react-virtuoso';
 import { S3Object } from '@/lib/tauri';
 import { formatSize } from '@/lib/utils';
+import { StyledCheckbox } from './StyledCheckbox';
 
 // Get extension - simple and fast
 const getExt = (name: string): string => {
@@ -223,19 +224,10 @@ const RowContent = memo(function RowContent({
       <TableCell sx={{ width: 40, py: 0.5, textAlign: 'center', color: 'text.secondary', fontSize: '0.75rem', fontFamily: 'monospace', bgcolor: 'background.paper' }}>
         {rowIndex + 1}
       </TableCell>
-      <TableCell padding="checkbox" sx={{ width: 40, py: 0, bgcolor: 'background.paper' }}>
-        {/* Native checkbox for WebKitGTK stability - MUI Checkbox causes crashes on Ubuntu */}
-        <input
-          type="checkbox"
+      <TableCell sx={{ width: 40, minWidth: 40, maxWidth: 40, p: 0, bgcolor: 'background.paper', textAlign: 'center', verticalAlign: 'middle' }}>
+        <StyledCheckbox
           checked={isSelected}
           onChange={handleCheckboxChange}
-          style={{
-            width: 18,
-            height: 18,
-            margin: 4,
-            cursor: 'pointer',
-            accentColor: '#1976d2',
-          }}
         />
       </TableCell>
       <TableCell sx={{ width: 32, py: 0.5, bgcolor: 'background.paper' }}>
@@ -387,22 +379,11 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   const headerContent = useCallback(() => (
     <TableRow sx={{ bgcolor: 'background.default' }}>
       <TableCell sx={{ width: 40, bgcolor: 'background.default', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>#</TableCell>
-      <TableCell padding="checkbox" sx={{ width: 40, bgcolor: 'background.default' }}>
-        {/* Native checkbox for WebKitGTK stability */}
-        <input
-          type="checkbox"
-          ref={(el) => {
-            if (el) el.indeterminate = someSelected;
-          }}
+      <TableCell sx={{ width: 40, minWidth: 40, maxWidth: 40, p: 0, bgcolor: 'background.default', textAlign: 'center', verticalAlign: 'middle' }}>
+        <StyledCheckbox
+          indeterminate={someSelected}
           checked={allSelected}
           onChange={(e) => onSelectAll(e.target.checked)}
-          style={{
-            width: 18,
-            height: 18,
-            margin: 4,
-            cursor: 'pointer',
-            accentColor: '#1976d2',
-          }}
         />
       </TableCell>
       <TableCell sx={{ width: 32, bgcolor: 'background.default' }} />

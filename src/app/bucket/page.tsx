@@ -28,7 +28,7 @@ import {
   DialogActions,
   TextField,
   Tooltip,
-  Checkbox,
+  // Checkbox removed - using StyledCheckbox for WebKitGTK stability
   Stack,
   Divider,
   Skeleton,
@@ -79,6 +79,7 @@ import { VirtualizedObjectTable } from '@/components/common/VirtualizedObjectTab
 import { toast } from '@/store/toastStore';
 import { useHistoryStore } from '@/store/historyStore';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { StyledCheckbox } from '@/components/common/StyledCheckbox';
 import { formatSize } from '@/lib/utils';
 
 // Concurrent paste batch size
@@ -991,19 +992,13 @@ function BucketContent() {
              }}
               sx={{ width: 300, bgcolor: 'background.paper' }}
            />
-           
-           <FormControlLabel 
-             control={
-               <Checkbox 
-                 checked={isDeepSearch} 
-                 onChange={(e) => setIsDeepSearch(e.target.checked)} 
-                 size="small"
-                 sx={{ p: 0.5 }}
-               />
-             } 
-             label={<Typography variant="body2" color="text.secondary">Deep Search</Typography>}
-             sx={{ mr: 0, ml: 0.5 }}
-           />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 0.5 }}>
+              <StyledCheckbox
+                checked={isDeepSearch}
+                onChange={(e) => setIsDeepSearch(e.target.checked)}
+              />
+              <Typography variant="body2" color="text.secondary">Deep Search</Typography>
+            </Box>
 
         {selectedKeys.size > 0 ? (
           <Fade in={selectedKeys.size > 0}>

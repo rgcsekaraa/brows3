@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.27] - 2026-01-22
+
+### Fixed
+- **Ubuntu Checkbox Stability (Final Fix)**: Created custom `StyledCheckbox` component replacing all MUI Checkbox usage:
+  - Uses pure CSS/SVG styling with fixed 14x14px SVG container
+  - All states (unchecked/checked/indeterminate) use same layout to prevent shifts
+  - Removed MUI Checkbox from VirtualizedObjectTable and bucket page
+  - No animations or transitions that could crash WebKitGTK
+
 ## [0.2.26] - 2026-01-22
 
 ### Fixed
