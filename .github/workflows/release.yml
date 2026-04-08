@@ -56,6 +56,17 @@ jobs:
       - name: install frontend dependencies
         run: pnpm install
 
+      - name: Verify Signing Key
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set! Auto-updates will NOT work without signed builds."
+            echo "SIGNING_AVAILABLE=false" >> $GITHUB_ENV
+          else
+            echo "✅ TAURI_SIGNING_PRIVATE_KEY is configured"
+            echo "SIGNING_AVAILABLE=true" >> $GITHUB_ENV
+          fi
+
       - name: Extract Release Notes
         id: extract_notes
         shell: bash
@@ -69,18 +80,12 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Tauri signing keys
+          # Tauri signing keys - REQUIRED for auto-updates to work
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Apple Code Signing disabled - users must run: xattr -cr /Applications/Brows3.app
-          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           includeUpdaterJson: true
-          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version
+          tagName: app-v__VERSION__
           releaseName: "Brows3 v__VERSION__"
           releaseBody: ${{ steps.extract_notes.outputs.notes }}
           releaseDraft: false
@@ -106,15 +111,32 @@ jobs:
           
           echo "Updating manifest for version $VERSION ($TAG)"
           
-          # Wait longer for GitHub to process the assets
-          sleep 30
+          # Wait for GitHub to process the assets
+          sleep 45
           
           # Get the release ID and assets
           RELEASE_INFO=$(gh api repos/${{ github.repository }}/releases/tags/$TAG)
           
           # Debug: List all assets found
-          echo "Found Assets:"
-          echo "$RELEASE_INFO" | jq -r '.assets[] | .name'
+          echo "=== Found Release Assets ==="
+          echo "$RELEASE_INFO" | jq -r '.assets[] | .name' | sort
+          echo "==========================="
+          
+          # Check if we have signature files
+          SIG_COUNT=$(echo "$RELEASE_INFO" | jq '[.assets[] | select(.name | endswith(".sig"))] | length')
+          echo "Found $SIG_COUNT signature files"
+          
+          if [ "$SIG_COUNT" -eq "0" ]; then
+            echo "::warning::No signature files found! The TAURI_SIGNING_PRIVATE_KEY may not be configured correctly."
+            echo "Auto-updates will NOT work without signed builds."
+            echo "Please add TAURI_SIGNING_PRIVATE_KEY to your GitHub repository secrets."
+            echo ""
+            echo "To generate a signing key, run:"
+            echo "  npx @tauri-apps/cli signer generate -w ~/.tauri/brows3.key"
+            echo ""
+            echo "Then add the private key contents to TAURI_SIGNING_PRIVATE_KEY secret,"
+            echo "and update the pubkey in tauri.conf.json plugins.updater.pubkey"
+          fi
           
           # Start building the platforms object
           PLATFORMS="{}"
@@ -129,6 +151,8 @@ jobs:
             ASSET_URL=$(echo "$RELEASE_INFO" | jq -r ".assets[] | select(.name | test(\"$PATTERN\"; \"i\")) | .browser_download_url" | head -1)
             
             if [ -n "$ASSET_URL" ] && [ "$ASSET_URL" != "null" ]; then
+              echo "Found $PLATFORM asset: $(basename "$ASSET_URL")"
+              
               # Download the signature
               SIG_URL=$(echo "$RELEASE_INFO" | jq -r ".assets[] | select(.name | test(\"$SIG_PATTERN\"; \"i\")) | .browser_download_url" | head -1)
               
@@ -141,27 +165,37 @@ jobs:
                 SIG="${SIG#\"}"
                 
                 PLATFORMS=$(echo "$PLATFORMS" | jq --arg p "$PLATFORM" --arg u "$ASSET_URL" --arg s "$SIG" '.[$p] = {"url": $u, "signature": $s}')
-                echo "✅ Added $PLATFORM: $ASSET_URL"
+                echo "✅ Added $PLATFORM with signature"
               else
-                 echo "⚠️ Found asset for $PLATFORM but missing signature ($SIG_PATTERN)"
+                 echo "⚠️ Found asset for $PLATFORM but missing signature file"
               fi
             else
                echo "❌ Could not find asset for $PLATFORM (pattern: $PATTERN)"
             fi
           }
           
-          # Add each platform (case insensitive regex)
-          # macOS Apple Silicon (aarch64)
-          add_platform "darwin-aarch64" "aarch64.*\\.app\\.tar\\.gz$" "aarch64.*\\.app\\.tar\\.gz\\.sig$"
+          # Add each platform - Updated patterns to match Tauri v2 naming
+          # macOS Apple Silicon (aarch64) - matches Brows3_aarch64.app.tar.gz
+          add_platform "darwin-aarch64" "_aarch64\\.app\\.tar\\.gz$" "_aarch64\\.app\\.tar\\.gz\\.sig$"
           
-          # macOS Intel (x64 or x86_64) - robust match
-          add_platform "darwin-x86_64" "(x64|x86_64).*\\.app\\.tar\\.gz$" "(x64|x86_64).*\\.app\\.tar\\.gz\\.sig$"
+          # macOS Intel (x64) - matches Brows3_x64.app.tar.gz  
+          add_platform "darwin-x86_64" "_x64\\.app\\.tar\\.gz$" "_x64\\.app\\.tar\\.gz\\.sig$"
           
-          # Linux (AppImage)
-          add_platform "linux-x86_64" "\\.AppImage$" "\\.AppImage\\.sig$"
+          # Linux (AppImage) - matches Brows3_<version>_amd64.AppImage
+          add_platform "linux-x86_64" "_amd64\\.AppImage$" "_amd64\\.AppImage\\.sig$"
           
-          # Windows (NSIS or MSI)
-          add_platform "windows-x86_64" "setup\\.exe$" "setup\\.exe\\.sig$"
+          # Windows (NSIS) - matches Brows3_<version>_x64-setup.exe
+          add_platform "windows-x86_64" "_x64-setup\\.exe$" "_x64-setup\\.exe\\.sig$"
+          
+          # Check if we have any platforms
+          PLATFORM_COUNT=$(echo "$PLATFORMS" | jq 'keys | length')
+          
+          if [ "$PLATFORM_COUNT" -eq "0" ]; then
+            echo "::error::No platforms could be added to update.json! Auto-updates will not work."
+            echo "This usually means TAURI_SIGNING_PRIVATE_KEY is not set in GitHub secrets."
+          else
+            echo "Successfully added $PLATFORM_COUNT platforms to update manifest"
+          fi
           
           # Build final update.json
           PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -178,8 +212,10 @@ jobs:
           # Pretty print
           cat update.json | jq . > update.json.tmp && mv update.json.tmp update.json
           
-          echo "Final update.json:"
+          echo ""
+          echo "=== Final update.json ==="
           cat update.json
+          echo "========================="
           
           # Commit and push
           git config user.name "github-actions[bot]"

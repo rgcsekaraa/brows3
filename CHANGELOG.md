@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.32] - 2026-04-08
+
+### Added
+- **Presigned URL Sharing**: Added a dedicated "Get Presigned URL" action in the bucket object menu for files, with configurable expiry presets and custom durations.
+
+### Fixed
+- **Custom S3 Profile Persistence**: Profiles saved without inline secrets now load correctly on startup instead of being discarded when `profiles.json` is parsed.
+- **Saved Secret Hydration**: Opening an existing manual or Custom S3 profile now repopulates the saved secret from secure storage in the edit form.
+- **Presigned URL Validation**: Prevented invalid expiry values above the AWS 7-day limit from attempting a presign request.
+- **Release Workflow Diagnostics**: Improved signing-key checks and asset matching logs in the release workflow to make updater failures easier to diagnose.
+- **Updater Key Alignment**: Updated the Tauri updater public key to match the regenerated signing key used for releases.
+
 ## [0.2.31] - 2026-01-23
 
 ### Fixed

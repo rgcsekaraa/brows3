@@ -180,7 +180,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       region: profile.region || 'us-east-1',
       profileName: cred.type === 'SharedConfig' ? (cred.profile_name || 'default') : 'default',
       accessKeyId: 'access_key_id' in cred ? cred.access_key_id : '',
-      secretAccessKey: '',
+      secretAccessKey: 'secret_access_key' in cred ? cred.secret_access_key : '',
       endpointUrl: cred.type === 'CustomEndpoint' ? cred.endpoint_url : '',
     });
   };
@@ -303,10 +303,17 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     }
   };
   
-  const handleEditMode = (profile: Profile) => {
+  const handleEditMode = async (profile: Profile) => {
     setSelectedProfile(profile);
-    loadProfileToForm(profile);
     setMode('edit');
+
+    try {
+      const hydratedProfile = await profileApi.getProfile(profile.id);
+      setSelectedProfile(hydratedProfile);
+      loadProfileToForm(hydratedProfile);
+    } catch {
+      loadProfileToForm(profile);
+    }
   };
 
   const getDialogTitle = () => {

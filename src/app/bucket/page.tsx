@@ -75,6 +75,7 @@ import { useClipboardStore } from '@/store/clipboardStore';
 import { useTabStore } from '@/store/tabStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
+import PresignedUrlDialog from '@/components/dialogs/PresignedUrlDialog';
 import { VirtualizedObjectTable } from '@/components/common/VirtualizedObjectTable';
 import { toast } from '@/store/toastStore';
 import { useHistoryStore } from '@/store/historyStore';
@@ -290,6 +291,10 @@ function BucketContent() {
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [previewSize, setPreviewSize] = useState<number | undefined>(undefined);
   const [startInEditMode, setStartInEditMode] = useState(false);
+
+  // Presigned URL Dialog State
+  const [presignedUrlOpen, setPresignedUrlOpen] = useState(false);
+  const [presignedUrlKey, setPresignedUrlKey] = useState<string | null>(null);
 
   const handlePropertiesOpen = () => {
     handleMenuClose();
@@ -1250,6 +1255,18 @@ function BucketContent() {
           </ListItemIcon>
           {selectedObject && isFavorite(selectedObject.key) ? 'Remove from Favorites' : 'Add to Favorites'}
         </MenuItem>
+        {!selectedObject?.isFolder && (
+          <MenuItem onClick={() => {
+            if (selectedObject) {
+              setPresignedUrlKey(selectedObject.key);
+              setPresignedUrlOpen(true);
+            }
+            handleMenuClose();
+          }}>
+            <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
+            Get Presigned URL
+          </MenuItem>
+        )}
         <Divider />
         <MenuItem onClick={() => {
           if (selectedObject) {
@@ -1402,6 +1419,15 @@ function BucketContent() {
         objectSize={previewSize}
         onSave={() => refresh()}
         startInEditMode={startInEditMode}
+      />
+
+      {/* Presigned URL Dialog */}
+      <PresignedUrlDialog
+        open={presignedUrlOpen}
+        onClose={() => { setPresignedUrlOpen(false); setPresignedUrlKey(null); }}
+        bucketName={bucketName || ''}
+        bucketRegion={bucketRegion}
+        objectKey={presignedUrlKey || ''}
       />
 
       <ConfirmDialog

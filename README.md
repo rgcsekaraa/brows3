@@ -25,6 +25,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 - **Bulk Operations**: Upload, download, and delete multiple files or recursive folders at once.
 - **Mixed Content Support**: Seamlessly handle folders and files in a single drag-and-drop operation.
 - **Copy-to-Clipboard**: Quick copy of S3 Paths, Keys, and Object URLs.
+- **Presigned URL Sharing**: Generate temporary object links with configurable expiry directly from the bucket view.
 
 ### Rich Previews & Editing
 - **Built-in Editor**: Powered by **Monaco (VS Code's Engine)**. Edit text, JSON, and code files directly in S3.
@@ -45,6 +46,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 #### **Enterprise & Restricted Access**
 - **Direct Bucket Access**: Instantly navigate to specific buckets (e.g., `s3://my-secure-bucket`) even if you don't have `s3:ListBuckets` permission.
 - **Profile-Gated Access**: Create isolated profiles for different AWS accounts or environments.
+- **Persistent Secure Profiles**: Manual and S3-compatible profiles survive restarts while secrets stay in the OS keychain instead of plain JSON.
 - **Cost Awareness**: UI indicators for cached data help you manage S3 API costs.
 
 - **In-App PDF Preview**: View PDFs directly within the application with a high-performance native renderer. Features embedded search, standard PDF navigation, and focused reading mode.
@@ -58,6 +60,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
   - One-click theme switching (Dark/Light/System).
   - Configure default regions and concurrency limits.
 - **Auto-Updates**: Seamless background updates ensure you're always on the latest secure version.
+- **Signed Release Pipeline**: Release automation validates signing configuration and publishes updater metadata for desktop auto-update flows.
 
 ## Technical Architecture
 

@@ -20,7 +20,7 @@ pub enum CredentialType {
     /// Manual entry with access key and secret (stored in keychain)
     Manual {
         access_key_id: String,
-        #[serde(skip_serializing)]
+        #[serde(default, skip_serializing)]
         secret_access_key: String,
     },
     
@@ -28,7 +28,7 @@ pub enum CredentialType {
     CustomEndpoint {
         endpoint_url: String,
         access_key_id: String,
-        #[serde(skip_serializing)]
+        #[serde(default, skip_serializing)]
         secret_access_key: String,
     },
 }
@@ -276,6 +276,59 @@ impl ProfileManager {
                 Ok(self.keychain.get(&profile.id).ok())
             }
             _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CredentialType, Profile};
+
+    #[test]
+    fn manual_profile_deserializes_without_secret_in_json() {
+        let json = r#"{
+            "id": "manual-1",
+            "name": "Manual",
+            "credential_type": {
+                "type": "Manual",
+                "access_key_id": "AKIA123"
+            },
+            "region": "us-east-1",
+            "is_default": true
+        }"#;
+
+        let profile: Profile = serde_json::from_str(json).expect("profile should deserialize");
+        match profile.credential_type {
+            CredentialType::Manual { access_key_id, secret_access_key } => {
+                assert_eq!(access_key_id, "AKIA123");
+                assert!(secret_access_key.is_empty());
+            }
+            _ => panic!("expected manual credentials"),
+        }
+    }
+
+    #[test]
+    fn custom_endpoint_profile_deserializes_without_secret_in_json() {
+        let json = r#"{
+            "id": "custom-1",
+            "name": "MinIO",
+            "credential_type": {
+                "type": "CustomEndpoint",
+                "endpoint_url": "http://localhost:9000",
+                "access_key_id": "minio"
+            },
+            "region": "us-east-1",
+            "is_default": false
+        }"#;
+
+        let profile: Profile = serde_json::from_str(json).expect("profile should deserialize");
+        match profile.credential_type {
+            CredentialType::CustomEndpoint { endpoint_url, access_key_id, secret_access_key } => {
+                assert_eq!(endpoint_url, "http://localhost:9000");
+                assert_eq!(access_key_id, "minio");
+                assert!(secret_access_key.is_empty());
+            }
+            _ => panic!("expected custom endpoint credentials"),
         }
     }
 }
