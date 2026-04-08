@@ -45,8 +45,8 @@
     "copyright": "© 2024 Brows3. All rights reserved.",
     "publisher": "Brows3 Team",
     "category": "Utility",
-    "shortDescription": "A lightning-fast, secure, and modern S3 desktop client.",
-    "longDescription": "Brows3 is the high-performance desktop client for Amazon S3 and compatible storage. Built with Rust and Tauri, it offers instant prefix navigation, deep recursive search, and secure local profile management in a beautiful, native interface.",
+    "shortDescription": "A lightning-fast S3 browser, S3 explorer, and S3 desktop client.",
+    "longDescription": "Brows3 is a high-performance Amazon S3 browser, S3 explorer, and S3 desktop client for AWS S3 and S3-compatible object storage including MinIO, Cloudflare R2, Wasabi, and DigitalOcean Spaces. Built with Rust and Tauri, it offers instant prefix navigation, deep recursive search, secure local profile management, and fast bucket browsing for large object stores.",
     "license": "MIT",
     "homepage": "https://github.com/rgcsekaraa/brows3",
     "macOS": {

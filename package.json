@@ -2,6 +2,23 @@
   "name": "brows3",
   "version": "0.2.32",
   "private": true,
+  "keywords": [
+    "s3",
+    "amazon-s3",
+    "s3-browser",
+    "s3-client",
+    "s3-explorer",
+    "aws-s3",
+    "s3-desktop-client",
+    "s3-file-manager",
+    "object-storage",
+    "minio",
+    "cloudflare-r2",
+    "wasabi",
+    "digitalocean-spaces",
+    "tauri",
+    "rust"
+  ],
   "scripts": {
     "dev": "next dev -p 3001",
     "prebuild": "node scripts/copy-monaco.js",

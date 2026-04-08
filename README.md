@@ -4,14 +4,16 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://github.com/rgcsekaraa/brows3/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/rgcsekaraa/brows3/actions/workflows/release.yml)
 
-**Brows3** is a high-performance, open-source Amazon S3 desktop client designed for developers who demand speed. Built with a **Rust** core and a **Tauri**-powered frontend, Brows3 solves the "slow listing" problem of traditional S3 browsers through its unique prefix-indexed caching architecture.
+**Brows3** is a high-performance, open-source Amazon S3 browser, S3 explorer, and S3 desktop client designed for developers who demand speed. Built with a **Rust** core and a **Tauri**-powered frontend, Brows3 solves the "slow listing" problem of traditional S3 browsers through its unique prefix-indexed caching architecture.
 
 Navigating through buckets with millions of objects is now as fast as browsing your local file system.
+
+Brows3 is built for people searching for a fast **S3 browser**, **AWS S3 client**, **S3 bucket explorer**, **S3 file manager**, or **S3-compatible storage browser** for providers like **MinIO**, **Cloudflare R2**, **Wasabi**, and **DigitalOcean Spaces**.
 
 
 ## Why Brows3?
 
-Traditional S3 tools often suffer from latency when navigating deep folder structures or listing large numbers of objects. Brows3 rethinks the browsing experience:
+Traditional S3 tools often suffer from latency when navigating deep folder structures or listing large numbers of objects. If you are comparing tools like an S3 browser, S3 explorer, S3 GUI client, or desktop client for S3-compatible storage, Brows3 rethinks the browsing experience:
 
 - **Instant Navigation**: After an initial index, folder traversal happens **instantly**. No more waiting for "Loading..." spinners when clicking through directories.
 - **Deep Search**: Perform instant, localized searches across your entire bucket. Find any file in milliseconds, even in massive datasets.
@@ -70,6 +72,23 @@ Brows3 leverages a tiered data strategy to achieve its performance:
 2. **Prefix-Indexed Tree**: An in-memory data structure that organizes S3's flat object list into a hierarchical tree, enabling instant directory lookup.
 3. **Paginated IPC Bridge**: Data is transferred between Rust and the React frontend over a high-speed, paginated IPC channel, preventing UI hangs during large data transfers.
 4. **SSG React (The UI)**: A Next.js-based frontend exported as a static site, providing the smallest possible memory footprint.
+
+## Search Keywords
+
+Brows3 is relevant if you are searching for:
+
+- Amazon S3 browser
+- S3 browser desktop app
+- S3 client for macOS, Windows, and Linux
+- S3 explorer
+- S3 bucket browser
+- AWS S3 desktop client
+- S3-compatible storage browser
+- MinIO browser
+- Cloudflare R2 desktop client
+- Wasabi browser
+- DigitalOcean Spaces client
+- object storage explorer
 
 ## Installation
 
