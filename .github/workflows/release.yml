@@ -123,57 +123,6 @@ jobs:
       - name: Sync release versions
         run: node scripts/sync-release-version.js "$RELEASE_VERSION"
 
-      - name: Prepare App Store Connect API key (macOS only)
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        run: |
-          if [ -z "${{ secrets.APPLE_API_PRIVATE_KEY }}" ] || [ -z "${{ secrets.APPLE_API_KEY }}" ]; then
-            echo "App Store Connect API key not configured, skipping key file preparation"
-            exit 0
-          fi
-
-          mkdir -p private_keys
-          printf '%s' "${{ secrets.APPLE_API_PRIVATE_KEY }}" > "private_keys/AuthKey_${{ secrets.APPLE_API_KEY }}.p8"
-          echo "APPLE_API_KEY_PATH=$PWD/private_keys/AuthKey_${{ secrets.APPLE_API_KEY }}.p8" >> $GITHUB_ENV
-
-      - name: Export Apple signing environment (macOS only)
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        run: |
-          if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ]; then
-            echo "APPLE_CERTIFICATE<<EOF" >> $GITHUB_ENV
-            echo "${{ secrets.APPLE_CERTIFICATE }}" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          fi
-
-          if [ -n "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" ]; then
-            echo "APPLE_CERTIFICATE_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" >> $GITHUB_ENV
-          fi
-
-          if [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
-            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> $GITHUB_ENV
-          fi
-
-          if [ -n "${{ secrets.APPLE_ID }}" ]; then
-            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> $GITHUB_ENV
-          fi
-
-          if [ -n "${{ secrets.APPLE_PASSWORD }}" ]; then
-            echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}" >> $GITHUB_ENV
-          fi
-
-          if [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
-            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> $GITHUB_ENV
-          fi
-
-          if [ -n "${{ secrets.APPLE_API_KEY }}" ]; then
-            echo "APPLE_API_KEY=${{ secrets.APPLE_API_KEY }}" >> $GITHUB_ENV
-          fi
-
-          if [ -n "${{ secrets.APPLE_API_ISSUER }}" ]; then
-            echo "APPLE_API_ISSUER=${{ secrets.APPLE_API_ISSUER }}" >> $GITHUB_ENV
-          fi
-
       - name: Verify Signing Key
         shell: bash
         run: |
@@ -184,56 +133,13 @@ jobs:
             echo "✅ TAURI_SIGNING_PRIVATE_KEY is configured"
           fi
 
-      - name: Verify macOS signing configuration
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        run: |
-          if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" ]; then
-            echo "✅ Apple signing certificate configured"
-          else
-            echo "::warning::APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD not set. macOS builds will fall back to ad-hoc signing."
-          fi
-
-          if [ -n "${{ env.APPLE_API_KEY_PATH }}" ] && [ -n "${{ secrets.APPLE_API_KEY }}" ] && [ -n "${{ secrets.APPLE_API_ISSUER }}" ]; then
-            echo "✅ App Store Connect notarization configured"
-          elif [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
-            echo "✅ Apple ID notarization configured"
-          else
-            echo "::warning::No macOS notarization credentials configured. Browser-downloaded builds may still trigger Gatekeeper warnings."
-          fi
-
       - name: Build desktop bundles
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ env.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ env.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ env.APPLE_ID }}
-          APPLE_PASSWORD: ${{ env.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ env.APPLE_TEAM_ID }}
-          APPLE_API_KEY: ${{ env.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ env.APPLE_API_ISSUER }}
-          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
         run: |
-          for var in \
-            APPLE_CERTIFICATE \
-            APPLE_CERTIFICATE_PASSWORD \
-            APPLE_SIGNING_IDENTITY \
-            APPLE_ID \
-            APPLE_PASSWORD \
-            APPLE_TEAM_ID \
-            APPLE_API_KEY \
-            APPLE_API_ISSUER \
-            APPLE_API_KEY_PATH
-          do
-            if [ -z "${!var:-}" ]; then
-              unset "$var"
-            fi
-          done
-
           pnpm tauri build ${{ matrix.args }}
 
       - name: Upload release assets
@@ -242,7 +148,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
         run: |
-          mapfile -d '' FILES < <(find src-tauri/target -type f \
+          FILES=()
+          while IFS= read -r -d '' file; do
+            FILES+=("$file")
+          done < <(find src-tauri/target -type f \
             \( \
               -path '*/bundle/msi/*' -o \
               -path '*/bundle/nsis/*' -o \
