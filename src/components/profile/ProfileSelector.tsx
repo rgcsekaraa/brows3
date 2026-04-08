@@ -23,16 +23,21 @@ import {
   Error as DisconnectedIcon,
 } from '@mui/icons-material';
 import { useProfileStore } from '@/store/profileStore';
-import { Profile, profileApi, bucketApi, isTauri } from '@/lib/tauri';
+import { Profile, profileApi, bucketApi, invalidateCache } from '@/lib/tauri';
 import ProfileDialog from './ProfileDialog';
+import { invalidateBucketCache } from '@/hooks/useBuckets';
+import { useAppStore } from '@/store/appStore';
+import { useRouter } from 'next/navigation';
 
 export default function ProfileSelector() {
+  const router = useRouter();
   const { 
     profiles, 
     activeProfileId, 
     setActiveProfileId,
     isLoading,
   } = useProfileStore();
+  const { resetApp, clearDiscoveredRegions } = useAppStore();
   
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
@@ -50,6 +55,11 @@ export default function ProfileSelector() {
     try {
       await profileApi.setActiveProfile(newProfileId);
       setActiveProfileId(newProfileId);
+      invalidateBucketCache();
+      clearDiscoveredRegions();
+      invalidateCache();
+      resetApp();
+      router.push('/');
       // Also refresh buckets for the new profile
       bucketApi.refreshS3Client().then(() => {
            // The useBuckets hook will react to profile change if it's set up to do so
@@ -75,8 +85,6 @@ export default function ProfileSelector() {
     setDialogOpen(false);
     setEditingProfile(null);
   };
-  
-  const activeProfile = profiles.find((p) => p.id === activeProfileId);
   
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

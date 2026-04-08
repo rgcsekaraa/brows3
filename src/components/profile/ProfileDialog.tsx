@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTheme, alpha } from '@mui/material';
 import { useSettingsStore } from '@/store/settingsStore';
 import {
@@ -90,16 +90,23 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [discoveredProfiles, setDiscoveredProfiles] = useState<{ name: string; region?: string }[]>([]);
   const [awsEnv, setAwsEnv] = useState<{ has_access_key: boolean; has_secret_key: boolean; has_session_token: boolean; region?: string } | null>(null);
+  const discoveryRequestIdRef = useRef(0);
+  const editLoadRequestIdRef = useRef(0);
 
   // Discover local profiles and check environment
   useEffect(() => {
     if (open) {
+        const requestId = ++discoveryRequestIdRef.current;
         const fetchData = async () => {
             try {
                 const [discovered, env] = await Promise.all([
                     profileApi.discoverLocalProfiles(),
                     profileApi.checkAwsEnvironment()
                 ]);
+
+                if (requestId !== discoveryRequestIdRef.current) {
+                    return;
+                }
                 
                 setDiscoveredProfiles(discovered);
                 setAwsEnv(env);
@@ -120,12 +127,18 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                     }
                 }
             } catch (err) {
-                setError(err instanceof Error ? err.message : String(err));
+                if (requestId === discoveryRequestIdRef.current) {
+                  setError(err instanceof Error ? err.message : String(err));
+                }
             }
         };
         
         fetchData();
     }
+
+    return () => {
+      discoveryRequestIdRef.current += 1;
+    };
   }, [open, mode, editProfile]);
 
   const updateField = (field: string, value: any) => {
@@ -149,6 +162,12 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       setTestResult(null);
       setError(null);
       resetForm();
+      setSelectedProfile(editProfile || null);
+    }
+    if (!open) {
+      discoveryRequestIdRef.current += 1;
+      editLoadRequestIdRef.current += 1;
+      setSelectedProfile(null);
     }
   }, [open, editProfile]);
   
@@ -313,15 +332,21 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   };
   
   const handleEditMode = async (profile: Profile) => {
+    const requestId = ++editLoadRequestIdRef.current;
     setSelectedProfile(profile);
     setMode('edit');
 
     try {
       const hydratedProfile = await profileApi.getProfile(profile.id);
+      if (requestId !== editLoadRequestIdRef.current) {
+        return;
+      }
       setSelectedProfile(hydratedProfile);
       loadProfileToForm(hydratedProfile);
     } catch {
-      loadProfileToForm(profile);
+      if (requestId === editLoadRequestIdRef.current) {
+        loadProfileToForm(profile);
+      }
     }
   };
 
