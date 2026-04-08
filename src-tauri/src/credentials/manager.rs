@@ -172,6 +172,13 @@ impl ProfileManager {
             active_profile_id,
         }
     }
+
+    fn sync_default_flags(&mut self) {
+        let active_profile_id = self.data.active_profile_id.clone();
+        for profile in self.data.profiles.values_mut() {
+            profile.is_default = active_profile_id.as_ref() == Some(&profile.id);
+        }
+    }
     
     fn save(&self) -> Result<()> {
         let profiles_path = self.config_dir.join(PROFILES_FILE);
@@ -182,9 +189,21 @@ impl ProfileManager {
         // 1. Write to temp file
         let content = serde_json::to_string_pretty(&self.data)?;
         std::fs::write(&temp_path, content)?;
-        
-        // 2. Rename to final destination (atomic on most OSs)
-        std::fs::rename(temp_path, profiles_path)?;
+
+        #[cfg(unix)]
+        {
+            // On Unix, rename replaces the destination atomically.
+            std::fs::rename(&temp_path, &profiles_path)?;
+        }
+
+        #[cfg(windows)]
+        {
+            // Windows rename does not replace an existing destination file.
+            if profiles_path.exists() {
+                std::fs::remove_file(&profiles_path)?;
+            }
+            std::fs::rename(&temp_path, &profiles_path)?;
+        }
         
         Ok(())
     }
@@ -228,27 +247,63 @@ impl ProfileManager {
         }
         
         self.data.profiles.insert(profile.id.clone(), profile.clone());
+        self.sync_default_flags();
         self.save()?;
         
-        Ok(profile)
+        Ok(self.hydrate_profile(
+            self.data
+                .profiles
+                .get(&profile.id)
+                .cloned()
+                .ok_or_else(|| AppError::ProfileNotFound(profile.id.clone()))?
+        ))
     }
     
     pub async fn update_profile(&mut self, id: &str, mut profile: Profile) -> Result<Profile> {
-        if !self.data.profiles.contains_key(id) {
-            return Err(AppError::ProfileNotFound(id.to_string()));
+        let existing_profile = self.data.profiles
+            .get(id)
+            .cloned()
+            .ok_or_else(|| AppError::ProfileNotFound(id.to_string()))?;
+        let hydrated_existing_profile = self.hydrate_profile(existing_profile.clone());
+
+        if self.data.profiles.values().any(|p| p.id != id && p.name == profile.name) {
+            return Err(AppError::ProfileExists(profile.name.clone()));
         }
-        
+
         profile.id = id.to_string();
-        
+        profile.created_at = existing_profile.created_at;
+        profile.is_default = self.data.active_profile_id.as_deref() == Some(id);
+        profile.updated_at = Some(chrono::Utc::now());
+
+        // Keep previous secret if the edit payload omitted it.
+        match (&hydrated_existing_profile.credential_type, &mut profile.credential_type) {
+            (
+                CredentialType::Manual { secret_access_key: old_secret, .. },
+                CredentialType::Manual { secret_access_key, .. }
+            ) if secret_access_key.is_empty() => {
+                *secret_access_key = old_secret.clone();
+            }
+            (
+                CredentialType::CustomEndpoint { secret_access_key: old_secret, .. },
+                CredentialType::CustomEndpoint { secret_access_key, .. }
+            ) if secret_access_key.is_empty() => {
+                *secret_access_key = old_secret.clone();
+            }
+            _ => {}
+        }
+
+        if matches!(existing_profile.credential_type, CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. }) {
+            self.remove_secret(&existing_profile);
+        }
+
         // Update secret in keychain if needed
         self.store_secret(&profile)?;
-        
-        profile.updated_at = Some(chrono::Utc::now());
-        
+
         self.data.profiles.insert(id.to_string(), profile.clone());
+        self.sync_default_flags();
         self.save()?;
-        
-        Ok(profile)
+
+        Ok(self.hydrate_profile(profile))
     }
     
     pub async fn delete_profile(&mut self, id: &str) -> Result<()> {
@@ -263,6 +318,8 @@ impl ProfileManager {
         if self.data.active_profile_id.as_deref() == Some(id) {
             self.data.active_profile_id = self.data.profiles.keys().next().cloned();
         }
+
+        self.sync_default_flags();
         
         self.save()?;
         Ok(())
@@ -274,6 +331,7 @@ impl ProfileManager {
         }
         
         self.data.active_profile_id = Some(id.to_string());
+        self.sync_default_flags();
         self.save()?;
         Ok(())
     }
