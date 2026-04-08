@@ -17,62 +17,36 @@ export function useClipboardShortcuts() {
       if (!isMod) return;
 
       const key = e.key.toLowerCase();
-      
-      if (key === 'v') {
-        // Paste is restricted in browsers, so we handle it manually
-        const activeElement = document.activeElement;
-        if (
-          activeElement &&
-          (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement)
-        ) {
-          try {
-            const text = await readText();
-            if (text) {
-              const start = activeElement.selectionStart || 0;
-              const end = activeElement.selectionEnd || 0;
-              const value = activeElement.value;
-              
-              activeElement.value = value.substring(0, start) + text + value.substring(end);
-              
-              // Set cursor position after the pasted text
-              const newPos = start + text.length;
-              activeElement.setSelectionRange(newPos, newPos);
-              
-              // Trigger input event for React/form libraries
-              activeElement.dispatchEvent(new Event('input', { bubbles: true }));
-              activeElement.dispatchEvent(new Event('change', { bubbles: true }));
-              
-              // Stop default browser behavior
-              e.preventDefault();
-            }
-          } catch (err) {
-            console.warn('Failed to read from clipboard:', err);
+      if (key !== 'v') return;
+
+      // Paste is restricted in browsers, so we handle it manually for editable fields.
+      const activeElement = document.activeElement;
+      if (
+        activeElement &&
+        (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement)
+      ) {
+        try {
+          const text = await readText();
+          if (text) {
+            const start = activeElement.selectionStart || 0;
+            const end = activeElement.selectionEnd || 0;
+            const value = activeElement.value;
+            
+            activeElement.value = value.substring(0, start) + text + value.substring(end);
+            
+            // Set cursor position after the pasted text
+            const newPos = start + text.length;
+            activeElement.setSelectionRange(newPos, newPos);
+            
+            // Trigger input event for React/form libraries
+            activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+            activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            // Stop default browser behavior
+            e.preventDefault();
           }
-        }
-      } else {
-        // For other shortcuts, use execCommand or let the browser handle them
-        switch (key) {
-          case 'c':
-            // Copy - use document.execCommand for webview compatibility
-            document.execCommand('copy');
-            break;
-          case 'x':
-            // Cut
-            document.execCommand('cut');
-            break;
-          case 'a':
-            // Select All
-            document.execCommand('selectAll');
-            break;
-          case 'z':
-            if (e.shiftKey) {
-              // Redo
-              document.execCommand('redo');
-            } else {
-              // Undo
-              document.execCommand('undo');
-            }
-            break;
+        } catch (err) {
+          console.warn('Failed to read from clipboard:', err);
         }
       }
     };
