@@ -1,6 +1,15 @@
 {
-  "version": "0.2.32",
-  "notes": "See https://github.com/rgcsekaraa/brows3/releases/tag/app-v0.2.32 for release notes.",
-  "pub_date": "2026-04-08T00:27:00Z",
-  "platforms": {}
+  "version": "0.2.33",
+  "notes": "See https://github.com/rgcsekaraa/brows3/releases/tag/app-v0.2.33 for release notes.",
+  "pub_date": "2026-04-08T08:54:31Z",
+  "platforms": {
+    "linux-x86_64": {
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.33/Brows3_0.2.33_amd64.AppImage",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDdYcHIzOE1PUmNkYklDdU12NDdMWkoweGZ4SE1BcWJOSHVJbTNoZEtjSFdUdmN1TkI2cjNkNUQ2R3FKelo0UFpxbHZDQVZFb05DVGlWVDdodGR3TkFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc1NjM4MTEzCWZpbGU6QnJvd3MzXzAuMi4zM19hbWQ2NC5BcHBJbWFnZQo2dkRzd3E5MHpFcmlRZU1vT1NKRVRCYUI2QXVsRXFVb1NIUTREVUNZRzBUOGxFQUVib0hhWEZ4MGlyV3JwVTA1aU1Sb1hGVk1LR2JZS1lBK2g5RTJBdz09Cg=="
+    },
+    "windows-x86_64": {
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.33/Brows3_0.2.33_x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDNqV2FZbmNmZm44bzVtZkZBYkpUQjRVaVBkbGc2N3BramFNVWtsdTBjK3VuMDBXN0tSVnhmR2FERGxtRXgvdmpPekVOUzRITHVHV1lIVGZJM3VlVVEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc1NjM4NDQ4CWZpbGU6QnJvd3MzXzAuMi4zM194NjQtc2V0dXAuZXhlCjNKZDJWbVd3dEY0STg3Qm81VUhCMURaWkdGRFVXdEhRTEpMU3FjaitsaE5NaVNpVTc3c3BQTUZVMjRxWFQzZ3l0eHY0bE9GdFFlVzg5MkcwS1AyeEFBPT0K"
+    }
+  }
 }
