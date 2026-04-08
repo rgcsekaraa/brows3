@@ -87,6 +87,13 @@ import { formatSize } from '@/lib/utils';
 // Concurrent paste batch size
 const PASTE_CONCURRENCY = 5;
 
+const joinLocalPath = (basePath: string, leafName: string): string => {
+  const normalizedBase = basePath.replace(/[\\/]+$/, '');
+  const normalizedLeaf = leafName.replace(/^[\\/]+/, '');
+  const separator = normalizedBase.includes('\\') && !normalizedBase.includes('/') ? '\\' : '/';
+  return `${normalizedBase}${separator}${normalizedLeaf}`;
+};
+
 function BucketContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -688,12 +695,12 @@ function BucketContent() {
           
           if (isSelectedFolder) {
             const folderName = key.split('/').filter(Boolean).pop() || 'folder';
-            const localPath = `${downloadDir}/${folderName}`;
+            const localPath = joinLocalPath(downloadDir, folderName);
             await transferApi.queueFolderDownload(bucketName || '', bucketRegion, key, localPath);
             count++;
           } else if (selectedObjectSize !== undefined) {
             const fileName = key.split('/').pop() || 'file';
-            const localPath = `${downloadDir}/${fileName}`;
+            const localPath = joinLocalPath(downloadDir, fileName);
             await transferApi.queueDownload(bucketName || '', bucketRegion, key, localPath, selectedObjectSize);
             count++;
           }
@@ -818,7 +825,7 @@ function BucketContent() {
         if (downloadDir) {
             const dir = Array.isArray(downloadDir) ? downloadDir[0] : downloadDir;
             const folderName = target.key.split('/').filter(Boolean).pop() || 'folder';
-            const localPath = `${dir}/${folderName}`;
+            const localPath = joinLocalPath(dir, folderName);
             await transferApi.queueFolderDownload(bucketName, bucketRegion, target.key, localPath);
             displaySuccess('Folder download queued', '/downloads');
         }
@@ -1278,7 +1285,7 @@ function BucketContent() {
             try {
               const dir = Array.isArray(folderPath) ? folderPath[0] : folderPath;
               const folderName = target.key.split('/').filter(Boolean).pop() || 'folder';
-              const localPath = `${dir}/${folderName}`;
+              const localPath = joinLocalPath(dir, folderName);
               
               // Use queueFolderDownload for proper grouping
               const count = await transferApi.queueFolderDownload(bucketName, bucketRegion, target.key, localPath);
