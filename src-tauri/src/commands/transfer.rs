@@ -9,6 +9,46 @@ use std::path::PathBuf;
 // We need to store the TransferManager in Tauri state
 pub type TransferState = Arc<TransferManager>;
 
+async fn list_folder_objects(
+    client: &aws_sdk_s3::Client,
+    bucket_name: &str,
+    prefix: &str,
+) -> Result<Vec<(String, u64)>> {
+    let mut all_objects = Vec::new();
+    let mut continuation_token = None;
+
+    loop {
+        let mut req = client.list_objects_v2()
+            .bucket(bucket_name)
+            .prefix(prefix);
+
+        if let Some(ref token) = continuation_token {
+            req = req.continuation_token(token);
+        }
+
+        let resp = req.send().await
+            .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+
+        if let Some(contents) = resp.contents {
+            for obj in contents {
+                if let (Some(key), Some(size)) = (obj.key, obj.size) {
+                    if !key.ends_with('/') {
+                        all_objects.push((key, size as u64));
+                    }
+                }
+            }
+        }
+
+        if resp.is_truncated.unwrap_or(false) {
+            continuation_token = resp.next_continuation_token;
+        } else {
+            break;
+        }
+    }
+
+    Ok(all_objects)
+}
+
 fn validate_path(path: &std::path::Path) -> Result<()> {
     // Basic check for path traversal
     for component in path.components() {
@@ -226,47 +266,47 @@ pub async fn queue_folder_download(
         .ok_or_else(|| crate::error::AppError::ConfigError("No active profile".to_string()))?;
         
     let objects = {
-        let mut s3 = s3_state.write().await;
-        
-        let client = if let Some(ref region) = bucket_region {
-            s3.get_client_for_region(&profile, region).await?
-        } else {
-            s3.get_client(&profile).await?
-        };
-        
-        let mut all_objects = Vec::new();
-        let mut continuation_token = None;
-        
-        loop {
-            let mut req = client.list_objects_v2()
-                .bucket(&bucket_name)
-                .prefix(&prefix);
-                
-            if let Some(token) = continuation_token {
-                req = req.continuation_token(token);
+        let resolved_region = {
+            let s3 = s3_state.read().await;
+            s3.get_bucket_region(&bucket_name)
+        }.or(bucket_region.clone());
+
+        let client = {
+            let mut s3 = s3_state.write().await;
+            if let Some(ref region) = resolved_region {
+                s3.get_client_for_region(&profile, region).await?.clone()
+            } else {
+                s3.get_client(&profile).await?.clone()
             }
-            
-            let resp = req.send().await
-                .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
-                
-            if let Some(contents) = resp.contents {
-                for obj in contents {
-                    if let (Some(key), Some(size)) = (obj.key, obj.size) {
-                        // Skip folder markers (end with / and size 0)
-                        if !key.ends_with('/') {
-                             all_objects.push((key, size as u64));
-                        }
+        };
+
+        match list_folder_objects(&client, &bucket_name, &prefix).await {
+            Ok(objects) => objects,
+            Err(err) => {
+                log::warn!("queue_folder_download listing failed, attempting region discovery: {}", err);
+                let retry_client = {
+                    let mut s3 = s3_state.write().await;
+                    s3.get_client(&profile).await?.clone()
+                };
+
+                if let Ok(new_region) = crate::s3::get_bucket_region(&retry_client, &bucket_name).await {
+                    {
+                        let mut s3 = s3_state.write().await;
+                        s3.set_bucket_region(&bucket_name, new_region.clone());
                     }
+
+                    let retry_client = {
+                        let mut s3 = s3_state.write().await;
+                        s3.get_client_for_region(&profile, &new_region).await?.clone()
+                    };
+
+                    list_folder_objects(&retry_client, &bucket_name, &prefix).await
+                        .map_err(|e| crate::error::AppError::S3Error(format!("Retry folder listing failed: {}", e)))?
+                } else {
+                    return Err(err);
                 }
             }
-            
-            if resp.is_truncated.unwrap_or(false) {
-                continuation_token = resp.next_continuation_token;
-            } else {
-                break;
-            }
         }
-        all_objects
     };
     
     let group_id = uuid::Uuid::new_v4().to_string();

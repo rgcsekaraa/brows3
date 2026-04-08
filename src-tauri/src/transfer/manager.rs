@@ -327,40 +327,102 @@ impl TransferManager {
     }
 
     async fn execute_job(&self, job: &TransferJob, s3_manager: Arc<RwLock<S3ClientManager>>, profile: &Profile) -> crate::error::Result<()> {
+        let resolved_region = {
+            let s3 = s3_manager.read().await;
+            s3.get_bucket_region(&job.bucket)
+        }.or(job.bucket_region.clone());
+
         let client = {
             let mut s3 = s3_manager.write().await;
-            let c = if let Some(ref region) = job.bucket_region {
+            let c = if let Some(ref region) = resolved_region {
                 s3.get_client_for_region(profile, region).await?
             } else {
                 s3.get_client(profile).await?
             };
             c.clone()
         };
+
+        let detect_region = async {
+            let retry_client = {
+                let mut s3 = s3_manager.write().await;
+                s3.get_client(profile).await?.clone()
+            };
+
+            let new_region = crate::s3::get_bucket_region(&retry_client, &job.bucket).await.ok();
+            if let Some(ref region) = new_region {
+                let mut s3 = s3_manager.write().await;
+                s3.set_bucket_region(&job.bucket, region.clone());
+            }
+            Ok::<Option<String>, crate::error::AppError>(new_region)
+        };
         
         match job.transfer_type {
             TransferType::Upload => {
                  let body = ByteStream::from_path(&job.local_path).await
                     .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
-                
-                 client.put_object()
+
+                 if let Err(err) = client.put_object()
                     .bucket(&job.bucket)
                     .key(&job.key)
                     .body(body)
                     .send()
                     .await
-                    .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+                 {
+                    log::warn!("upload transfer failed, attempting region discovery: {}", err);
+
+                    if let Some(new_region) = detect_region.await? {
+                        let retry_client = {
+                            let mut s3 = s3_manager.write().await;
+                            s3.get_client_for_region(profile, &new_region).await?.clone()
+                        };
+                        let retry_body = ByteStream::from_path(&job.local_path).await
+                            .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
+
+                        retry_client.put_object()
+                            .bucket(&job.bucket)
+                            .key(&job.key)
+                            .body(retry_body)
+                            .send()
+                            .await
+                            .map_err(|e| crate::error::AppError::S3Error(format!("Retry upload failed: {}", e)))?;
+                    } else {
+                        return Err(crate::error::AppError::S3Error(err.to_string()));
+                    }
+                 }
 
                  if let Ok(meta) = std::fs::metadata(&job.local_path) {
                      self.update_job_progress(&job.id, meta.len()).await;
                  }
             }
             TransferType::Download => {
-                let mut output = client.get_object()
+                let result = client.get_object()
                     .bucket(&job.bucket)
                     .key(&job.key)
                     .send()
-                    .await
-                    .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+                    .await;
+
+                let mut output = match result {
+                    Ok(output) => output,
+                    Err(err) => {
+                        log::warn!("download transfer failed, attempting region discovery: {}", err);
+
+                        if let Some(new_region) = detect_region.await? {
+                            let retry_client = {
+                                let mut s3 = s3_manager.write().await;
+                                s3.get_client_for_region(profile, &new_region).await?.clone()
+                            };
+
+                            retry_client.get_object()
+                                .bucket(&job.bucket)
+                                .key(&job.key)
+                                .send()
+                                .await
+                                .map_err(|e| crate::error::AppError::S3Error(format!("Retry download failed: {}", e)))?
+                        } else {
+                            return Err(crate::error::AppError::S3Error(err.to_string()));
+                        }
+                    }
+                };
 
                 if let Some(parent) = std::path::Path::new(&job.local_path).parent() {
                     tokio::fs::create_dir_all(parent).await
