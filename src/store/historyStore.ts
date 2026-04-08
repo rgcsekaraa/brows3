@@ -8,6 +8,7 @@ export interface RecentItem {
   name: string;
   bucket: string;
   region?: string;
+  profileId?: string;
   isFolder: boolean;
   timestamp?: number;
 }
@@ -26,8 +27,8 @@ interface HistoryState {
   // Stubs for Favorites (used in page.tsx too)
   favorites: RecentItem[];
   addFavorite: (item: RecentItem) => void;
-  removeFavorite: (key: string, bucket?: string) => void;
-  isFavorite: (key: string, bucket?: string) => boolean;
+  removeFavorite: (key: string, bucket?: string, profileId?: string) => void;
+  isFavorite: (key: string, bucket?: string, profileId?: string) => boolean;
   clearFavorites: () => void;
 }
 
@@ -47,22 +48,40 @@ export const useHistoryStore = create<HistoryState>()(
       addRecent: (item) => set((state) => {
         // Similar dedupe logic for items
         const newItem = { ...item, timestamp: Date.now() };
-        const filtered = state.recentItems.filter(i => !(i.key === item.key && i.bucket === item.bucket));
+        const filtered = state.recentItems.filter(i => !(
+          i.key === item.key &&
+          i.bucket === item.bucket &&
+          i.region === item.region &&
+          i.profileId === item.profileId
+        ));
         return { recentItems: [newItem, ...filtered].slice(0, 50) };
       }),
       
       addFavorite: (item) => set((state) => {
-        // Prevent duplicates - check by key AND bucket
-        const exists = state.favorites.some(i => i.key === item.key && i.bucket === item.bucket);
+        // Prevent duplicates - check by key, bucket, region, and profile
+        const exists = state.favorites.some(i =>
+          i.key === item.key &&
+          i.bucket === item.bucket &&
+          i.region === item.region &&
+          i.profileId === item.profileId
+        );
         if (exists) return state;
         return { favorites: [...state.favorites, item] };
       }),
       
-      removeFavorite: (key, bucket) => set((state) => ({ 
-        favorites: state.favorites.filter(i => !(i.key === key && (bucket ? i.bucket === bucket : true))) 
+      removeFavorite: (key, bucket, profileId) => set((state) => ({ 
+        favorites: state.favorites.filter(i => !(
+          i.key === key &&
+          (bucket ? i.bucket === bucket : true) &&
+          (profileId ? i.profileId === profileId : true)
+        )) 
       })),
       
-      isFavorite: (key, bucket) => get().favorites.some(i => i.key === key && (bucket ? i.bucket === bucket : true)),
+      isFavorite: (key, bucket, profileId) => get().favorites.some(i =>
+        i.key === key &&
+        (bucket ? i.bucket === bucket : true) &&
+        (profileId ? i.profileId === profileId : true)
+      ),
       
       clearFavorites: () => set({ favorites: [] }),
 

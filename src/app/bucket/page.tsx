@@ -73,6 +73,7 @@ import { open, save } from '@tauri-apps/plugin-dialog';
 import { useTransferStore } from '@/store/transferStore';
 import { useClipboardStore } from '@/store/clipboardStore';
 import { useTabStore } from '@/store/tabStore';
+import { useProfileStore } from '@/store/profileStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
 import PresignedUrlDialog from '@/components/dialogs/PresignedUrlDialog';
@@ -97,6 +98,7 @@ function BucketContent() {
   const { data, isLoading, error: initialError, stats, refresh, loadMore, isLoadingMore, hasMore } = useObjects(bucketName || '', bucketRegion, prefix);
   const addJob = useTransferStore(state => state.addJob);
   const { addBucket } = useTabStore();
+  const activeProfileId = useProfileStore(state => state.activeProfileId);
   
   // Sorting State
   const [sortField, setSortField] = useState<'name' | 'size' | 'date' | 'class'>('name');
@@ -348,6 +350,7 @@ function BucketContent() {
         name,
         bucket: bucketName,
         region: bucketRegion,
+        profileId: activeProfileId || undefined,
         isFolder: true,
       });
     }
@@ -1277,8 +1280,8 @@ function BucketContent() {
         <MenuItem onClick={() => {
           if (selectedObject && bucketName) {
             const name = selectedObject.key.split('/').filter(Boolean).pop() || selectedObject.key;
-            if (isFavorite(selectedObject.key, bucketName)) {
-              removeFavorite(selectedObject.key, bucketName);
+            if (isFavorite(selectedObject.key, bucketName, activeProfileId || undefined)) {
+              removeFavorite(selectedObject.key, bucketName, activeProfileId || undefined);
               displaySuccess('Removed from favorites');
             } else {
               addFavorite({
@@ -1286,6 +1289,7 @@ function BucketContent() {
                 name,
                 bucket: bucketName,
                 region: bucketRegion,
+                profileId: activeProfileId || undefined,
                 isFolder: selectedObject.isFolder,
               });
               displaySuccess('Added to favorites');
@@ -1294,11 +1298,11 @@ function BucketContent() {
           handleMenuClose();
         }}>
           <ListItemIcon>
-            {selectedObject && isFavorite(selectedObject.key, bucketName || undefined) 
+            {selectedObject && isFavorite(selectedObject.key, bucketName || undefined, activeProfileId || undefined) 
               ? <StarIcon fontSize="small" color="warning" /> 
               : <StarBorderIcon fontSize="small" />}
           </ListItemIcon>
-          {selectedObject && isFavorite(selectedObject.key, bucketName || undefined) ? 'Remove from Favorites' : 'Add to Favorites'}
+          {selectedObject && isFavorite(selectedObject.key, bucketName || undefined, activeProfileId || undefined) ? 'Remove from Favorites' : 'Add to Favorites'}
         </MenuItem>
         {!selectedObject?.isFolder && (
           <MenuItem onClick={() => {

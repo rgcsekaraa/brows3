@@ -23,21 +23,33 @@ import {
 } from '@mui/icons-material';
 import { useHistoryStore, FavoriteItem } from '@/store/historyStore';
 import { useAppStore } from '@/store/appStore';
+import { useProfileStore } from '@/store/profileStore';
 
 export default function FavoritesPage() {
   const router = useRouter();
   const { favorites, removeFavorite, clearFavorites } = useHistoryStore();
   const { addTab } = useAppStore();
+  const activeProfileId = useProfileStore((state) => state.activeProfileId);
+
+  const visibleFavorites = favorites.filter((item) => item.profileId === activeProfileId);
+
+  const buildBucketPath = (item: FavoriteItem, prefix?: string) => {
+    const params = new URLSearchParams();
+    params.set('name', item.bucket);
+    if (item.region) params.set('region', item.region);
+    if (prefix) params.set('prefix', prefix);
+    return `/bucket?${params.toString()}`;
+  };
 
   const handleItemClick = (item: FavoriteItem) => {
     if (item.isFolder) {
-      const path = `/bucket?name=${item.bucket}&region=${item.region}&prefix=${encodeURIComponent(item.key)}`;
+      const path = buildBucketPath(item, item.key);
       addTab({ title: item.name, path, icon: 'folder' });
       router.push(path);
     } else {
       // Navigate to parent folder
       const parentPrefix = item.key.split('/').slice(0, -1).join('/');
-      const path = `/bucket?name=${item.bucket}&region=${item.region}${parentPrefix ? `&prefix=${encodeURIComponent(parentPrefix + '/')}` : ''}`;
+      const path = buildBucketPath(item, parentPrefix ? `${parentPrefix}/` : undefined);
       addTab({ title: item.bucket, path, icon: 'bucket' });
       router.push(path);
     }
@@ -61,7 +73,7 @@ export default function FavoritesPage() {
             </Typography>
           </Box>
         </Box>
-        {favorites.length > 0 && (
+        {visibleFavorites.length > 0 && (
           <Button 
             variant="outlined" 
             color="error" 
@@ -74,7 +86,7 @@ export default function FavoritesPage() {
         )}
       </Box>
 
-      {favorites.length === 0 ? (
+      {visibleFavorites.length === 0 ? (
         <Paper sx={{ p: 6, textAlign: 'center' }}>
           <StarBorderIcon sx={{ fontSize: 60, color: 'text.disabled', mb: 2 }} />
           <Typography variant="h6" color="text.secondary" gutterBottom>
@@ -87,7 +99,7 @@ export default function FavoritesPage() {
       ) : (
         <Paper variant="outlined" sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
           <List dense sx={{ flex: 1, overflow: 'auto' }}>
-            {favorites.map((item, index) => (
+            {visibleFavorites.map((item, index) => (
               <ListItem
                 key={`${item.bucket}-${item.key}-${index}`}
                 disablePadding
@@ -97,7 +109,7 @@ export default function FavoritesPage() {
                       size="small"
                       onClick={(e) => {
                         e.stopPropagation();
-                        removeFavorite(item.key, item.bucket);
+                        removeFavorite(item.key, item.bucket, activeProfileId || undefined);
                       }}
                     >
                       <StarIcon color="warning" />
