@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { readText } from '@tauri-apps/plugin-clipboard-manager';
+import { isTauri } from '@/lib/tauri';
 
 /**
  * Hook to enable native-like clipboard operations in Tauri WebView
@@ -10,6 +11,10 @@ import { readText } from '@tauri-apps/plugin-clipboard-manager';
  */
 export function useClipboardShortcuts() {
   useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
     const handleKeyDown = async (e: KeyboardEvent) => {
       // Check for Cmd (Mac) or Ctrl (Windows/Linux)
       const isMod = e.metaKey || e.ctrlKey;

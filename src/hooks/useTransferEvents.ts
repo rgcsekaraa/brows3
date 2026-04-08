@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { TransferEvent, TransferJob } from '@/lib/tauri';
+import { isTauri } from '@/lib/tauri';
 import { useTransferStore } from '@/store/transferStore';
 
 const REFRESH_INTERVAL_MS = 5000; // Refresh every 5 seconds
@@ -51,6 +52,10 @@ export function useTransferEvents() {
   };
 
   useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
     // Setup listener
     const setup = async () => {
       if (unlistenRef.current) return;
