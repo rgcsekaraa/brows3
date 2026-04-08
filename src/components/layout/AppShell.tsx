@@ -28,11 +28,12 @@ import TabBar from './TabBar';
 import { useTransferEvents } from '@/hooks/useTransferEvents';
 import { TransferPanel } from '@/components/transfer/TransferPanel';
 import { useProfileStore } from '@/store/profileStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import ProfileDialog from '@/components/profile/ProfileDialog';
 import ToastContainer from '@/components/common/ToastContainer';
 import { check } from '@tauri-apps/plugin-updater';
 import { toast } from '@/store/toastStore';
-import { profileApi } from '@/lib/tauri';
+import { profileApi, transferApi } from '@/lib/tauri';
 import { useClipboardShortcuts } from '@/hooks/useClipboardShortcuts';
 import { preloadMonaco } from '@/lib/monaco-config';
 
@@ -45,6 +46,7 @@ interface AppShellProps {
 export default function AppShell({ children }: AppShellProps) {
   const { themeMode, sidebarOpen, setSidebarOpen, toggleSidebar } = useAppStore();
   const { profiles, setProfiles, setActiveProfileId } = useProfileStore();
+  const maxConcurrentTransfers = useSettingsStore((state) => state.maxConcurrentTransfers);
   const [mounted, setMounted] = useState(false);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [isUpdateavailable, setIsUpdateAvailable] = useState(false);
@@ -79,6 +81,24 @@ export default function AppShell({ children }: AppShellProps) {
 
   // Listen for global transfer events
   useTransferEvents();
+
+  useEffect(() => {
+    const syncTransferConcurrency = async () => {
+      if (typeof window === 'undefined' || !('__TAURI__' in window)) {
+        return;
+      }
+
+      try {
+        await transferApi.setConcurrency(maxConcurrentTransfers);
+      } catch (err) {
+        console.warn('Failed to sync transfer concurrency:', err);
+      }
+    };
+
+    if (mounted) {
+      syncTransferConcurrency();
+    }
+  }, [mounted, maxConcurrentTransfers]);
 
   // Load profiles on mount (Persistence Fix)
   useEffect(() => {

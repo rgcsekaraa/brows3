@@ -366,3 +366,12 @@ pub async fn clear_completed_transfers(
 ) -> Result<usize> {
     Ok(transfer_state.clear_completed().await)
 }
+
+#[tauri::command]
+pub async fn set_transfer_concurrency(
+    max_concurrency: u32,
+    transfer_state: State<'_, TransferState>,
+) -> Result<()> {
+    transfer_state.set_max_concurrency(max_concurrency as usize);
+    Ok(())
+}

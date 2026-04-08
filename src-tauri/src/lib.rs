@@ -169,6 +169,7 @@ pub fn run() {
             transfer_cmd::retry_transfer,
             transfer_cmd::remove_transfer,
             transfer_cmd::clear_completed_transfers,
+            transfer_cmd::set_transfer_concurrency,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

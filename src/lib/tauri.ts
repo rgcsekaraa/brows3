@@ -324,4 +324,8 @@ export const transferApi = {
   async clearCompletedTransfers(): Promise<number> {
     return invoke<number>('clear_completed_transfers');
   },
+
+  async setConcurrency(maxConcurrency: number): Promise<void> {
+    return invoke<void>('set_transfer_concurrency', { maxConcurrency });
+  },
 };

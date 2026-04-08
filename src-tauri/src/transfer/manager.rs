@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::sync::{Mutex, Notify, RwLock};
 use tauri::{AppHandle, Emitter};
 use crate::credentials::Profile;
 use crate::s3::S3ClientManager;
@@ -16,8 +17,22 @@ pub struct TransferManager {
     jobs: Arc<RwLock<HashMap<String, TransferJob>>>,
     queue: Arc<Mutex<Vec<String>>>, // List of Job IDs
     abort_handles: Arc<RwLock<HashMap<String, tokio::task::AbortHandle>>>,
-    concurrency_semaphore: Arc<tokio::sync::Semaphore>,
+    max_concurrency: Arc<AtomicUsize>,
+    active_count: Arc<AtomicUsize>,
+    slot_notify: Arc<Notify>,
     app_handle: Arc<RwLock<Option<AppHandle>>>,
+}
+
+struct ActiveSlotGuard {
+    active_count: Arc<AtomicUsize>,
+    slot_notify: Arc<Notify>,
+}
+
+impl Drop for ActiveSlotGuard {
+    fn drop(&mut self) {
+        self.active_count.fetch_sub(1, Ordering::AcqRel);
+        self.slot_notify.notify_waiters();
+    }
 }
 
 impl TransferManager {
@@ -26,7 +41,9 @@ impl TransferManager {
             jobs: Arc::new(RwLock::new(HashMap::new())),
             queue: Arc::new(Mutex::new(Vec::new())),
             abort_handles: Arc::new(RwLock::new(HashMap::new())),
-            concurrency_semaphore: Arc::new(tokio::sync::Semaphore::new(5)),
+            max_concurrency: Arc::new(AtomicUsize::new(5)),
+            active_count: Arc::new(AtomicUsize::new(0)),
+            slot_notify: Arc::new(Notify::new()),
             app_handle: Arc::new(RwLock::new(None)),
         }
     }
@@ -52,6 +69,12 @@ impl TransferManager {
         
         // Also emit initial status update
         self.emit_update(&job).await;
+    }
+
+    pub fn set_max_concurrency(&self, max: usize) {
+        let clamped = max.clamp(1, 20);
+        self.max_concurrency.store(clamped, Ordering::Release);
+        self.slot_notify.notify_waiters();
     }
     
     pub async fn get_job(&self, id: &str) -> Option<TransferJob> {
@@ -173,6 +196,28 @@ impl TransferManager {
             let _ = app.emit("transfer-update", event);
         }
     }
+
+    async fn acquire_slot(&self) -> ActiveSlotGuard {
+        loop {
+            let max = self.max_concurrency.load(Ordering::Acquire).max(1);
+            let active = self.active_count.load(Ordering::Acquire);
+
+            if active < max {
+                if self.active_count
+                    .compare_exchange_weak(active, active + 1, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+                {
+                    return ActiveSlotGuard {
+                        active_count: self.active_count.clone(),
+                        slot_notify: self.slot_notify.clone(),
+                    };
+                }
+                continue;
+            }
+
+            self.slot_notify.notified().await;
+        }
+    }
     
     // Process the queue using a worker pool that respects max concurrency
     pub async fn process_queue(self: Arc<Self>, s3_manager: Arc<RwLock<S3ClientManager>>, profile: Profile) {
@@ -188,10 +233,7 @@ impl TransferManager {
                 };
 
                 // 2. Wait for a slot in the concurrency limit
-                let permit = match manager.concurrency_semaphore.clone().acquire_owned().await {
-                    Ok(p) => p,
-                    Err(_) => break, // Semaphore closed
-                };
+                let slot_guard = manager.acquire_slot().await;
 
                 // 3. Spawn the task
                 let manager_inner = manager.clone();
@@ -200,13 +242,13 @@ impl TransferManager {
                 let id_inner = next_id.clone();
 
                 let handle = tokio::spawn(async move {
+                    let _slot_guard = slot_guard;
                     let should_run = matches!(
                         manager_inner.get_job(&id_inner).await.map(|job| job.status),
                         Some(TransferStatus::Pending)
                     );
 
                     if !should_run {
-                        drop(permit);
                         return;
                     }
 
@@ -232,9 +274,6 @@ impl TransferManager {
                     // Remove abort handle when done
                     let mut handles = manager_inner.abort_handles.write().await;
                     handles.remove(&id_inner);
-                    
-                    // Permit is dropped here, freeing a slot
-                    drop(permit);
                 });
 
                 // 4. Store the abort handle so we can cancel it later
