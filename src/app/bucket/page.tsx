@@ -924,6 +924,13 @@ function BucketContent() {
     }
   };
 
+  const handlePreviewClose = () => {
+    setPreviewOpen(false);
+    setPreviewKey(null);
+    setPreviewSize(undefined);
+    setStartInEditMode(false);
+  };
+
   if (!bucketName) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -1245,6 +1252,7 @@ function BucketContent() {
         onEdit={(key) => {
           setStartInEditMode(true);
           setPreviewKey(key);
+          setPreviewSize(currentObjectSizeMap.get(key));
           setPreviewOpen(true);
         }}
         onCopyPath={(key) => {
@@ -1273,6 +1281,7 @@ function BucketContent() {
             if (selectedObject) {
               setStartInEditMode(true);
               setPreviewKey(selectedObject.key);
+              setPreviewSize(currentObjectSizeMap.get(selectedObject.key));
               setPreviewOpen(true);
             }
             handleMenuClose();
@@ -1502,7 +1511,7 @@ function BucketContent() {
       {/* Preview/Edit Dialog */}
       <ObjectPreviewDialog
         open={previewOpen}
-        onClose={() => { setPreviewOpen(false); setPreviewKey(null); setStartInEditMode(false); }}
+        onClose={handlePreviewClose}
         bucketName={bucketName}
         bucketRegion={bucketRegion}
         objectKey={previewKey || ''}
