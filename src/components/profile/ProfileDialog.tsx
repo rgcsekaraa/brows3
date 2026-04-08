@@ -204,6 +204,21 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       endpointUrl: cred.type === 'CustomEndpoint' ? cred.endpoint_url : '',
     });
   };
+
+  const handleFormCancel = () => {
+    setError(null);
+    setTestResult(null);
+    setTesting(false);
+
+    if (editProfile) {
+      onClose();
+      return;
+    }
+
+    resetForm();
+    setSelectedProfile(null);
+    setMode('list');
+  };
   
   const buildCredentialType = (): CredentialType => {
     switch (formData.credentialType) {
@@ -706,7 +721,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         mode !== 'list' ? (
           <Box sx={{ display: 'flex', width: '100%', justifyContent: 'space-between', px: 1 }}>
             <Button 
-              onClick={() => setMode('list')} 
+              onClick={handleFormCancel} 
               disabled={saving} 
               sx={{ fontWeight: 700, color: 'text.secondary' }}
             >
