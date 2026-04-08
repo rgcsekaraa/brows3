@@ -41,6 +41,7 @@ pub async fn list_objects(
     // 1. Try Read Lock first for Cache (highly concurrent)
     {
         let s3_manager = s3_state.read().await;
+        let cached_bucket_region = s3_manager.get_bucket_region(&bucket_name).or(requested_bucket_region.clone());
         if !bypass_cache.unwrap_or(false) && s3_manager.has_cache(&active_profile.id, &bucket_name) {
             if let Some(content) = s3_manager.get_folder_content(&active_profile.id, &bucket_name, &prefix_str) {
                  // Paginate cached objects
@@ -74,7 +75,7 @@ pub async fn list_objects(
                      next_continuation_token: next_token,
                      is_truncated,
                      prefix: prefix_str,
-                     bucket_region: bucket_region,
+                     bucket_region: cached_bucket_region.clone(),
                  });
             } else if let Some(obj) = s3_manager.get_object_from_cache(&active_profile.id, &bucket_name, &prefix_str) {
                  // Fallback: Check if the prefix is actually a file object itself
@@ -84,7 +85,7 @@ pub async fn list_objects(
                      next_continuation_token: None,
                      is_truncated: false,
                      prefix: prefix_str,
-                     bucket_region: bucket_region,
+                     bucket_region: cached_bucket_region.clone(),
                  });
             } else {
                  // If bucket is cached but prefix is not found, it's an empty folder
@@ -94,7 +95,7 @@ pub async fn list_objects(
                      next_continuation_token: None,
                      is_truncated: false,
                      prefix: prefix_str,
-                     bucket_region: bucket_region,
+                     bucket_region: cached_bucket_region,
                  });
             }
         }
