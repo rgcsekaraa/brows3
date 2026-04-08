@@ -73,7 +73,7 @@ function HomeContent() {
 
   const recentPaths = useMemo(
     () => recentPathEntries
-      .filter((entry) => !entry.profileId || entry.profileId === activeProfileId)
+      .filter((entry) => entry.profileId === activeProfileId)
       .map((entry) => entry.path),
     [activeProfileId, recentPathEntries]
   );

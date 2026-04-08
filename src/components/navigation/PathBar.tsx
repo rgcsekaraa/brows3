@@ -40,7 +40,7 @@ export default function PathBar() {
   
   const inputRef = useRef<HTMLInputElement>(null);
   const recentPaths = recentPathEntries
-    .filter((entry) => !entry.profileId || entry.profileId === activeProfileId)
+    .filter((entry) => entry.profileId === activeProfileId)
     .map((entry) => entry.path);
 
   // Sync input value with current URL params
