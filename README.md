@@ -164,13 +164,13 @@ pnpm tauri build
 
 If you see the error **"Brows3.app is damaged and can't be opened"** after downloading:
 
-Brows3 is a free, open-source project and is not yet signed with a paid Apple Developer certificate. You can easily fix this by running one command in your Terminal:
+This usually means the build was downloaded through a browser but was not notarized for Gatekeeper. First, drag `Brows3.app` into `/Applications`, launch it from `/Applications`, and eject the mounted DMG before deleting the installer. If Gatekeeper still blocks the app, run:
 
 ```bash
 sudo xattr -rd com.apple.quarantine /Applications/Brows3.app
 ```
 
-For more details, see our [macOS Troubleshooting Guide](docs/MACOS_TROUBLESHOOTING.md).
+Releases can now use Apple signing/notarization credentials when configured in CI; unsigned community builds may still need the quarantine-removal step above. For more details, see our [macOS Troubleshooting Guide](docs/MACOS_TROUBLESHOOTING.md).
 
 ## Contributors
 

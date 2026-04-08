@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Custom S3 Profile Persistence**: Profiles saved without inline secrets now load correctly on startup instead of being discarded when `profiles.json` is parsed.
 - **Saved Secret Hydration**: Opening an existing manual or Custom S3 profile now repopulates the saved secret from secure storage in the edit form.
+- **macOS Distribution Path**: Added ad-hoc signing fallback in Tauri config and optional Apple signing/notarization credential support in CI to reduce "app is damaged" install failures on macOS releases.
 - **Presigned URL Validation**: Prevented invalid expiry values above the AWS 7-day limit from attempting a presign request.
 - **Release Workflow Diagnostics**: Improved signing-key checks and asset matching logs in the release workflow to make updater failures easier to diagnose.
 - **Updater Key Alignment**: Updated the Tauri updater public key to match the regenerated signing key used for releases.

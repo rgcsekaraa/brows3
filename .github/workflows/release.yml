@@ -56,6 +56,14 @@ jobs:
       - name: install frontend dependencies
         run: pnpm install
 
+      - name: Prepare App Store Connect API key (macOS only)
+        if: matrix.platform == 'macos-latest' && secrets.APPLE_API_PRIVATE_KEY != '' && secrets.APPLE_API_KEY != ''
+        shell: bash
+        run: |
+          mkdir -p private_keys
+          printf '%s' "${{ secrets.APPLE_API_PRIVATE_KEY }}" > "private_keys/AuthKey_${{ secrets.APPLE_API_KEY }}.p8"
+          echo "APPLE_API_KEY_PATH=$PWD/private_keys/AuthKey_${{ secrets.APPLE_API_KEY }}.p8" >> $GITHUB_ENV
+
       - name: Verify Signing Key
         shell: bash
         run: |
@@ -65,6 +73,24 @@ jobs:
           else
             echo "✅ TAURI_SIGNING_PRIVATE_KEY is configured"
             echo "SIGNING_AVAILABLE=true" >> $GITHUB_ENV
+          fi
+
+      - name: Verify macOS signing configuration
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" ]; then
+            echo "✅ Apple signing certificate configured"
+          else
+            echo "::warning::APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD not set. macOS builds will fall back to ad-hoc signing."
+          fi
+
+          if [ -n "${{ env.APPLE_API_KEY_PATH }}" ] && [ -n "${{ secrets.APPLE_API_KEY }}" ] && [ -n "${{ secrets.APPLE_API_ISSUER }}" ]; then
+            echo "✅ App Store Connect notarization configured"
+          elif [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            echo "✅ Apple ID notarization configured"
+          else
+            echo "::warning::No macOS notarization credentials configured. Browser-downloaded builds may still trigger Gatekeeper warnings."
           fi
 
       - name: Extract Release Notes
@@ -83,6 +109,15 @@ jobs:
           # Tauri signing keys - REQUIRED for auto-updates to work
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
         with:
           includeUpdaterJson: true
           tagName: app-v__VERSION__

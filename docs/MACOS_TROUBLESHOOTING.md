@@ -1,6 +1,14 @@
 # macOS: "App is damaged and can't be opened"
 
-If you see a message saying "Brows3.app is damaged and can't be opened" when trying to launch the downloaded application, don't worry! This is a standard macOS security behavior for Open Source apps that are not yet signed with a paid Apple Developer certificate.
+If you see a message saying "Brows3.app is damaged and can't be opened" when trying to launch the downloaded application, Gatekeeper is blocking that build. The proper fix is a signed and notarized release. Until that is available for the build you downloaded, use the steps below.
+
+## Recommended Install Flow
+
+1. Open the downloaded `.dmg`.
+2. Drag `Brows3.app` into `/Applications`.
+3. Eject the mounted `Brows3` disk image.
+4. Launch `Brows3.app` from `/Applications`, not from inside the mounted DMG.
+5. After the app is copied, move the downloaded `.dmg` file to the Bin if you no longer need it.
 
 ## 🛠️ The Fix (One Command)
 
@@ -19,11 +27,12 @@ sudo xattr -rd com.apple.quarantine /Applications/Brows3.app
 ---
 
 ## 🏗️ Why is this happening?
-To remove this message automatically, Apple requires developers to pay a **$99/year fee** for an "Application Notarization" service. Since Brows3 is a free, community-driven project, we prioritize building features over paying for certificates.
+Apple expects downloaded macOS applications to be code signed and, for smooth first-run installation, notarized. Tauri also documents macOS code signing as the way to prevent the app from being reported as broken when downloaded from the browser.
 
 By running the command above, you are telling macOS that you trust this community-built app.
 
 ## 🛡️ Other Verification Options
 If you are uncomfortable running the command above, you can also:
 1. **Build from source**: Following the [Installation Guide](../README.md#manual-build) ensures the app is built and signed locally on your machine.
-2. **Download via Homebrew** (Coming soon): Package managers often handle these trust issues for you.
+2. **Wait for a notarized release**: CI now supports Apple signing and notarization when the required Apple credentials are configured.
+3. **Download via Homebrew** (Coming soon): Package managers often handle these trust issues for you.
