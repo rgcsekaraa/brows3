@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ListObjectsResult, objectApi, S3Object } from '@/lib/tauri';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ListObjectsResult, objectApi } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
 import { useAppStore } from '@/store/appStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -28,45 +28,31 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
   });
   
   const { activeProfileId } = useProfileStore();
-  const { discoveredRegions } = useAppStore();
-  
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   
   const fetchIdRef = useRef(0);
-  const lastKey = useRef<string>('');
+  const lastDataKeyRef = useRef<string>('');
+  const viewKeyRef = useRef<string>('');
+  const loadedViewKeyRef = useRef<string>('');
   const fetchInProgress = useRef(false);
-
-  // STABILIZATION: Use a ref for activeRegion to avoid circular dependency
-  // logic: fetch -> updates store -> discoveredRegions changes -> activeRegion changes -> fetch triggers again
-  // We only want to transform the region once or when bucket/region props explicitly change
-  const activeRegionRef = useRef(bucketRegion);
-  useEffect(() => {
-      if (bucketName && discoveredRegions[bucketName]) {
-          activeRegionRef.current = discoveredRegions[bucketName];
-      } else if (bucketRegion) {
-          activeRegionRef.current = bucketRegion;
-      }
-  }, [discoveredRegions, bucketName, bucketRegion]);
-  
-  // Use the ref in the fetch function, don't expose it as a dependency that triggers re-run
-  // Only props should trigger re-run
-  const activeRegion = activeRegionRef.current;
 
   // Core fetch function
   const fetchItems = useCallback(async (bypassCache = false) => {
     if (!bucketName || !activeProfileId) return null;
     
     const currentFetchId = ++fetchIdRef.current;
+    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}`;
+    const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
     fetchInProgress.current = true;
     setIsLoading(true);
     setError(null);
 
     const key = `${bucketName}/${prefix}`;
-    if (key !== lastKey.current) {
+    if (key !== lastDataKeyRef.current) {
         setData(null);
-        lastKey.current = key;
+        lastDataKeyRef.current = key;
     }
 
     if (bypassCache) {
@@ -79,13 +65,14 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
       
       // RACING CONDITION FIX:
       // If a new fetch started while we were awaiting, ignore this result.
-      if (currentFetchId !== fetchIdRef.current) {
+      if (currentFetchId !== fetchIdRef.current || currentViewKey !== viewKeyRef.current) {
           return null;
       }
 
       setData(result);
       setContinuationToken(result.next_continuation_token || null);
       setHasMore(!!result.next_continuation_token);
+      loadedViewKeyRef.current = currentViewKey;
 
       if (result.bucket_region) {
           useAppStore.getState().setDiscoveredRegion(bucketName, result.bucket_region);
@@ -93,7 +80,7 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
       
       return result;
     } catch (err: any) {
-      if (currentFetchId !== fetchIdRef.current) return null;
+      if (currentFetchId !== fetchIdRef.current || currentViewKey !== viewKeyRef.current) return null;
 
       if (process.env.NODE_ENV === 'development') {
         console.warn(`Failed to load bucket "${bucketName}" with prefix "${prefix}":`, err);
@@ -106,14 +93,17 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
         fetchInProgress.current = false;
       }
     }
-  }, [bucketName, activeRegion, prefix, activeProfileId]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId]);
 
   useEffect(() => {
     let cancelled = false;
     const currentKey = `${activeProfileId}:${bucketName}:${prefix}`;
     
-    if (lastKey.current === currentKey) return;
-    lastKey.current = currentKey;
+    if (loadedViewKeyRef.current === currentKey) {
+      return;
+    }
+
+    viewKeyRef.current = currentKey;
 
     setData(null);
     setIsLoading(true);
@@ -128,8 +118,13 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
     };
 
     run();
-    return () => { cancelled = true; };
-  }, [bucketName, activeRegion, prefix, activeProfileId, fetchItems]);
+    return () => {
+      cancelled = true;
+      if (viewKeyRef.current === currentKey) {
+        viewKeyRef.current = '';
+      }
+    };
+  }, [bucketName, prefix, activeProfileId, fetchItems]);
 
   // Track last fetch time
   const lastFetchTime = useRef<number>(0);
@@ -156,9 +151,16 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
   const loadMore = useCallback(async () => {
     if (!bucketName || !activeProfileId || !continuationToken || isLoadingMore || fetchInProgress.current) return;
     
+    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}`;
+    const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
+    const currentFetchId = fetchIdRef.current;
+    const requestToken = continuationToken;
     setIsLoadingMore(true);
     try {
-       const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', continuationToken);
+       const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', requestToken);
+       if (currentViewKey !== viewKeyRef.current || currentFetchId !== fetchIdRef.current) {
+         return;
+       }
        setData(prev => {
          if (!prev) return result;
          const uniquePrefixes = Array.from(new Set([...prev.common_prefixes, ...result.common_prefixes]));
@@ -176,7 +178,7 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
     } finally {
        setIsLoadingMore(false);
     }
-  }, [bucketName, activeRegion, prefix, activeProfileId, continuationToken, isLoadingMore]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, continuationToken, isLoadingMore]);
 
   const refresh = useCallback(async () => {
     if (!bucketName || !activeProfileId) return;

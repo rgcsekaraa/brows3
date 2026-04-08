@@ -106,8 +106,6 @@ export default function PathBar() {
   const handleNavigate = (path: string) => {
     // 1. Prevent double navigation in the same frame (CRITICAL for race conditions)
     if (isNavigating.current) return;
-    isNavigating.current = true;
-    setTimeout(() => { isNavigating.current = false; }, 500);
 
     const trimmedPath = path.trim();
     
@@ -132,6 +130,8 @@ export default function PathBar() {
     }
 
     const { bucket, region: explicitRegion, prefix, hasTrailingSlash } = parsed;
+    isNavigating.current = true;
+    setTimeout(() => { isNavigating.current = false; }, 500);
     
     const activeProfileId = useProfileStore.getState().activeProfileId;
     const activeProfile = useProfileStore.getState().profiles.find(p => p.id === activeProfileId);

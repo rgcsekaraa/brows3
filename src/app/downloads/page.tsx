@@ -413,6 +413,7 @@ function GroupRow({ group }: { group: any }) {
     
     const activeCount = items.filter(j => j.status === 'InProgress' || j.status === 'Pending').length;
     const failedCount = items.filter(j => typeof j.status === 'object' && 'Failed' in j.status).length;
+    const cancelledCount = items.filter(j => j.status === 'Cancelled').length;
     
     // Date calculations
     const startTimes = items.map(j => j.created_at).filter(t => t > 0);
@@ -434,6 +435,12 @@ function GroupRow({ group }: { group: any }) {
     } else if (failedCount > 0) {
         statusLabel = `Failed (${failedCount})`;
         statusColor = 'error';
+    } else if (cancelledCount === items.length) {
+        statusLabel = `Cancelled (${cancelledCount})`;
+        statusColor = 'default';
+    } else if (cancelledCount > 0) {
+        statusLabel = `Partial (${cancelledCount} cancelled)`;
+        statusColor = 'warning';
     }
     
     return (

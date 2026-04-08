@@ -134,6 +134,7 @@ interface RowData {
   isFolder: boolean;
   size: number;
   modified: string;
+  modifiedTimestamp: number;
 }
 
 // Context type for Virtuoso table
@@ -307,7 +308,7 @@ const RowContent = memo(function RowContent({
          prevProps.row.key === nextProps.row.key &&
          prevProps.rowIndex === nextProps.rowIndex &&
          prevProps.row.size === nextProps.row.size &&
-         prevProps.row.modified === nextProps.row.modified;
+         prevProps.row.modifiedTimestamp === nextProps.row.modifiedTimestamp;
 });
 
 export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
@@ -339,6 +340,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
         isFolder: true,
         size: 0,
         modified: '',
+        modifiedTimestamp: 0,
       });
     }
     
@@ -351,6 +353,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
         isFolder: false,
         size: obj.size,
         modified: obj.last_modified ? new Date(obj.last_modified).toLocaleDateString() : '',
+        modifiedTimestamp: obj.last_modified ? new Date(obj.last_modified).getTime() : 0,
       });
     }
     
@@ -361,7 +364,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
       let cmp = 0;
       if (sortField === 'name') cmp = a.name.localeCompare(b.name);
       else if (sortField === 'size') cmp = a.size - b.size;
-      else if (sortField === 'date') cmp = a.modified.localeCompare(b.modified);
+      else if (sortField === 'date') cmp = a.modifiedTimestamp - b.modifiedTimestamp;
       
       return sortDirection === 'asc' ? cmp : -cmp;
     });
