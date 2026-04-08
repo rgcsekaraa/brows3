@@ -1,14 +1,13 @@
-const TEXT_EXTENSIONS = new Set([
-  'txt', 'md', 'markdown', 'json', 'xml', 'html', 'css', 'scss', 'less', 'sass',
-  'js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'php', 'java', 'c', 'cpp', 'h', 'hpp', 'cs',
-  'go', 'rs', 'swift', 'kt', 'kts', 'scala', 'groovy', 'pl', 'sh', 'bash', 'zsh', 'fish',
-  'bat', 'cmd', 'ps1', 'yml', 'yaml', 'toml', 'ini', 'conf', 'cfg', 'env', 'properties',
-  'gradle', 'sql', 'prisma', 'graphql', 'gql', 'log', 'csv', 'tsv', 'lock', 'gitignore',
-  'dockerfile', 'makefile', 'cmake', 'tf', 'hcl', 'lua', 'dart', 'r', 'ex', 'exs',
-]);
-
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'bmp', 'tiff']);
 const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'ogg', 'mov', 'mkv', 'avi']);
+const BINARY_EXTENSIONS = new Set([
+  'zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar',
+  'mp3', 'wav', 'flac', 'aac', 'm4a', 'opus',
+  'woff', 'woff2', 'ttf', 'otf', 'eot',
+  'exe', 'dll', 'so', 'dylib', 'bin', 'iso',
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'parquet', 'avro', 'orc', 'feather',
+]);
 
 const TEXT_CONTENT_TYPES = new Set([
   'application/json',
@@ -72,8 +71,11 @@ const kindFromName = (name: string): ObjectKind => {
   if (IMAGE_EXTENSIONS.has(extension)) return 'image';
   if (VIDEO_EXTENSIONS.has(extension)) return 'video';
   if (extension === 'pdf') return 'pdf';
-  if (TEXT_EXTENSIONS.has(extension) || name.startsWith('.') || extension === '') return 'text';
-  return 'binary';
+  if (BINARY_EXTENSIONS.has(extension)) return 'binary';
+
+  // Default ambiguous names to text. Content type, when present, remains authoritative.
+  // This avoids blocking editable objects simply because they use uncommon or no suffixes.
+  return 'text';
 };
 
 export const getObjectKind = (name: string, contentType?: string | null): ObjectKind => {
