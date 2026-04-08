@@ -780,11 +780,13 @@ function BucketContent() {
 
   // Existing single actions
   const handleDownload = async () => {
-    handleMenuClose();
     if (!bucketName || !selectedObject) return;
+    const target = selectedObject;
+    const selectedFile = displayData?.objects.find((obj) => obj.key === target.key);
+    handleMenuClose();
     
     try {
-      if (selectedObject.isFolder) {
+      if (target.isFolder) {
         // Select directory for folder download
         const downloadDir = await open({
             directory: true,
@@ -794,25 +796,24 @@ function BucketContent() {
         
         if (downloadDir) {
             const dir = Array.isArray(downloadDir) ? downloadDir[0] : downloadDir;
-            const folderName = selectedObject.key.split('/').filter(Boolean).pop() || 'folder';
+            const folderName = target.key.split('/').filter(Boolean).pop() || 'folder';
             const localPath = `${dir}/${folderName}`;
-            await transferApi.queueFolderDownload(bucketName, bucketRegion, selectedObject.key, localPath);
+            await transferApi.queueFolderDownload(bucketName, bucketRegion, target.key, localPath);
             displaySuccess('Folder download queued', '/downloads');
         }
       } else {
-        const filename = selectedObject.key.split('/').pop() || 'download';
+        const filename = target.key.split('/').pop() || 'download';
         const savePath = await save({
           defaultPath: filename,
           title: 'Save file as'
         });
         
         if (savePath) {
-          const selectedFile = displayData?.objects.find((obj) => obj.key === selectedObject.key);
           // Use Transfer Queue
           await transferApi.queueDownload(
               bucketName, 
               bucketRegion, 
-              selectedObject.key, 
+              target.key, 
               savePath, 
               selectedFile?.size || 0
           );
@@ -1171,7 +1172,8 @@ function BucketContent() {
           const filename = key.split('/').pop() || 'download';
           const savePath = await save({ defaultPath: filename, title: 'Save file as' });
           if (savePath && bucketName) {
-            const jobId = await transferApi.queueDownload(bucketName, bucketRegion, key, savePath, 0);
+            const objectSize = displayData?.objects.find((obj) => obj.key === key)?.size || 0;
+            const jobId = await transferApi.queueDownload(bucketName, bucketRegion, key, savePath, objectSize);
             // Add to transfer store so it shows in the panel
             addJob({
               id: jobId,
@@ -1241,6 +1243,7 @@ function BucketContent() {
         {selectedObject?.isFolder && (
           <MenuItem onClick={async () => {
             if (!selectedObject || !bucketName) return;
+            const target = selectedObject;
             handleMenuClose();
             
             // Get folder to save to
@@ -1253,11 +1256,11 @@ function BucketContent() {
             
             try {
               const dir = Array.isArray(folderPath) ? folderPath[0] : folderPath;
-              const folderName = selectedObject.key.split('/').filter(Boolean).pop() || 'folder';
+              const folderName = target.key.split('/').filter(Boolean).pop() || 'folder';
               const localPath = `${dir}/${folderName}`;
               
               // Use queueFolderDownload for proper grouping
-              const count = await transferApi.queueFolderDownload(bucketName, bucketRegion, selectedObject.key, localPath);
+              const count = await transferApi.queueFolderDownload(bucketName, bucketRegion, target.key, localPath);
               displaySuccess(`Queued ${count} files for download`, '/downloads');
             } catch (err) {
               displayError('Failed to download folder', String(err));
