@@ -2,9 +2,10 @@ use crate::commands::profiles::ProfileState;
 use crate::s3::S3State;
 use crate::error::Result;
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::types::{Delete, ObjectIdentifier};
 use tauri::State;
-use std::path::Path;
 use std::collections::HashSet;
+use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
@@ -335,6 +336,51 @@ async fn copy_single_object(
     Ok(())
 }
 
+fn build_delete_request(chunk: &[String]) -> Result<Delete> {
+    let mut delete_ids = Vec::new();
+    for key in chunk {
+        let obj_id = ObjectIdentifier::builder()
+            .key(key)
+            .build()
+            .map_err(|e| crate::error::AppError::S3Error(format!("Invalid object key '{}': {}", key, e)))?;
+        delete_ids.push(obj_id);
+    }
+
+    Delete::builder()
+        .set_objects(Some(delete_ids))
+        .build()
+        .map_err(|e| crate::error::AppError::S3Error(format!("Failed to build delete request: {}", e)))
+}
+
+fn validate_delete_result(
+    bucket_name: &str,
+    response: &aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput,
+) -> Result<()> {
+    let Some(errors) = response.errors.as_ref() else {
+        return Ok(());
+    };
+
+    if errors.is_empty() {
+        return Ok(());
+    }
+
+    let failures = errors
+        .iter()
+        .map(|err| {
+            let key = err.key.as_deref().unwrap_or("<unknown>");
+            let code = err.code.as_deref().unwrap_or("Unknown");
+            let message = err.message.as_deref().unwrap_or("Delete failed");
+            format!("{key} ({code}: {message})")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    Err(crate::error::AppError::S3Error(format!(
+        "Failed to delete some objects in bucket '{}': {}",
+        bucket_name, failures
+    )))
+}
+
 #[tauri::command]
 pub async fn delete_objects(
     bucket_name: String,
@@ -371,19 +417,7 @@ pub async fn delete_objects(
 
     // Delete in batches of 1000
     for chunk in keys.chunks(1000) {
-        let mut delete_ids = Vec::new();
-        for key in chunk {
-            let obj_id = aws_sdk_s3::types::ObjectIdentifier::builder()
-                .key(key)
-                .build()
-                .map_err(|e| crate::error::AppError::S3Error(format!("Invalid object key '{}': {}", key, e)))?;
-            delete_ids.push(obj_id);
-        }
-        
-        let delete = aws_sdk_s3::types::Delete::builder()
-            .set_objects(Some(delete_ids))
-            .build()
-            .map_err(|e| crate::error::AppError::S3Error(format!("Failed to build delete request: {}", e)))?;
+        let delete = build_delete_request(chunk)?;
 
         let result = client
             .delete_objects()
@@ -393,7 +427,7 @@ pub async fn delete_objects(
             .await;
 
         match result {
-             Ok(_) => {},
+             Ok(output) => validate_delete_result(&bucket_name, &output)?,
              Err(err) => {
                  // Retry logic for bulk delete
                  log::warn!("delete_objects failed, attempting region discovery: {}", err);
@@ -412,12 +446,14 @@ pub async fn delete_objects(
                          s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
                      };
                      
-                     new_client.delete_objects()
+                     let output = new_client.delete_objects()
                          .bucket(&bucket_name)
                          .delete(delete)
                          .send()
                          .await
                          .map_err(|e| crate::error::AppError::S3Error(format!("Retry delete failed: {}", e)))?;
+
+                     validate_delete_result(&bucket_name, &output)?;
                  } else {
                      return Err(crate::error::AppError::S3Error(err.to_string()));
                  }
@@ -505,23 +541,40 @@ pub async fn move_object(
         let mut all_keys: Vec<String> = unique_keys.into_iter().collect();
         all_keys.sort();
 
+        let destination_folder_key = if destination_key.ends_with('/') {
+            destination_key.clone()
+        } else {
+            format!("{}/", destination_key)
+        };
+
         // Move each object individually
         for key in &all_keys {
             // Calculate destination key by replacing source prefix with destination prefix
-            let relative_path = key.strip_prefix(&source_key).unwrap_or(key);
-            let new_key = format!("{}{}", destination_key, relative_path);
-            
-            // Copy
-            copy_object(
-                source_bucket.clone(),
-                source_region_resolved.clone(),
-                key.clone(),
-                destination_bucket.clone(),
-                destination_region.clone(),
-                new_key,
-                profile_state.clone(),
-                s3_state.clone()
-            ).await?;
+            if key == &source_key {
+                copy_single_object(
+                    &source_bucket,
+                    key,
+                    &destination_bucket,
+                    destination_region.clone(),
+                    &destination_folder_key,
+                    &active_profile,
+                    &s3_state,
+                ).await?;
+            } else {
+                let relative_path = key.strip_prefix(&source_key).unwrap_or(key);
+                let new_key = format!("{}{}", destination_key, relative_path);
+
+                copy_object(
+                    source_bucket.clone(),
+                    source_region_resolved.clone(),
+                    key.clone(),
+                    destination_bucket.clone(),
+                    destination_region.clone(),
+                    new_key,
+                    profile_state.clone(),
+                    s3_state.clone()
+                ).await?;
+            }
         }
         
         // Delete all source objects at once
