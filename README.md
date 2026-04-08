@@ -260,12 +260,6 @@ Want to become a contributor? Check out our [Contributing Guide](https://github.
 2. **Standard Workflow**: Fork -> Branch -> Commit -> Pull Request.
 3. **Code Quality**: Ensure Rust code is formatted with `cargo fmt` and TS code with `pnpm lint`.
 
-## Roadmap
-- [x] Multi-Account Support (Profiles)
-- [ ] S3-Compatible Storage support (MinIO, R2, etc.)
-- [ ] Sync Folders (Local <-> S3)
-- [x] Dark Mode / Custom Themes (Defaults to system, toggle available)
-
 ## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
