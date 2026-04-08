@@ -395,15 +395,24 @@ function BucketContent() {
   }, []);
 
   const handleSelectAll = useCallback((checked: boolean) => {
-    if (checked && displayData) {
-      const allKeys = [
-        ...displayData.common_prefixes, 
-        ...displayData.objects.map(o => o.key)
-      ];
-      setSelectedKeys(new Set(allKeys));
-    } else {
-      setSelectedKeys(new Set());
+    if (!displayData) {
+      return;
     }
+
+    const visibleKeys = [
+      ...displayData.common_prefixes,
+      ...displayData.objects.map((o) => o.key),
+    ];
+
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        visibleKeys.forEach((key) => next.add(key));
+      } else {
+        visibleKeys.forEach((key) => next.delete(key));
+      }
+      return next;
+    });
   }, [displayData]);
 
   const clearSelection = useCallback(() => setSelectedKeys(new Set()), []);

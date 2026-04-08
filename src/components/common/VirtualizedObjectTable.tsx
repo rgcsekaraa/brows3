@@ -372,9 +372,13 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
     return result;
   }, [folders, objects, sortField, sortDirection]);
 
-  // Memoize selection state for header
-  const allSelected = rows.length > 0 && selectedKeys.size === rows.length;
-  const someSelected = selectedKeys.size > 0 && selectedKeys.size < rows.length;
+  // Header selection state should reflect only the rows visible in the current table view.
+  const visibleSelectedCount = useMemo(
+    () => rows.reduce((count, row) => count + (selectedKeys.has(row.key) ? 1 : 0), 0),
+    [rows, selectedKeys]
+  );
+  const allSelected = rows.length > 0 && visibleSelectedCount === rows.length;
+  const someSelected = visibleSelectedCount > 0 && visibleSelectedCount < rows.length;
 
 
 
