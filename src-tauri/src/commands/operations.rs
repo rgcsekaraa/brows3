@@ -9,6 +9,26 @@ use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
+async fn detect_and_cache_bucket_region(
+    active_profile: &crate::credentials::Profile,
+    bucket_name: &str,
+    s3_state: &State<'_, S3State>,
+) -> Result<Option<String>> {
+    let retry_client = {
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.get_client(active_profile).await?.clone()
+    };
+
+    let detected_region = crate::s3::get_bucket_region(&retry_client, bucket_name).await.ok();
+
+    if let Some(ref new_region) = detected_region {
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.set_bucket_region(bucket_name, new_region.clone());
+    }
+
+    Ok(detected_region)
+}
+
 #[tauri::command]
 pub async fn put_object(
     bucket_name: String,
@@ -47,9 +67,9 @@ pub async fn put_object(
         .bucket(&bucket_name)
         .key(&key);
 
-    if let Some(path) = local_path {
+    if let Some(ref path) = local_path {
         // Upload file
-        let body = ByteStream::from_path(Path::new(&path)).await
+        let body = ByteStream::from_path(Path::new(path)).await
             .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
         request = request.body(body);
     } else {
@@ -57,10 +77,36 @@ pub async fn put_object(
         request = request.body(ByteStream::from_static(b""));
     }
 
-    request
-        .send()
-        .await
-        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+    if let Err(err) = request.send().await {
+        log::warn!("put_object failed, attempting region discovery: {}", err);
+
+        if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
+            let new_client = {
+                let mut s3_manager = s3_state.write().await;
+                s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+            };
+
+            let mut retry_request = new_client
+                .put_object()
+                .bucket(&bucket_name)
+                .key(&key);
+
+            if let Some(ref path) = local_path {
+                let body = ByteStream::from_path(Path::new(path)).await
+                    .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
+                retry_request = retry_request.body(body);
+            } else {
+                retry_request = retry_request.body(ByteStream::from_static(b""));
+            }
+
+            retry_request
+                .send()
+                .await
+                .map_err(|e| crate::error::AppError::S3Error(format!("Retry put failed: {}", e)))?;
+        } else {
+            return Err(crate::error::AppError::S3Error(err.to_string()));
+        }
+    }
 
     Ok(())
 }
@@ -99,13 +145,36 @@ pub async fn get_object(
     };
 
     // Get object
-    let mut output = client
+    let result = client
         .get_object()
         .bucket(&bucket_name)
         .key(&key)
         .send()
-        .await
-        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+        .await;
+
+    let mut output = match result {
+        Ok(output) => output,
+        Err(err) => {
+            log::warn!("get_object failed, attempting region discovery: {}", err);
+
+            if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
+                let new_client = {
+                    let mut s3_manager = s3_state.write().await;
+                    s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                };
+
+                new_client
+                    .get_object()
+                    .bucket(&bucket_name)
+                    .key(&key)
+                    .send()
+                    .await
+                    .map_err(|e| crate::error::AppError::S3Error(format!("Retry get failed: {}", e)))?
+            } else {
+                return Err(crate::error::AppError::S3Error(err.to_string()));
+            }
+        }
+    };
 
     if let Some(parent) = Path::new(&local_path).parent() {
         if !parent.as_os_str().is_empty() {
@@ -161,13 +230,33 @@ pub async fn delete_object(
         }
     };
 
-    client
+    let result = client
         .delete_object()
         .bucket(&bucket_name)
         .key(&key)
         .send()
-        .await
-        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+        .await;
+
+    if let Err(err) = result {
+        log::warn!("delete_object failed, attempting region discovery: {}", err);
+
+        if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
+            let new_client = {
+                let mut s3_manager = s3_state.write().await;
+                s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+            };
+
+            new_client
+                .delete_object()
+                .bucket(&bucket_name)
+                .key(&key)
+                .send()
+                .await
+                .map_err(|e| crate::error::AppError::S3Error(format!("Retry delete failed: {}", e)))?;
+        } else {
+            return Err(crate::error::AppError::S3Error(err.to_string()));
+        }
+    }
 
     Ok(())
 }
