@@ -3,10 +3,13 @@
 [![Release](https://img.shields.io/github/v/release/rgcsekaraa/brows3)](https://github.com/rgcsekaraa/brows3/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://github.com/rgcsekaraa/brows3/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/rgcsekaraa/brows3/actions/workflows/release.yml)
+[![Website](https://img.shields.io/badge/Website-brows3.app-blue)](https://www.brows3.app/)
 
 **Brows3** is a high-performance, open-source Amazon S3 browser, S3 explorer, and S3 desktop client designed for developers who demand speed. Built with a **Rust** core and a **Tauri**-powered frontend, Brows3 solves the "slow listing" problem of traditional S3 browsers through its unique prefix-indexed caching architecture.
 
 Navigating through buckets with millions of objects is now as fast as browsing your local file system.
+
+### 🌐 [Official Website: brows3.app](https://www.brows3.app/)
 
 Brows3 is built for people searching for a fast **S3 browser**, **AWS S3 client**, **S3 bucket explorer**, **S3 file manager**, or **S3-compatible storage browser** for providers like **MinIO**, **Cloudflare R2**, **Wasabi**, and **DigitalOcean Spaces**.
 
