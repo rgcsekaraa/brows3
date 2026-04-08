@@ -29,6 +29,34 @@ async fn detect_and_cache_bucket_region(
     Ok(detected_region)
 }
 
+fn validate_folder_target(
+    source_bucket: &str,
+    source_key: &str,
+    destination_bucket: &str,
+    destination_key: &str,
+) -> Result<()> {
+    if source_bucket != destination_bucket {
+        return Ok(());
+    }
+
+    if source_key.ends_with('/') {
+        let normalized_destination = if destination_key.ends_with('/') {
+            destination_key.to_string()
+        } else {
+            format!("{}/", destination_key)
+        };
+
+        if normalized_destination.starts_with(source_key) {
+            return Err(crate::error::AppError::ConfigError(format!(
+                "Cannot copy or move folder '{}' into its own subtree '{}'",
+                source_key, destination_key
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn put_object(
     bucket_name: String,
@@ -272,6 +300,11 @@ pub async fn copy_object(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    if source_bucket == destination_bucket && source_key == destination_key {
+        return Ok(());
+    }
+    validate_folder_target(&source_bucket, &source_key, &destination_bucket, &destination_key)?;
+
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
         .get_active_profile()
@@ -570,6 +603,11 @@ pub async fn move_object(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    if source_bucket == destination_bucket && source_key == destination_key {
+        return Ok(());
+    }
+    validate_folder_target(&source_bucket, &source_key, &destination_bucket, &destination_key)?;
+
     // Check if this is a folder move (key ends with /)
     if source_key.ends_with('/') {
         // RECURSIVE FOLDER MOVE
