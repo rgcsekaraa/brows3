@@ -16,6 +16,7 @@ import {
   ExpandLess as ExpandLessIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
+  Cancel as CancelIcon,
   SwapVert as SwapIcon,
 } from '@mui/icons-material';
 import { useTransferStore } from '@/store/transferStore';
@@ -41,12 +42,13 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
   
   const getStatusIcon = (status: TransferJob['status']) => {
     if (status === 'Completed') return <CheckCircleIcon color="success" fontSize="small" />;
+    if (status === 'Cancelled') return <CancelIcon color="disabled" fontSize="small" />;
     if (typeof status === 'object' && 'Failed' in status) return <ErrorIcon color="error" fontSize="small" />;
     return <SwapIcon color="primary" fontSize="small" className="spin-animation" />;
   };
 
   // Don't show if no jobs or user closed it
-  if (jobs.length === 0 || isPanelHidden) return null;
+  if (filteredJobs.length === 0 || isPanelHidden) return null;
 
   return (
     <Box 
@@ -123,7 +125,12 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
                ) : (
                  filteredJobs.slice(0, 8).map((job) => {
                    const isError = typeof job.status === 'object' && 'Failed' in job.status;
-                   const progress = job.total_bytes > 0 ? (job.processed_bytes / job.total_bytes) * 100 : 0;
+                   const progress =
+                     job.status === 'Completed'
+                       ? 100
+                       : job.total_bytes > 0
+                         ? (job.processed_bytes / job.total_bytes) * 100
+                         : 0;
                    
                    return (
                      <div key={job.id}>
