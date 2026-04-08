@@ -806,13 +806,14 @@ function BucketContent() {
         });
         
         if (savePath) {
+          const selectedFile = displayData?.objects.find((obj) => obj.key === selectedObject.key);
           // Use Transfer Queue
           await transferApi.queueDownload(
               bucketName, 
               bucketRegion, 
               selectedObject.key, 
               savePath, 
-              (selectedObject as any).size || 0
+              selectedFile?.size || 0
           );
           displaySuccess('Download queued', '/downloads');
         }
