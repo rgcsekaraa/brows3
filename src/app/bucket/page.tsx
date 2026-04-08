@@ -836,33 +836,36 @@ function BucketContent() {
   // Rename
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  const [renameTarget, setRenameTarget] = useState<{ key: string; isFolder: boolean } | null>(null);
   
   const handleRenamePrompt = () => {
-    handleMenuClose();
     if (selectedObject) {
       const name = selectedObject.key.split('/').filter(Boolean).pop() || '';
+      setRenameTarget(selectedObject);
       setRenameValue(name);
       setRenameOpen(true);
     }
+    handleMenuClose();
   };
 
   const handleRename = async () => {
-    if (!bucketName || !selectedObject || !renameValue.trim()) return;
+    if (!bucketName || !renameTarget || !renameValue.trim()) return;
     try {
-       const oldKey = selectedObject.key;
-       // Preserve 'folder/' structure if needed, or just filename
-       // Assuming rename is just filename change in current directory
-       const parent = oldKey.substring(0, oldKey.lastIndexOf(oldKey.endsWith('/') ? oldKey.slice(0, -1).split('/').pop() + '/' : oldKey.split('/').pop() || ''));
-       // Actually simpler: we are at `prefix`
-       // new key = prefix + renameValue
-       // BUT if we selected something from a subfolder search? 
-       // For now, assume rename happens in current view `prefix`.
-       let newKey = prefix + renameValue.trim();
-       if (selectedObject.isFolder && !newKey.endsWith('/')) newKey += '/';
+       const oldKey = renameTarget.key;
+       const normalizedOldKey = renameTarget.isFolder && oldKey.endsWith('/')
+         ? oldKey.slice(0, -1)
+         : oldKey;
+       const parentPrefix = normalizedOldKey.includes('/')
+         ? normalizedOldKey.slice(0, normalizedOldKey.lastIndexOf('/') + 1)
+         : '';
+
+       let newKey = `${parentPrefix}${renameValue.trim()}`;
+       if (renameTarget.isFolder && !newKey.endsWith('/')) newKey += '/';
        
        await operationsApi.moveObject(bucketName, bucketRegion, oldKey, bucketName, bucketRegion, newKey);
        displaySuccess('Renamed successfully');
        setRenameOpen(false);
+       setRenameTarget(null);
        refresh();
     } catch (err) {
        displayError(`Rename failed: ${err}`);
@@ -1390,7 +1393,7 @@ function BucketContent() {
       </Dialog>
       
       {/* Rename Dialog */}
-      <Dialog open={renameOpen} onClose={() => setRenameOpen(false)}>
+      <Dialog open={renameOpen} onClose={() => { setRenameOpen(false); setRenameTarget(null); }}>
         <DialogTitle>Rename</DialogTitle>
         <DialogContent>
           <TextField
@@ -1418,7 +1421,7 @@ function BucketContent() {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRenameOpen(false)}>Cancel</Button>
+          <Button onClick={() => { setRenameOpen(false); setRenameTarget(null); }}>Cancel</Button>
           <Button 
             onClick={handleRename} 
             disabled={
