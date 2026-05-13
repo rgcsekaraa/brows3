@@ -66,13 +66,13 @@ impl S3ClientManager {
 
         let sdk_config = match &profile.credential_type {
             CredentialType::Environment => {
-                aws_config::defaults(aws_config::BehaviorVersion::latest())
+                crate::aws_http::config_defaults()
                     .region(region)
                     .load()
                     .await
             }
             CredentialType::SharedConfig { profile_name } => {
-                aws_config::defaults(aws_config::BehaviorVersion::latest())
+                crate::aws_http::config_defaults()
                     .region(region)
                     .profile_name(profile_name.as_deref().unwrap_or("default"))
                     .load()
@@ -89,7 +89,7 @@ impl S3ClientManager {
                     None,
                     "manual",
                 );
-                aws_config::defaults(aws_config::BehaviorVersion::latest())
+                crate::aws_http::config_defaults()
                     .region(region)
                     .credentials_provider(creds)
                     .load()
@@ -107,7 +107,7 @@ impl S3ClientManager {
                     None,
                     "custom_endpoint",
                 );
-                aws_config::defaults(aws_config::BehaviorVersion::latest())
+                crate::aws_http::config_defaults()
                     .region(region)
                     .credentials_provider(creds)
                     .load()

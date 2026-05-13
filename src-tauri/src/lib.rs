@@ -1,3 +1,4 @@
+pub mod aws_http;
 pub mod commands;
 pub mod credentials;
 pub mod error;
@@ -21,6 +22,8 @@ pub fn run() {
         .manage(Arc::new(RwLock::new(S3ClientManager::new())))
         .manage(Arc::new(TransferManager::new()))
         .setup(|app| {
+            aws_http::init_crypto_provider();
+
             // Add native menu on macOS to enable Copy/Paste/Cut/SelectAll/Undo/Redo shortcuts
             // Add native menu to enable standard shortcuts and window controls
             {

@@ -103,13 +103,13 @@ pub async fn test_connection(
     
     let config = match &profile.credential_type {
         crate::credentials::CredentialType::Environment => {
-            aws_config::defaults(aws_config::BehaviorVersion::latest())
+            crate::aws_http::config_defaults()
                 .region(region)
                 .load()
                 .await
         }
         crate::credentials::CredentialType::SharedConfig { profile_name } => {
-            aws_config::defaults(aws_config::BehaviorVersion::latest())
+            crate::aws_http::config_defaults()
                 .region(region)
                 .profile_name(profile_name.as_deref().unwrap_or("default"))
                 .load()
@@ -123,7 +123,7 @@ pub async fn test_connection(
                 None,
                 "manual",
             );
-            aws_config::defaults(aws_config::BehaviorVersion::latest())
+            crate::aws_http::config_defaults()
                 .region(region)
                 .credentials_provider(creds)
                 .load()
@@ -137,7 +137,7 @@ pub async fn test_connection(
                 None,
                 "custom_endpoint",
             );
-            aws_config::defaults(aws_config::BehaviorVersion::latest())
+            crate::aws_http::config_defaults()
                 .region(region)
                 .credentials_provider(creds)
                 .load()

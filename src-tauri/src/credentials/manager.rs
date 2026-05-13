@@ -289,14 +289,36 @@ impl ProfileManager {
             ) if secret_access_key.is_empty() => {
                 *secret_access_key = old_secret.clone();
             }
+            (
+                CredentialType::Manual { secret_access_key: old_secret, .. },
+                CredentialType::CustomEndpoint { secret_access_key, .. },
+            ) if secret_access_key.is_empty() && !old_secret.is_empty() => {
+                *secret_access_key = old_secret.clone();
+            }
+            (
+                CredentialType::CustomEndpoint { secret_access_key: old_secret, .. },
+                CredentialType::Manual { secret_access_key, .. },
+            ) if secret_access_key.is_empty() && !old_secret.is_empty() => {
+                *secret_access_key = old_secret.clone();
+            }
             _ => {}
         }
 
-        if matches!(existing_profile.credential_type, CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. }) {
+        // Only drop keychain material when leaving manual / S3-compatible auth. Previously we
+        // always deleted here and then re-stored; if `store_secret` skipped (empty secret payload),
+        // the secret was wiped while profiles.json still pointed at this profile — breaking S3.
+        let existing_used_keychain = matches!(
+            existing_profile.credential_type,
+            CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. }
+        );
+        let new_uses_keychain = matches!(
+            profile.credential_type,
+            CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. }
+        );
+        if existing_used_keychain && !new_uses_keychain {
             self.remove_secret(&existing_profile);
         }
 
-        // Update secret in keychain if needed
         self.store_secret(&profile)?;
 
         self.data.profiles.insert(id.to_string(), profile.clone());
