@@ -82,7 +82,7 @@ jobs:
             args: ""
           - platform: "ubuntu-22.04-arm" # for Linux ARM64
             args: ""
-          - platform: "windows-latest" # for Windows
+          - platform: "windows-2025-vs2026" # for Windows
             args: ""
 
     runs-on: ${{ matrix.platform }}
@@ -96,7 +96,7 @@ jobs:
           package-manager-cache: false
 
       - name: install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6.0.8
         with:
           version: 11.2.2
 
@@ -114,7 +114,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev
 
       - name: install WiX v4 (windows only)
-        if: matrix.platform == 'windows-latest'
+        if: startsWith(matrix.platform, 'windows-')
         run: dotnet tool install --global wix
 
       - name: install frontend dependencies
@@ -150,7 +150,7 @@ jobs:
           pnpm tauri build ${{ matrix.args }}
 
       - name: Create Windows portable zip
-        if: matrix.platform == 'windows-latest'
+        if: startsWith(matrix.platform, 'windows-')
         shell: bash
         run: |
           PORTABLE_DIR="src-tauri/target/release/bundle/portable/Brows3_${RELEASE_VERSION}_x64-portable"
