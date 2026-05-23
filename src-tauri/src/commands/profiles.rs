@@ -1,7 +1,7 @@
 use crate::credentials::{Profile, ProfileManager};
 use serde::{Deserialize, Serialize};
-use tauri::State;
 use std::sync::Arc;
+use tauri::State;
 use tokio::sync::RwLock;
 
 pub type ProfileState = Arc<RwLock<ProfileManager>>;
@@ -15,18 +15,13 @@ pub struct TestConnectionResult {
 }
 
 #[tauri::command]
-pub async fn list_profiles(
-    state: State<'_, ProfileState>,
-) -> Result<Vec<Profile>, String> {
+pub async fn list_profiles(state: State<'_, ProfileState>) -> Result<Vec<Profile>, String> {
     let manager = state.read().await;
     manager.list_profiles().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_profile(
-    id: String,
-    state: State<'_, ProfileState>,
-) -> Result<Profile, String> {
+pub async fn get_profile(id: String, state: State<'_, ProfileState>) -> Result<Profile, String> {
     let manager = state.read().await;
     manager.get_profile(&id).await.map_err(|e| e.to_string())
 }
@@ -37,7 +32,10 @@ pub async fn add_profile(
     state: State<'_, ProfileState>,
 ) -> Result<Profile, String> {
     let mut manager = state.write().await;
-    manager.add_profile(profile).await.map_err(|e| e.to_string())
+    manager
+        .add_profile(profile)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -47,33 +45,34 @@ pub async fn update_profile(
     state: State<'_, ProfileState>,
 ) -> Result<Profile, String> {
     let mut manager = state.write().await;
-    manager.update_profile(&id, profile).await.map_err(|e| e.to_string())
+    manager
+        .update_profile(&id, profile)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn delete_profile(
-    id: String,
-    state: State<'_, ProfileState>,
-) -> Result<(), String> {
+pub async fn delete_profile(id: String, state: State<'_, ProfileState>) -> Result<(), String> {
     let mut manager = state.write().await;
     manager.delete_profile(&id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn set_active_profile(
-    id: String,
-    state: State<'_, ProfileState>,
-) -> Result<(), String> {
+pub async fn set_active_profile(id: String, state: State<'_, ProfileState>) -> Result<(), String> {
     let mut manager = state.write().await;
-    manager.set_active_profile(&id).await.map_err(|e| e.to_string())
+    manager
+        .set_active_profile(&id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_active_profile(
-    state: State<'_, ProfileState>,
-) -> Result<Option<Profile>, String> {
+pub async fn get_active_profile(state: State<'_, ProfileState>) -> Result<Option<Profile>, String> {
     let manager = state.read().await;
-    manager.get_active_profile().await.map_err(|e| e.to_string())
+    manager
+        .get_active_profile()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -82,25 +81,34 @@ pub async fn test_connection(
     state: State<'_, ProfileState>,
 ) -> Result<TestConnectionResult, String> {
     use aws_config::Region;
-    use aws_sdk_s3::Client;
     use aws_sdk_s3::error::ProvideErrorMetadata;
+    use aws_sdk_s3::Client;
 
     // Hydrate profile secrets from keychain if they are empty
     {
         let manager = state.read().await;
         let needs_hydration = match &profile.credential_type {
-            crate::credentials::CredentialType::Manual { secret_access_key, .. } => secret_access_key.is_empty(),
-            crate::credentials::CredentialType::CustomEndpoint { secret_access_key, .. } => secret_access_key.is_empty(),
+            crate::credentials::CredentialType::Manual {
+                secret_access_key, ..
+            } => secret_access_key.is_empty(),
+            crate::credentials::CredentialType::CustomEndpoint {
+                secret_access_key, ..
+            } => secret_access_key.is_empty(),
             _ => false,
         };
-        
+
         if needs_hydration && !profile.id.is_empty() {
             profile = manager.hydrate_profile(profile);
         }
     }
-    
-    let region = Region::new(profile.region.clone().unwrap_or_else(|| "us-east-1".to_string()));
-    
+
+    let region = Region::new(
+        profile
+            .region
+            .clone()
+            .unwrap_or_else(|| "us-east-1".to_string()),
+    );
+
     let config = match &profile.credential_type {
         crate::credentials::CredentialType::Environment => {
             aws_config::defaults(aws_config::BehaviorVersion::latest())
@@ -115,7 +123,10 @@ pub async fn test_connection(
                 .load()
                 .await
         }
-        crate::credentials::CredentialType::Manual { access_key_id, secret_access_key } => {
+        crate::credentials::CredentialType::Manual {
+            access_key_id,
+            secret_access_key,
+        } => {
             let creds = aws_credential_types::Credentials::new(
                 access_key_id,
                 secret_access_key,
@@ -129,7 +140,11 @@ pub async fn test_connection(
                 .load()
                 .await
         }
-        crate::credentials::CredentialType::CustomEndpoint { endpoint_url: _, access_key_id, secret_access_key } => {
+        crate::credentials::CredentialType::CustomEndpoint {
+            endpoint_url: _,
+            access_key_id,
+            secret_access_key,
+        } => {
             let creds = aws_credential_types::Credentials::new(
                 access_key_id,
                 secret_access_key,
@@ -144,19 +159,22 @@ pub async fn test_connection(
                 .await
         }
     };
-    
+
     // Build S3 client
     let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&config);
-    
+
     // Apply custom endpoint if specified
-    if let crate::credentials::CredentialType::CustomEndpoint { endpoint_url, .. } = &profile.credential_type {
+    if let crate::credentials::CredentialType::CustomEndpoint { endpoint_url, .. } =
+        &profile.credential_type
+    {
+        let normalized_url = crate::s3::client::normalize_endpoint_url(endpoint_url);
         s3_config_builder = s3_config_builder
-            .endpoint_url(endpoint_url)
+            .endpoint_url(&normalized_url)
             .force_path_style(true);
     }
-    
+
     let client = Client::from_conf(s3_config_builder.build());
-    
+
     // Test connection by listing buckets
     match client.list_buckets().send().await {
         Ok(response) => {
@@ -164,11 +182,29 @@ pub async fn test_connection(
             Ok(TestConnectionResult {
                 success: true,
                 message: format!("Connected successfully! Found {} bucket(s)", bucket_count),
-                region: Some(profile.region.clone().unwrap_or_else(|| "us-east-1".to_string())),
+                region: Some(
+                    profile
+                        .region
+                        .clone()
+                        .unwrap_or_else(|| "us-east-1".to_string()),
+                ),
                 bucket_count: Some(bucket_count),
             })
         }
         Err(e) => {
+            let error_string = e.to_string();
+
+            // Check for dispatch failure - common with S3-compatible providers
+            // when the endpoint URL is malformed or unreachable
+            if error_string.contains("dispatch failure") {
+                return Ok(TestConnectionResult {
+                    success: false,
+                    message: "Connection failed: Could not reach the endpoint. Please verify the endpoint URL is correct (e.g., https://us-east-1.linodeobjects.com) and that your network can reach it.".to_string(),
+                    region: None,
+                    bucket_count: None,
+                });
+            }
+
             let s3_err = e.as_service_error();
             let code = s3_err.and_then(|s| s.code()).unwrap_or("Unknown");
             let message = s3_err.and_then(|s| s.message()).unwrap_or("No message");
@@ -202,21 +238,21 @@ pub struct DiscoveredProfile {
 
 #[tauri::command]
 pub async fn discover_local_profiles() -> Result<Vec<DiscoveredProfile>, String> {
-    use std::path::PathBuf;
     use std::collections::HashMap;
-    
+    use std::path::PathBuf;
+
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    
+
     // Profiles to check
     let mut files_to_check = Vec::new();
-    
+
     // Respect AWS environment variables for file locations
     if let Ok(val) = std::env::var("AWS_SHARED_CREDENTIALS_FILE") {
         files_to_check.push(PathBuf::from(val));
     } else {
         files_to_check.push(home.join(".aws").join("credentials"));
     }
-    
+
     if let Ok(val) = std::env::var("AWS_CONFIG_FILE") {
         files_to_check.push(PathBuf::from(val));
     } else {
@@ -239,12 +275,12 @@ pub async fn discover_local_profiles() -> Result<Vec<DiscoveredProfile>, String>
                     if line.starts_with('#') || line.starts_with(';') {
                         continue;
                     }
-                    
+
                     if line.starts_with('[') {
                         // Extract EVERYTHING between []
                         if let Some(end_idx) = line.find(']') {
                             let mut profile_raw = &line[1..end_idx];
-                            
+
                             // Handle [profile name] format in config file correctly
                             if let Some(stripped) = profile_raw.strip_prefix("profile") {
                                 let trimmed = stripped.trim_start();
@@ -253,7 +289,7 @@ pub async fn discover_local_profiles() -> Result<Vec<DiscoveredProfile>, String>
                                     profile_raw = trimmed;
                                 }
                             }
-                            
+
                             let profile_name = profile_raw.trim().to_string();
                             if !profile_name.is_empty() {
                                 current_profile = Some(profile_name.clone());
@@ -283,17 +319,17 @@ pub async fn discover_local_profiles() -> Result<Vec<DiscoveredProfile>, String>
     if profiles.is_empty() {
         log::info!("No profiles found, defaulting to 'default'");
         profiles.insert("default".to_string(), None);
-    } 
-    
+    }
+
     let mut result: Vec<DiscoveredProfile> = profiles
         .into_iter()
         .map(|(name, region)| DiscoveredProfile { name, region })
         .collect();
-        
+
     result.sort_by(|a, b| a.name.cmp(&b.name));
-    
+
     log::info!("Found total of {} profiles", result.len());
-    
+
     Ok(result)
 }
 
@@ -311,7 +347,8 @@ pub async fn check_aws_environment() -> Result<EnvironmentCheck, String> {
         has_access_key: std::env::var("AWS_ACCESS_KEY_ID").is_ok(),
         has_secret_key: std::env::var("AWS_SECRET_ACCESS_KEY").is_ok(),
         has_session_token: std::env::var("AWS_SESSION_TOKEN").is_ok(),
-        region: std::env::var("AWS_REGION").ok().or_else(|| std::env::var("AWS_DEFAULT_REGION").ok()),
+        region: std::env::var("AWS_REGION")
+            .ok()
+            .or_else(|| std::env::var("AWS_DEFAULT_REGION").ok()),
     })
 }
-

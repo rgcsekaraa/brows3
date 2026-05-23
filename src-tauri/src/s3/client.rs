@@ -6,6 +6,18 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 
+/// Normalize an endpoint URL to ensure it has a scheme.
+/// Many S3-compatible providers (Linode, DigitalOcean, etc.) may be configured
+/// without a scheme, causing the AWS SDK to fail with "dispatch failure".
+pub(crate) fn normalize_endpoint_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{}", trimmed)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3Object {
     pub key: String,
@@ -25,7 +37,7 @@ pub struct S3ClientManager {
     clients: HashMap<(String, String), Client>,
     object_cache: HashMap<(String, String), Vec<S3Object>>, // (profile_id, bucket_name) -> objects
     folder_cache: HashMap<(String, String, String), FolderContent>, // (profile_id, bucket_name, prefix) -> children
-    bucket_regions: HashMap<String, String>, // bucket_name -> region
+    bucket_regions: HashMap<String, String>,                        // bucket_name -> region
 }
 
 impl S3ClientManager {
@@ -40,14 +52,21 @@ impl S3ClientManager {
 
     /// Get or create an S3 client for the given profile's default region
     pub async fn get_client(&mut self, profile: &Profile) -> Result<&Client> {
-        let region = profile.region.clone().unwrap_or_else(|| "us-east-1".to_string());
+        let region = profile
+            .region
+            .clone()
+            .unwrap_or_else(|| "us-east-1".to_string());
         self.get_client_for_region(profile, &region).await
     }
 
     /// Get or create an S3 client for the given profile and specific region
-    pub async fn get_client_for_region(&mut self, profile: &Profile, region: &str) -> Result<&Client> {
+    pub async fn get_client_for_region(
+        &mut self,
+        profile: &Profile,
+        region: &str,
+    ) -> Result<&Client> {
         let key = (profile.id.clone(), region.to_string());
-        
+
         if !self.clients.contains_key(&key) {
             let client = self.build_client(profile, Some(region.to_string())).await?;
             self.clients.insert(key.clone(), client);
@@ -57,11 +76,15 @@ impl S3ClientManager {
     }
 
     /// Build a new S3 client for the given profile
-    async fn build_client(&self, profile: &Profile, override_region: Option<String>) -> Result<Client> {
+    async fn build_client(
+        &self,
+        profile: &Profile,
+        override_region: Option<String>,
+    ) -> Result<Client> {
         let region_str = override_region
             .or_else(|| profile.region.clone())
             .unwrap_or_else(|| "us-east-1".to_string());
-            
+
         let region = Region::new(region_str);
 
         let sdk_config = match &profile.credential_type {
@@ -119,8 +142,9 @@ impl S3ClientManager {
         let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&sdk_config);
 
         if let CredentialType::CustomEndpoint { endpoint_url, .. } = &profile.credential_type {
+            let normalized_url = normalize_endpoint_url(endpoint_url);
             s3_config_builder = s3_config_builder
-                .endpoint_url(endpoint_url)
+                .endpoint_url(&normalized_url)
                 .force_path_style(true);
         }
 
@@ -145,32 +169,69 @@ impl S3ClientManager {
         self.bucket_regions.insert(bucket_name.to_string(), region);
     }
 
+    /// Cache the same region for a set of buckets.
+    pub fn set_bucket_regions<I>(&mut self, bucket_names: I, region: &str)
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        for bucket_name in bucket_names {
+            self.set_bucket_region(bucket_name.as_ref(), region.to_string());
+        }
+    }
+
     /// Get cached objects for a bucket
-    pub fn get_cached_objects(&self, profile_id: &str, bucket_name: &str) -> Option<&Vec<S3Object>> {
-        self.object_cache.get(&(profile_id.to_string(), bucket_name.to_string()))
+    pub fn get_cached_objects(
+        &self,
+        profile_id: &str,
+        bucket_name: &str,
+    ) -> Option<&Vec<S3Object>> {
+        self.object_cache
+            .get(&(profile_id.to_string(), bucket_name.to_string()))
     }
 
     /// Get cached folder content
-    pub fn get_folder_content(&self, profile_id: &str, bucket_name: &str, prefix: &str) -> Option<&FolderContent> {
-        self.folder_cache.get(&(profile_id.to_string(), bucket_name.to_string(), prefix.to_string()))
+    pub fn get_folder_content(
+        &self,
+        profile_id: &str,
+        bucket_name: &str,
+        prefix: &str,
+    ) -> Option<&FolderContent> {
+        self.folder_cache.get(&(
+            profile_id.to_string(),
+            bucket_name.to_string(),
+            prefix.to_string(),
+        ))
     }
 
     /// Set cached objects for a bucket
-    pub fn set_cached_objects(&mut self, profile_id: &str, bucket_name: &str, objects: Vec<S3Object>) {
+    pub fn set_cached_objects(
+        &mut self,
+        profile_id: &str,
+        bucket_name: &str,
+        objects: Vec<S3Object>,
+    ) {
         let profile_id_str = profile_id.to_string();
         let bucket_name_str = bucket_name.to_string();
-        
+
         // Build folder cache in a single pass O(N)
         let mut folders: HashMap<String, FolderContent> = HashMap::new();
         // Ensure root exists
-        folders.insert("".to_string(), FolderContent { objects: Vec::new(), common_prefixes: Vec::new() });
-        
+        folders.insert(
+            "".to_string(),
+            FolderContent {
+                objects: Vec::new(),
+                common_prefixes: Vec::new(),
+            },
+        );
+
         // Track unique prefixes per folder to avoid O(M) contains check (M = parts)
-        let mut folder_prefixes: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
+        let mut folder_prefixes: HashMap<String, std::collections::HashSet<String>> =
+            HashMap::new();
 
         for obj in &objects {
             let key = &obj.key;
-            
+
             // Find the immediate parent prefix
             let parent_prefix = if let Some(last_slash) = key.rfind('/') {
                 // If the key itself ends with /, the parent is the substring BEFORE that slash (if any)
@@ -190,9 +251,14 @@ impl S3ClientManager {
 
             // Add object to its parent folder (if it's not a folder placeholder)
             if !key.ends_with('/') {
-                folders.entry(parent_prefix.to_string())
-                    .or_insert_with(|| FolderContent { objects: Vec::new(), common_prefixes: Vec::new() })
-                    .objects.push(obj.clone());
+                folders
+                    .entry(parent_prefix.to_string())
+                    .or_insert_with(|| FolderContent {
+                        objects: Vec::new(),
+                        common_prefixes: Vec::new(),
+                    })
+                    .objects
+                    .push(obj.clone());
             }
 
             // Build the prefix tree up to the root
@@ -201,44 +267,63 @@ impl S3ClientManager {
                 let parts_vec: Vec<&str> = key.split('/').collect();
                 // If it's a folder "a/b/", parts are ["a", "b", ""]
                 // If it's a file "a/b/c.txt", parts are ["a", "b", "c.txt"]
-                let depth = if key.ends_with('/') { parts_vec.len() - 2 } else { parts_vec.len() - 1 };
-                
+                let depth = if key.ends_with('/') {
+                    parts_vec.len() - 2
+                } else {
+                    parts_vec.len() - 1
+                };
+
                 let mut path = String::new();
                 for i in 0..depth {
                     let parent = path.clone();
                     path.push_str(parts_vec[i]);
                     path.push('/');
-                    
+
                     // Add this folder to parent's common_prefixes
                     let seen_prefixes = folder_prefixes.entry(parent.clone()).or_default();
                     if !seen_prefixes.contains(&path) {
                         seen_prefixes.insert(path.clone());
-                        folders.entry(parent)
+                        folders
+                            .entry(parent)
                             .or_default()
-                            .common_prefixes.push(path.clone());
+                            .common_prefixes
+                            .push(path.clone());
                     }
                 }
             }
         }
-        
+
         // Store in the manager's folder_cache
         for (prefix, mut content) in folders {
             content.objects.sort_by(|a, b| a.key.cmp(&b.key));
             content.common_prefixes.sort();
-            self.folder_cache.insert((profile_id_str.clone(), bucket_name_str.clone(), prefix), content);
+            self.folder_cache.insert(
+                (profile_id_str.clone(), bucket_name_str.clone(), prefix),
+                content,
+            );
         }
-        
-        self.object_cache.insert((profile_id_str, bucket_name_str), objects);
+
+        self.object_cache
+            .insert((profile_id_str, bucket_name_str), objects);
     }
 
     /// Check if a bucket is cached
     pub fn has_cache(&self, profile_id: &str, bucket_name: &str) -> bool {
-        self.object_cache.contains_key(&(profile_id.to_string(), bucket_name.to_string()))
+        self.object_cache
+            .contains_key(&(profile_id.to_string(), bucket_name.to_string()))
     }
 
     /// Get a single object from cache by key
-    pub fn get_object_from_cache(&self, profile_id: &str, bucket_name: &str, key: &str) -> Option<S3Object> {
-        if let Some(objects) = self.object_cache.get(&(profile_id.to_string(), bucket_name.to_string())) {
+    pub fn get_object_from_cache(
+        &self,
+        profile_id: &str,
+        bucket_name: &str,
+        key: &str,
+    ) -> Option<S3Object> {
+        if let Some(objects) = self
+            .object_cache
+            .get(&(profile_id.to_string(), bucket_name.to_string()))
+        {
             return objects.iter().find(|obj| obj.key == key).cloned();
         }
         None
@@ -247,8 +332,9 @@ impl S3ClientManager {
     /// Remove cache for a specific bucket
     pub fn remove_bucket_cache(&mut self, profile_id: &str, bucket_name: &str) {
         // Remove object list
-        self.object_cache.remove(&(profile_id.to_string(), bucket_name.to_string()));
-        
+        self.object_cache
+            .remove(&(profile_id.to_string(), bucket_name.to_string()));
+
         // Remove all folder entries for this bucket
         // Since folder_cache keys are (profile, bucket, prefix), we need to retain others
         // A full scan is necessary or we could use another map for efficiently tracking keys.
@@ -257,8 +343,9 @@ impl S3ClientManager {
         // we will iterate and remove.
         let pid = profile_id.to_string();
         let bname = bucket_name.to_string();
-        
-        self.folder_cache.retain(|(p, b, _), _| p != &pid || b != &bname);
+
+        self.folder_cache
+            .retain(|(p, b, _), _| p != &pid || b != &bname);
         self.bucket_regions.remove(&bname);
     }
 }
@@ -304,14 +391,33 @@ pub async fn list_buckets(client: &Client) -> Result<Vec<BucketInfo>> {
     Ok(buckets)
 }
 
-/// Get the region for a specific bucket
+/// Get the region for a specific bucket.
+/// Note: GetBucketLocation is not supported by all S3-compatible providers
+/// (e.g., Linode Object Storage, DigitalOcean Spaces). Callers should handle
+/// errors gracefully and fall back to the profile's configured region.
 pub async fn get_bucket_region(client: &Client, bucket_name: &str) -> Result<String> {
-    let response = client
-        .get_bucket_location()
-        .bucket(bucket_name)
-        .send()
-        .await
-        .map_err(|e| AppError::S3Error(e.to_string()))?;
+    // Use a timeout to prevent hanging on providers that don't support this API
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        client.get_bucket_location().bucket(bucket_name).send(),
+    )
+    .await;
+
+    let response = match result {
+        Ok(Ok(resp)) => resp,
+        Ok(Err(e)) => {
+            return Err(AppError::S3Error(format!(
+                "GetBucketLocation failed for '{}': {}",
+                bucket_name, e
+            )));
+        }
+        Err(_) => {
+            return Err(AppError::S3Error(format!(
+                "GetBucketLocation timed out for '{}'",
+                bucket_name
+            )));
+        }
+    };
 
     // Empty string means us-east-1
     let region = response
@@ -347,15 +453,22 @@ pub async fn list_all_objects_recursive(client: &Client, bucket: &str) -> Result
         for obj in response.contents() {
             objects.push(S3Object {
                 key: obj.key().unwrap_or_default().to_string(),
-                last_modified: obj.last_modified().map(|d: &aws_sdk_s3::primitives::DateTime| d.to_string()),
+                last_modified: obj
+                    .last_modified()
+                    .map(|d: &aws_sdk_s3::primitives::DateTime| d.to_string()),
                 size: obj.size().unwrap_or_default(),
-                storage_class: obj.storage_class().map(|s: &aws_sdk_s3::types::ObjectStorageClass| s.as_str().to_string()),
+                storage_class: obj
+                    .storage_class()
+                    .map(|s: &aws_sdk_s3::types::ObjectStorageClass| s.as_str().to_string()),
             });
         }
 
         // SAFEGUARD: Don't load more than 100k objects into memory
         if objects.len() >= 100_000 {
-            log::warn!("Bucket {} is too large. Truncating listing at 100,000 objects to prevent OOM.", bucket);
+            log::warn!(
+                "Bucket {} is too large. Truncating listing at 100,000 objects to prevent OOM.",
+                bucket
+            );
             break;
         }
 
@@ -386,5 +499,38 @@ pub fn format_size(bytes: u64) -> String {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
         format!("{} B", bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_endpoint_url;
+
+    #[test]
+    fn normalize_endpoint_url_preserves_existing_scheme() {
+        assert_eq!(
+            normalize_endpoint_url("https://us-east-1.linodeobjects.com"),
+            "https://us-east-1.linodeobjects.com"
+        );
+        assert_eq!(
+            normalize_endpoint_url("http://localhost:9000"),
+            "http://localhost:9000"
+        );
+    }
+
+    #[test]
+    fn normalize_endpoint_url_defaults_to_https() {
+        assert_eq!(
+            normalize_endpoint_url("us-east-1.linodeobjects.com"),
+            "https://us-east-1.linodeobjects.com"
+        );
+    }
+
+    #[test]
+    fn normalize_endpoint_url_trims_whitespace() {
+        assert_eq!(
+            normalize_endpoint_url("  us-east-1.linodeobjects.com  "),
+            "https://us-east-1.linodeobjects.com"
+        );
     }
 }

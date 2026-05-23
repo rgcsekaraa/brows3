@@ -8,7 +8,6 @@ import {
   Box,
   Button,
   CircularProgress,
-  Divider,
   FormControl,
   IconButton,
   InputLabel,
@@ -48,15 +47,38 @@ import { BaseDialog } from '../common/BaseDialog';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
 
 const AWS_REGIONS = [
+  'auto',
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
-  'eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-central-1', 'eu-north-1',
-  'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ap-northeast-2', 'ap-south-1',
-  'ap-east-1', 'ap-southeast-3', 'ap-southeast-4',
-  'sa-east-1', 'ca-central-1', 'af-south-1', 'me-south-1', 'me-central-1',
+  'af-south-1',
+  'ap-east-1', 'ap-east-2',
+  'ap-south-1', 'ap-south-2',
+  'ap-northeast-1', 'ap-northeast-2', 'ap-northeast-3',
+  'ap-southeast-1', 'ap-southeast-2', 'ap-southeast-3', 'ap-southeast-4',
+  'ap-southeast-5', 'ap-southeast-6', 'ap-southeast-7',
+  'ca-central-1', 'ca-west-1',
+  'eu-central-1', 'eu-central-2',
+  'eu-west-1', 'eu-west-2', 'eu-west-3',
+  'eu-south-1', 'eu-south-2', 'eu-north-1',
+  'il-central-1',
+  'mx-central-1',
+  'me-south-1', 'me-central-1',
+  'sa-east-1',
   'us-gov-east-1', 'us-gov-west-1',
 ];
 
 type CredentialTypeKey = 'Environment' | 'SharedConfig' | 'Manual' | 'CustomEndpoint';
+
+type ProfileFormData = {
+  name: string;
+  credentialType: CredentialTypeKey;
+  region: string;
+  profileName: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  endpointUrl: string;
+};
+
+type DiscoveredProfile = { name: string; region?: string };
 
 interface ProfileDialogProps {
   open: boolean;
@@ -74,7 +96,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   const { defaultRegion } = useSettingsStore();
   
   const [mode, setMode] = useState<'list' | 'add' | 'edit'>('list');
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<ProfileFormData>({
     name: '',
     credentialType: 'Environment' as CredentialTypeKey,
     region: 'us-east-1',
@@ -88,7 +110,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
-  const [discoveredProfiles, setDiscoveredProfiles] = useState<{ name: string; region?: string }[]>([]);
+  const [discoveredProfiles, setDiscoveredProfiles] = useState<DiscoveredProfile[]>([]);
   const [awsEnv, setAwsEnv] = useState<{ has_access_key: boolean; has_secret_key: boolean; has_session_token: boolean; region?: string } | null>(null);
   const discoveryRequestIdRef = useRef(0);
   const editLoadRequestIdRef = useRef(0);
@@ -114,10 +136,10 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 // Smart default: If we are in "add" mode and haven't started typing a name yet
                 if (mode === 'add' && !formData.name && !editProfile) {
                     if (env.has_access_key) {
-                        setFormData((prev: any) => ({ ...prev, credentialType: 'Environment', name: 'Environment Credentials' }));
+                        setFormData((prev) => ({ ...prev, credentialType: 'Environment', name: 'Environment Credentials' }));
                     } else if (discovered.length > 0) {
-                        const defaultProf = discovered.find((p: any) => p.name === 'default') || discovered[0];
-                        setFormData((prev: any) => ({
+                        const defaultProf = discovered.find((p) => p.name === 'default') || discovered[0];
+                        setFormData((prev) => ({
                             ...prev,
                             credentialType: 'SharedConfig',
                             profileName: defaultProf.name,
@@ -141,8 +163,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     };
   }, [open, mode, editProfile]);
 
-  const updateField = (field: string, value: any) => {
-    setFormData((prev: any) => ({ ...prev, [field]: value }));
+  const updateField = <K extends keyof ProfileFormData>(field: K, value: ProfileFormData[K]) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   // Reset testing state when form data changes
@@ -275,7 +297,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     setError(null);
     
     try {
-      const profileData: any = {
+      const profileData: Partial<Profile> = {
         name: formData.name,
         credential_type: buildCredentialType(),
         region: formData.region,
@@ -619,11 +641,11 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
             onChange={(_, value) => {
                 if (value) {
                     updateField('profileName', value);
-                    const found = discoveredProfiles.find((p: any) => p.name === value);
+                    const found = discoveredProfiles.find((p) => p.name === value);
                     if (found?.region) updateField('region', found.region);
                 }
             }}
-            options={discoveredProfiles.map((p: any) => p.name)}
+            options={discoveredProfiles.map((p) => p.name)}
             renderInput={(params) => (
                 <TextField 
                     {...params} 
@@ -643,7 +665,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                     value={formData.endpointUrl}
                     onChange={(e) => updateField('endpointUrl', e.target.value)}
                     fullWidth
-                    placeholder="https://s3.us-east-1.amazonaws.com"
+                    placeholder="https://account-id.r2.cloudflarestorage.com"
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 } }}
                   />
                 )}
@@ -665,20 +687,24 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
           </Box>
         )}
         
-        <FormControl fullWidth>
-          <InputLabel sx={{ fontWeight: 700 }}>Default Region</InputLabel>
-          <Select
-            value={formData.region}
-            label="Default Region"
-            onChange={(e) => updateField('region', e.target.value)}
-            sx={{ borderRadius: 2, fontWeight: 600 }}
-            MenuProps={{ PaperProps: { sx: { maxHeight: 300, borderRadius: 2, border: '1px solid', borderColor: 'divider' } } }}
-          >
-            {AWS_REGIONS.map((region) => (
-              <MenuItem key={region} value={region} sx={{ fontWeight: 600 }}>{region}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <Autocomplete
+          freeSolo
+          options={AWS_REGIONS}
+          value={formData.region}
+          onChange={(_, value) => updateField('region', value || '')}
+          onInputChange={(_, value) => updateField('region', value)}
+          PaperComponent={(props) => (
+            <Paper {...props} sx={{ maxHeight: 300, borderRadius: 2, border: '1px solid', borderColor: 'divider' }} />
+          )}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Default Region"
+              fullWidth
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontWeight: 600 } }}
+            />
+          )}
+        />
         
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
