@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.38] - 2026-05-31
+
+### Fixed
+- **Linux AppImage EGL Startup Failure**: Disabled WebKitGTK's DMABUF renderer by default on Linux when no override is set, preventing `Could not create default EGL display: EGL_BAD_PARAMETER` crashes on CachyOS/Arch-style setups.
+
 ## [0.2.37] - 2026-05-29
 
 ### Fixed

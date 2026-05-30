@@ -11,8 +11,20 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tauri::Manager;
 
+#[cfg(target_os = "linux")]
+fn configure_linux_webkit_environment() {
+    // WebKitGTK's DMABUF renderer can abort on some Arch/NVIDIA/Wayland systems
+    // with "Could not create default EGL display: EGL_BAD_PARAMETER".
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    configure_linux_webkit_environment();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
