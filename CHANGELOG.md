@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.39] - 2026-06-01
+
+### Fixed
+- **Linux AppImage Wayland Library Startup**: Linux AppImage builds now preload the host `libwayland-client` when available so rolling-release systems such as CachyOS/Arch do not crash on startup because the bundled Ubuntu Wayland client library wins library resolution.
+
 ## [0.2.38] - 2026-05-31
 
 ### Fixed

@@ -113,6 +113,11 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
           sudo apt-get install -y libwebkit2gtk-4.1-dev
 
+      - name: Prepare Linux AppImage GTK plugin
+        if: startsWith(matrix.platform, 'ubuntu-')
+        shell: bash
+        run: .github/scripts/prepare-linux-appimage-plugin.sh
+
       - name: install WiX v4 (windows only)
         if: startsWith(matrix.platform, 'windows-')
         run: dotnet tool install --global wix
