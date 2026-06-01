@@ -29,13 +29,14 @@ import {
   CheckCircle as SuccessIcon,
   ErrorOutline as ErrorIcon,
   Info as InfoIcon,
+  ContentCopy as CopyIcon,
 } from '@mui/icons-material';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useAppStore } from '@/store/appStore';
 import { useMonitorStore } from '@/store/monitorStore';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
 import { toast } from '@/store/toastStore';
-import { invalidateCache, isTauri } from '@/lib/tauri';
+import { copyToClipboard, invalidateCache, isTauri, logApi, type LogFileInfo } from '@/lib/tauri';
 
 export default function SettingsPage() {
   // Theme is controlled by appStore (used by the actual app)
@@ -49,6 +50,7 @@ export default function SettingsPage() {
   
   const [version, setVersion] = useState<string>('...');
   const [appDataDir, setAppDataDir] = useState<string>('Loading...');
+  const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [pendingTransferConcurrency, setPendingTransferConcurrency] = useState(maxConcurrentTransfers);
   
@@ -68,6 +70,10 @@ export default function SettingsPage() {
     import('@tauri-apps/api/path').then(({ appDataDir: getAppDataDir }) => {
       getAppDataDir().then(setAppDataDir).catch(() => setAppDataDir('Unknown'));
     });
+
+    logApi.getLogFileInfo()
+      .then(setLogFileInfo)
+      .catch(() => setLogFileInfo(null));
   }, []);
 
   useEffect(() => {
@@ -101,6 +107,17 @@ export default function SettingsPage() {
       toast.error('Update check failed', String(err));
     } finally {
       setIsCheckingUpdate(false);
+    }
+  };
+
+  const handleCopyLogPath = async () => {
+    if (!logFileInfo) return;
+
+    try {
+      await copyToClipboard(logFileInfo.log_file_path);
+      toast.success('Log path copied');
+    } catch (err) {
+      toast.error('Copy failed', String(err));
     }
   };
 
@@ -233,6 +250,49 @@ export default function SettingsPage() {
             />
           </ListItem>
           <Divider />
+          <ListItem>
+            <ListItemIcon>
+              <InfoIcon color="action" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Diagnostic Log File"
+              secondary={logFileInfo?.log_file_path || (isTauri() ? 'Unavailable' : 'Desktop app only')}
+              secondaryTypographyProps={{
+                component: 'code',
+                sx: { fontSize: '0.75rem', bgcolor: 'action.hover', px: 1, py: 0.5, borderRadius: 1, display: 'inline-block', mt: 0.5, maxWidth: '100%', overflowWrap: 'anywhere' }
+              }}
+            />
+            <ListItemSecondaryAction sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<CopyIcon />}
+                disabled={!logFileInfo}
+                onClick={handleCopyLogPath}
+              >
+                Copy Path
+              </Button>
+            </ListItemSecondaryAction>
+          </ListItem>
+          <Divider />
+          {logFileInfo?.panic_log_exists && (
+            <>
+              <ListItem>
+                <ListItemIcon>
+                  <ErrorIcon color="error" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Last Panic Log"
+                  secondary={logFileInfo.panic_log_path}
+                  secondaryTypographyProps={{
+                    component: 'code',
+                    sx: { fontSize: '0.75rem', bgcolor: 'action.hover', px: 1, py: 0.5, borderRadius: 1, display: 'inline-block', mt: 0.5, maxWidth: '100%', overflowWrap: 'anywhere' }
+                  }}
+                />
+              </ListItem>
+              <Divider />
+            </>
+          )}
           <ListItem>
             <ListItemText 
               primary="Cached Bucket and Object Data" 

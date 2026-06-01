@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.40] - 2026-06-02
+
+### Added
+- **Diagnostic Log Access**: Settings now shows the desktop log file path with a copy action, and startup logs include app version, platform, and log path details for easier issue reports.
+
+### Fixed
+- **Panic Diagnostics**: Panic logging now records the panic location and a backtrace in the fallback panic log instead of only writing the raw panic payload.
+
 ## [0.2.39] - 2026-06-01
 
 ### Fixed

@@ -76,6 +76,19 @@ export const copyToClipboard = async (text: string): Promise<void> => {
   throw new Error('Clipboard API is not available');
 };
 
+export interface LogFileInfo {
+  log_file_path: string;
+  log_dir_path: string;
+  panic_log_path: string;
+  panic_log_exists: boolean;
+}
+
+export const logApi = {
+  async getLogFileInfo(): Promise<LogFileInfo> {
+    return invoke<LogFileInfo>('get_log_file_info');
+  },
+};
+
 // Profile types matching Rust backend
 export type CredentialType = 
   | { type: 'Environment' }
