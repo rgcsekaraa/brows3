@@ -1,6 +1,6 @@
 {
   "name": "brows3",
-  "version": "0.2.41",
+  "version": "0.2.42",
   "private": true,
   "packageManager": "pnpm@11.2.2",
   "keywords": [
@@ -16,7 +16,6 @@
     "minio",
     "cloudflare-r2",
     "wasabi",
-    "stackit",
     "digitalocean-spaces",
     "tauri",
     "rust"

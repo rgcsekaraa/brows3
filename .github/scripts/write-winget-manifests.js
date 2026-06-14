@@ -96,7 +96,7 @@ License: MIT
 LicenseUrl: https://github.com/rgcsekaraa/brows3/blob/main/LICENSE
 Copyright: Copyright (c) 2024 Brows3
 ShortDescription: A lightning-fast S3 browser, S3 explorer, and S3 desktop client.
-Description: Brows3 is a high-performance Amazon S3 browser, S3 explorer, and S3 desktop client for AWS S3 and S3-compatible object storage including MinIO, Cloudflare R2, Wasabi, STACKIT Object Storage, and DigitalOcean Spaces.
+Description: Brows3 is a high-performance Amazon S3 browser, S3 explorer, and S3 desktop client for AWS S3 and S3-compatible object storage including MinIO, Cloudflare R2, Wasabi, DigitalOcean Spaces, and custom endpoints.
 Moniker: brows3
 Tags:
 - amazon-s3
@@ -106,7 +106,6 @@ Tags:
 - object-storage
 - s3
 - s3-browser
-- stackit
 - tauri
 - wasabi
 ReleaseNotesUrl: ${releaseUrl}

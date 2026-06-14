@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.42] - 2026-06-14
+
+### Changed
+- **Generic S3-Compatible Setup**: Removed the STACKIT-specific provider preset from the profile dialog so custom endpoints remain provider-neutral.
+- **STACKIT Documentation**: Added README setup instructions for using STACKIT Object Storage through Custom S3 / Compatibility Mode with endpoint `https://object.storage.eu01.onstackit.cloud` and region `eu01`.
+
 ## [0.2.41] - 2026-06-14
 
 ### Added

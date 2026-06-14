@@ -136,8 +136,25 @@ Brows3 is focused on fast bucket navigation, deep search, and large-list perform
 | `S3 Browser alternative` | Cross-platform open-source desktop option with Rust/Tauri backend |
 | `MinIO client` | Works for S3-compatible endpoints through Custom S3 mode |
 | `Cloudflare R2 browser` | Relevant when using R2 through S3-compatible credentials |
-| `STACKIT Object Storage browser` | Includes a built-in STACKIT EU01 endpoint preset for faster profile setup |
+| `STACKIT Object Storage browser` | Works through Custom S3 mode using STACKIT's S3-compatible endpoint |
 | `fast S3 desktop client` | Core product focus is speed, caching, and deep recursive search |
+
+## S3-Compatible Provider Setup
+
+Brows3 keeps S3-compatible providers generic: use **Custom S3 / Compatibility Mode** and enter the provider endpoint, region, and access keys supplied by your object-storage account.
+
+### STACKIT Object Storage
+
+Use these values when creating a custom S3-compatible profile for STACKIT Object Storage:
+
+| Field | Value |
+| :--- | :--- |
+| Authentication Method | `Custom S3 / Compatibility Mode` |
+| Endpoint URL | `https://object.storage.eu01.onstackit.cloud` |
+| Default Region | `eu01` |
+| Access Key ID / Secret Access Key | Your STACKIT object-storage credentials |
+
+Brows3 uses path-style requests for custom endpoints, and the STACKIT EU01 endpoint supports path-style buckets. The region field is free-form, so type `eu01` directly even if it is not listed as an AWS region suggestion.
 
 ## GitHub Setup
 
