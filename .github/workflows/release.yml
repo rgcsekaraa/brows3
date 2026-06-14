@@ -392,6 +392,17 @@ jobs:
           echo "=== Final update.json ==="
           cat update.json
           echo "========================="
+
+          # Generate winget manifests from the actual release installer URL and SHA256.
+          printf '%s' "$RELEASE_INFO" > release-info.json
+          node .github/scripts/write-winget-manifests.js release-info.json dist/winget
+
+          echo ""
+          echo "=== Generated winget manifests ==="
+          ls -la dist/winget
+          echo "=================================="
+
+          gh release upload "$TAG" dist/winget/*.yaml --clobber
           
           # Commit and push
           git config user.name "github-actions[bot]"

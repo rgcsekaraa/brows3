@@ -37,6 +37,7 @@ body:
         - MinIO
         - Cloudflare R2
         - Wasabi
+        - STACKIT Object Storage
         - DigitalOcean Spaces
         - Other S3-compatible storage
     validations:

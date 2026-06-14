@@ -81,6 +81,7 @@ pub async fn test_connection(
     state: State<'_, ProfileState>,
 ) -> Result<TestConnectionResult, String> {
     use aws_config::Region;
+    use aws_sdk_s3::config::{RequestChecksumCalculation, ResponseChecksumValidation};
     use aws_sdk_s3::error::ProvideErrorMetadata;
     use aws_sdk_s3::Client;
 
@@ -170,7 +171,9 @@ pub async fn test_connection(
         let normalized_url = crate::s3::client::normalize_endpoint_url(endpoint_url);
         s3_config_builder = s3_config_builder
             .endpoint_url(&normalized_url)
-            .force_path_style(true);
+            .force_path_style(true)
+            .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
+            .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
     }
 
     let client = Client::from_conf(s3_config_builder.build());

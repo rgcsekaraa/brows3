@@ -11,7 +11,7 @@ Navigating recently loaded buckets and prefixes feels close to browsing a local 
 
 **Website:** <a href="https://www.brows3.app/" target="_blank">brows3.app</a>
 
-Brows3 is built for people searching for a fast **S3 browser**, **AWS S3 client**, **S3 bucket explorer**, **S3 file manager**, or **S3-compatible storage browser** for providers like **MinIO**, **Cloudflare R2**, **Wasabi**, and **DigitalOcean Spaces**.
+Brows3 is built for people searching for a fast **S3 browser**, **AWS S3 client**, **S3 bucket explorer**, **S3 file manager**, or **S3-compatible storage browser** for providers like **MinIO**, **Cloudflare R2**, **Wasabi**, **STACKIT Object Storage**, and **DigitalOcean Spaces**.
 
 ## Screenshots
 
@@ -30,7 +30,7 @@ Brows3 is a strong fit if you need:
 - a desktop S3 browser for large buckets
 - a faster S3 explorer than generic cloud-storage tools
 - an open-source S3 client for AWS S3 or S3-compatible storage
-- a GUI for MinIO, Cloudflare R2, Wasabi, or DigitalOcean Spaces
+- a GUI for MinIO, Cloudflare R2, Wasabi, STACKIT Object Storage, or DigitalOcean Spaces
 - a developer-focused S3 file manager with editing, search, and transfer visibility
 
 
@@ -49,6 +49,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 - **Breadcrumb Navigation**: Path-based navigation for rapid traversal of complex hierarchies.
 - **Bulk Operations**: Upload, download, and delete multiple files or recursive folders at once.
 - **S3-Compatible Delete Fallback**: Folder deletion falls back to single-object deletes when a provider rejects multi-object delete requests.
+- **S3-Compatible Upload Compatibility**: Custom S3 endpoints use conservative checksum behavior for better compatibility with providers such as Wasabi and STACKIT Object Storage.
 - **Mixed Content Support**: Seamlessly handle folders and files in a single drag-and-drop operation.
 - **Copy-to-Clipboard**: Quick copy of S3 Paths, Keys, and Object URLs.
 - **Presigned URL Sharing**: Generate temporary object links with configurable expiry directly from the bucket view.
@@ -111,6 +112,7 @@ Brows3 is relevant if you are searching for:
 - MinIO browser
 - Cloudflare R2 desktop client
 - Wasabi browser
+- STACKIT Object Storage browser
 - DigitalOcean Spaces client
 - object storage explorer
 
@@ -134,6 +136,7 @@ Brows3 is focused on fast bucket navigation, deep search, and large-list perform
 | `S3 Browser alternative` | Cross-platform open-source desktop option with Rust/Tauri backend |
 | `MinIO client` | Works for S3-compatible endpoints through Custom S3 mode |
 | `Cloudflare R2 browser` | Relevant when using R2 through S3-compatible credentials |
+| `STACKIT Object Storage browser` | Includes a built-in STACKIT EU01 endpoint preset for faster profile setup |
 | `fast S3 desktop client` | Core product focus is speed, caching, and deep recursive search |
 
 ## GitHub Setup
@@ -142,11 +145,11 @@ To improve discoverability inside GitHub itself, set the repository description 
 
 Suggested repository description:
 
-`Fast open-source S3 browser, S3 explorer, and desktop client for Amazon S3, MinIO, Cloudflare R2, Wasabi, and other S3-compatible storage.`
+`Fast open-source S3 browser, S3 explorer, and desktop client for Amazon S3, MinIO, Cloudflare R2, Wasabi, STACKIT Object Storage, and other S3-compatible storage.`
 
 Suggested topics:
 
-`s3`, `amazon-s3`, `s3-browser`, `s3-client`, `s3-explorer`, `object-storage`, `minio`, `cloudflare-r2`, `wasabi`, `digitalocean-spaces`, `tauri`, `rust`
+`s3`, `amazon-s3`, `s3-browser`, `s3-client`, `s3-explorer`, `object-storage`, `minio`, `cloudflare-r2`, `wasabi`, `stackit`, `digitalocean-spaces`, `tauri`, `rust`
 
 ## Installation
 
@@ -159,6 +162,8 @@ Brows3 is available for all major desktop platforms. Download the latest version
 | **Linux** | `.deb`, `.AppImage` for x64 and ARM64 |
 
 Windows releases are configured to bundle the WebView2 runtime with the installer so fresh machines do not depend on a separate runtime download during installation.
+
+Winget manifests are generated from each signed Windows release asset and attached to the GitHub release for package-manager submission.
 
 ### Manual Build
 

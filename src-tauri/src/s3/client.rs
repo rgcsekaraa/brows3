@@ -1,6 +1,7 @@
 use crate::credentials::{CredentialType, Profile};
 use crate::error::{AppError, Result};
 use aws_config::Region;
+use aws_sdk_s3::config::{RequestChecksumCalculation, ResponseChecksumValidation};
 use aws_sdk_s3::Client;
 use serde::{Deserialize, Serialize};
 
@@ -145,7 +146,9 @@ impl S3ClientManager {
             let normalized_url = normalize_endpoint_url(endpoint_url);
             s3_config_builder = s3_config_builder
                 .endpoint_url(&normalized_url)
-                .force_path_style(true);
+                .force_path_style(true)
+                .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
+                .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
         }
 
         Ok(Client::from_conf(s3_config_builder.build()))

@@ -35,6 +35,7 @@ body:
         - MinIO
         - Cloudflare R2
         - Wasabi
+        - STACKIT Object Storage
         - DigitalOcean Spaces
         - All providers
         - Other

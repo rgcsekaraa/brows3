@@ -48,6 +48,7 @@ import { invalidateBucketCache } from '@/hooks/useBuckets';
 
 const AWS_REGIONS = [
   'auto',
+  'eu01',
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
   'af-south-1',
   'ap-east-1', 'ap-east-2',
@@ -66,6 +67,22 @@ const AWS_REGIONS = [
   'us-gov-east-1', 'us-gov-west-1',
 ];
 
+const S3_PROVIDER_PRESETS = [
+  {
+    id: 'custom',
+    label: 'Custom S3 endpoint',
+    endpointUrl: '',
+    region: '',
+  },
+  {
+    id: 'stackit-eu01',
+    label: 'STACKIT Object Storage (EU01)',
+    endpointUrl: 'https://object.storage.eu01.onstackit.cloud',
+    region: 'eu01',
+  },
+] as const;
+
+type S3ProviderPresetId = typeof S3_PROVIDER_PRESETS[number]['id'];
 type CredentialTypeKey = 'Environment' | 'SharedConfig' | 'Manual' | 'CustomEndpoint';
 
 type ProfileFormData = {
@@ -76,6 +93,7 @@ type ProfileFormData = {
   accessKeyId: string;
   secretAccessKey: string;
   endpointUrl: string;
+  endpointPreset: S3ProviderPresetId;
 };
 
 type DiscoveredProfile = { name: string; region?: string };
@@ -104,6 +122,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     accessKeyId: '',
     secretAccessKey: '',
     endpointUrl: '',
+    endpointPreset: 'custom',
   });
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
   const [testing, setTesting] = useState(false);
@@ -176,6 +195,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       accessKeyId: '',
       secretAccessKey: '',
       endpointUrl: '',
+      endpointPreset: 'custom',
     });
   }, [defaultRegion]);
 
@@ -216,6 +236,11 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   
   const loadProfileToForm = (profile: Profile) => {
     const cred = profile.credential_type;
+    const endpointUrl = cred.type === 'CustomEndpoint' ? cred.endpoint_url : '';
+    const endpointPreset = S3_PROVIDER_PRESETS.find((preset) => (
+      preset.id !== 'custom' && preset.endpointUrl === endpointUrl
+    ))?.id || 'custom';
+
     setFormData({
       name: profile.name,
       credentialType: cred.type as CredentialTypeKey,
@@ -223,8 +248,35 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       profileName: cred.type === 'SharedConfig' ? (cred.profile_name || 'default') : 'default',
       accessKeyId: 'access_key_id' in cred ? cred.access_key_id : '',
       secretAccessKey: 'secret_access_key' in cred ? cred.secret_access_key : '',
-      endpointUrl: cred.type === 'CustomEndpoint' ? cred.endpoint_url : '',
+      endpointUrl,
+      endpointPreset,
     });
+  };
+
+  const handleCredentialTypeChange = (credentialType: CredentialTypeKey) => {
+    if (credentialType !== 'CustomEndpoint') {
+      updateField('credentialType', credentialType);
+      updateField('endpointPreset', 'custom');
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      credentialType,
+      endpointPreset: prev.endpointPreset || 'custom',
+    }));
+  };
+
+  const handleEndpointPresetChange = (presetId: S3ProviderPresetId) => {
+    const preset = S3_PROVIDER_PRESETS.find((item) => item.id === presetId) || S3_PROVIDER_PRESETS[0];
+
+    setFormData((prev) => ({
+      ...prev,
+      endpointPreset: preset.id,
+      endpointUrl: preset.endpointUrl || prev.endpointUrl,
+      region: preset.region || prev.region,
+      name: prev.name || (preset.id === 'custom' ? prev.name : preset.label),
+    }));
   };
 
   const handleFormCancel = () => {
@@ -594,7 +646,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
           <Select
             value={formData.credentialType}
             label="Authentication Method"
-            onChange={(e) => updateField('credentialType', e.target.value)}
+            onChange={(e) => handleCredentialTypeChange(e.target.value as CredentialTypeKey)}
             sx={{ borderRadius: 2, fontWeight: 600 }}
           >
             <MenuItem value="Environment">System Environment Variables</MenuItem>
@@ -660,14 +712,32 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         {(formData.credentialType === 'Manual' || formData.credentialType === 'CustomEndpoint') && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, p: 3, borderRadius: 3, border: '1px dashed', borderColor: 'divider', bgcolor: alpha(theme.palette.background.paper, 0.3) }}>
                 {formData.credentialType === 'CustomEndpoint' && (
-                  <TextField
-                    label="Endpoint URL"
-                    value={formData.endpointUrl}
-                    onChange={(e) => updateField('endpointUrl', e.target.value)}
-                    fullWidth
-                    placeholder="https://account-id.r2.cloudflarestorage.com"
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 } }}
-                  />
+                  <>
+                    <FormControl fullWidth>
+                      <InputLabel sx={{ fontWeight: 700 }}>S3 Storage Provider</InputLabel>
+                      <Select
+                        value={formData.endpointPreset}
+                        label="S3 Storage Provider"
+                        onChange={(e) => handleEndpointPresetChange(e.target.value as S3ProviderPresetId)}
+                        sx={{ borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 }}
+                      >
+                        {S3_PROVIDER_PRESETS.map((preset) => (
+                          <MenuItem key={preset.id} value={preset.id}>{preset.label}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <TextField
+                      label="Endpoint URL"
+                      value={formData.endpointUrl}
+                      onChange={(e) => {
+                        updateField('endpointUrl', e.target.value);
+                        updateField('endpointPreset', 'custom');
+                      }}
+                      fullWidth
+                      placeholder="https://account-id.r2.cloudflarestorage.com"
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 } }}
+                    />
+                  </>
                 )}
                 <TextField
                     label="Access Key ID"

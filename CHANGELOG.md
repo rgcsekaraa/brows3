@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.41] - 2026-06-14
+
+### Added
+- **STACKIT Object Storage Preset**: Added STACKIT Object Storage EU01 as a built-in S3-compatible profile preset using `https://object.storage.eu01.onstackit.cloud` and region `eu01`.
+- **Winget Manifest Generation**: Releases now attach winget manifest YAML generated from the actual Windows installer URL and SHA256 digest.
+
+### Fixed
+- **Wasabi Upload Compatibility**: Custom S3-compatible endpoints now only request payload checksums when required, avoiding optional checksum/trailer behavior that can stall or fail uploads on Wasabi and similar providers.
+
 ## [0.2.40] - 2026-06-02
 
 ### Added
