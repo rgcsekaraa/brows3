@@ -115,6 +115,7 @@ interface RowData {
   size: number;
   modified: string;
   modifiedTimestamp: number;
+  storageClass: string;
 }
 
 // Context type for Virtuoso table
@@ -345,6 +346,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
         size: 0,
         modified: '',
         modifiedTimestamp: 0,
+        storageClass: '',
       });
     }
     
@@ -358,6 +360,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
         size: obj.size,
         modified: obj.last_modified ? new Date(obj.last_modified).toLocaleDateString() : '',
         modifiedTimestamp: obj.last_modified ? new Date(obj.last_modified).getTime() : 0,
+        storageClass: obj.storage_class || 'STANDARD',
       });
     }
     
@@ -369,6 +372,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
       if (sortField === 'name') cmp = a.name.localeCompare(b.name);
       else if (sortField === 'size') cmp = a.size - b.size;
       else if (sortField === 'date') cmp = a.modifiedTimestamp - b.modifiedTimestamp;
+      else if (sortField === 'class') cmp = a.storageClass.localeCompare(b.storageClass);
       
       return sortDirection === 'asc' ? cmp : -cmp;
     });

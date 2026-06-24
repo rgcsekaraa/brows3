@@ -12,7 +12,7 @@ if (!releaseInfoPath || !outputDir) {
 const releaseInfo = JSON.parse(fs.readFileSync(releaseInfoPath, 'utf8'));
 const version = process.env.RELEASE_VERSION || String(releaseInfo.tag_name || '').replace(/^app-v/, '');
 const packageIdentifier = 'rgcsekaraa.Brows3';
-const manifestVersion = '1.9.0';
+const manifestVersion = '1.12.0';
 const releaseUrl = `https://github.com/rgcsekaraa/brows3/releases/tag/app-v${version}`;
 
 if (!version) {
@@ -20,14 +20,26 @@ if (!version) {
   process.exit(1);
 }
 
-const windowsInstaller = (releaseInfo.assets || []).find((asset) => (
-  asset.name === `Brows3_${version}_x64-setup.exe`
-));
+const windowsInstaller =
+  (releaseInfo.assets || []).find((asset) => (
+    asset.name === `Brows3_${version}_x64_en-US.msi`
+  )) ||
+  (releaseInfo.assets || []).find((asset) => (
+    asset.name === `Brows3_${version}_x64-setup.exe`
+  ));
 
 if (!windowsInstaller) {
-  console.error(`Missing Windows NSIS installer asset for ${version}.`);
+  console.error(`Missing Windows MSI or NSIS installer asset for ${version}.`);
   process.exit(1);
 }
+
+const isMsi = windowsInstaller.name.endsWith('.msi');
+const installerType = isMsi ? 'wix' : 'nullsoft';
+const installerSwitches = isMsi ? '' : `
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /S
+`;
 
 const digest = String(windowsInstaller.digest || '');
 const sha256 = digest.startsWith('sha256:') ? digest.slice('sha256:'.length).toUpperCase() : '';
@@ -65,15 +77,13 @@ InstallerLocale: en-US
 Platform:
 - Windows.Desktop
 MinimumOSVersion: 10.0.17763.0
-InstallerType: nullsoft
+InstallerType: ${installerType}
 Scope: machine
 UpgradeBehavior: install
 InstallModes:
 - interactive
 - silent
-InstallerSwitches:
-  Silent: /S
-  SilentWithProgress: /S
+${installerSwitches}
 Installers:
 - Architecture: x64
   InstallerUrl: ${windowsInstaller.browser_download_url}

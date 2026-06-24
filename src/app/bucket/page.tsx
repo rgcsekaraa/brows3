@@ -48,6 +48,7 @@ import {
   FolderZip as FolderZipIcon,
   ArrowDropDown as ArrowDropDownIcon,
   Edit as EditIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { useObjects } from '@/hooks/useObjects';
 import { operationsApi, transferApi, objectApi, S3Object, copyToClipboard } from '@/lib/tauri';
@@ -56,6 +57,7 @@ import { useTransferStore } from '@/store/transferStore';
 import { useClipboardStore } from '@/store/clipboardStore';
 import { useProfileStore } from '@/store/profileStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
+import PermissionsDialog from '@/components/dialogs/PermissionsDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
 import { canObjectBeEdited, getObjectName } from '@/lib/objectCapabilities';
 import PresignedUrlDialog from '@/components/dialogs/PresignedUrlDialog';
@@ -78,19 +80,19 @@ const joinLocalPath = (basePath: string, leafName: string): string => {
 function BucketContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  
+
   const bucketName = searchParams.get('name');
   const bucketRegion = searchParams.get('region') || 'us-east-1';
   const prefix = searchParams.get('prefix') || '';
-  
-  const { data, isLoading, error: initialError, refresh, loadMore } = useObjects(bucketName || '', bucketRegion, prefix);
-  const addJob = useTransferStore(state => state.addJob);
-  const activeProfileId = useProfileStore(state => state.activeProfileId);
-  
+
   // Sorting State
   const [sortField, setSortField] = useState<'name' | 'size' | 'date' | 'class'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  
+
+  const { data, isLoading, error: initialError, refresh, loadMore } = useObjects(bucketName || '', bucketRegion, prefix, sortField, sortDirection);
+  const addJob = useTransferStore(state => state.addJob);
+  const activeProfileId = useProfileStore(state => state.activeProfileId);
+
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -108,7 +110,7 @@ function BucketContent() {
   // Track previous job statuses to detect completions
   // We use a ref to track status without causing re-renders
   const prevJobStatusRef = useRef<Map<string, string>>(new Map());
-  
+
   // Refresh debounce ref
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const searchSequenceRef = useRef<number>(0);
@@ -117,7 +119,7 @@ function BucketContent() {
   // OPTIMIZED: Use subscription to avoid re-rendering component on every progress tick
   useEffect(() => {
     if (!bucketName) return;
-    
+
     // Initialize ref with current state without causing render
     const currentJobs = useTransferStore.getState().jobs;
     const initialMap = new Map<string, string>();
@@ -132,26 +134,26 @@ function BucketContent() {
         const jobs = state.jobs;
         let shouldRefresh = false;
         const currentStatuses = new Map<string, string>();
-        
+
         for (const job of jobs) {
             // Only care about uploads to this bucket
             if (job.transfer_type !== 'Upload' || job.bucket !== bucketName) continue;
-            
+
             const prevStatus = prevJobStatusRef.current.get(job.id);
             const currentStatus = typeof job.status === 'string' ? job.status : 'Failed';
-            
+
             // Store current status for next comparison
             currentStatuses.set(job.id, currentStatus);
-            
+
             // If job just completed (was something else before, now Completed)
             if (prevStatus && prevStatus !== 'Completed' && currentStatus === 'Completed') {
                 shouldRefresh = true;
             }
         }
-        
+
         // Update ref
         prevJobStatusRef.current = currentStatuses;
-        
+
         if (shouldRefresh) {
             // Debounce refresh (2 seconds)
             if (refreshTimeoutRef.current) {
@@ -163,7 +165,7 @@ function BucketContent() {
             }, 2000);
         }
     });
-    
+
     return () => {
         unsubscribe();
         if (refreshTimeoutRef.current) {
@@ -175,7 +177,7 @@ function BucketContent() {
   const handleSearch = async () => {
     if (!bucketName) return;
     const query = searchQuery.trim();
-    
+
     // If empty query, clear everything
     if (!query) {
         searchSequenceRef.current += 1;
@@ -183,26 +185,26 @@ function BucketContent() {
         setIsSearching(false);
         return;
     }
-    
+
     if (isDeepSearch) {
         setIsSearching(true);
         const currentSequence = ++searchSequenceRef.current;
-        
+
         try {
             // Server-side deep search with timeout to prevent freeze
             const SEARCH_TIMEOUT_MS = 30000; // 30 seconds max
-            
+
             const searchPromise = objectApi.searchObjects(bucketName, bucketRegion, query, prefix);
-            const timeoutPromise = new Promise<never>((_, reject) => 
+            const timeoutPromise = new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error('Search timed out after 30 seconds')), SEARCH_TIMEOUT_MS)
             );
-            
+
             const results = await Promise.race([searchPromise, timeoutPromise]);
-            
+
             // CRITICAL FIX: Only update if this is still the latest search request
             if (currentSequence === searchSequenceRef.current) {
                 setSearchResults(results);
-                
+
                 // Show message if no results
                 if (results.length === 0) {
                     toast.info('No Results', `No objects found matching "${query}"`);
@@ -221,7 +223,7 @@ function BucketContent() {
         }
     } else {
         // Local search is handled by useMemo (displayData), so we just clear server results
-        setSearchResults(null); 
+        setSearchResults(null);
     }
   };
 
@@ -247,7 +249,7 @@ function BucketContent() {
              prefix: prefix,
          };
      }
-     
+
      // 2. Local Filtering (Client-side on current page data)
      if (!isDeepSearch && normalizedQuery && data) {
          return {
@@ -256,7 +258,7 @@ function BucketContent() {
              common_prefixes: data.common_prefixes.filter(p => p.toLowerCase().includes(normalizedQuery))
          };
      }
-     
+
      // 3. Default View
      return data;
   }, [data, searchResults, deferredSearchQuery, prefix, isDeepSearch]);
@@ -272,7 +274,7 @@ function BucketContent() {
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMenuAnchor, setUploadMenuAnchor] = useState<null | HTMLElement>(null);
-  
+
   // Create Folder State
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -281,10 +283,14 @@ function BucketContent() {
   // Context Menu State
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedObject, setSelectedObject] = useState<{key: string, isFolder: boolean} | null>(null);
-  
+
   // Properties State
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [selectedObjectProp, setSelectedObjectProp] = useState<string | null>(null);
+
+  // Permissions State
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [selectedObjectPermissions, setSelectedObjectPermissions] = useState<{ key: string; isFolder: boolean } | null>(null);
 
   // Preview/Edit Dialog State
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -301,6 +307,14 @@ function BucketContent() {
     if (selectedObject) {
        setSelectedObjectProp(selectedObject.key);
        setPropertiesOpen(true);
+    }
+  };
+
+  const handlePermissionsOpen = () => {
+    handleMenuClose();
+    if (selectedObject) {
+      setSelectedObjectPermissions(selectedObject);
+      setPermissionsOpen(true);
     }
   };
 
@@ -348,7 +362,7 @@ function BucketContent() {
         isFolder: true,
       });
     }
-    
+
     const params = new URLSearchParams();
     if (bucketName) params.set('name', bucketName);
     if (bucketRegion) params.set('region', bucketRegion);
@@ -371,13 +385,13 @@ function BucketContent() {
 
   // Multi-select State
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-  
+
   // Clear selection when navigating to a different folder
   useEffect(() => {
     setSelectedKeys(new Set());
     setSelectedObject(null);
   }, [prefix, bucketName]);
-  
+
   // Selection Handlers - memoized to prevent re-renders
   const handleSelect = useCallback((key: string, checked: boolean) => {
     setSelectedKeys(prev => {
@@ -449,18 +463,18 @@ function BucketContent() {
   const handlePaste = async () => {
     if (!bucketName || clipboardItems.length === 0) return;
     let successCount = 0;
-    
+
     // Process paste operations in parallel batches for better performance
     const items = [...clipboardItems];
-    
+
     try {
       for (let i = 0; i < items.length; i += PASTE_CONCURRENCY) {
         const batch = items.slice(i, i + PASTE_CONCURRENCY);
-        
+
         await Promise.all(batch.map(async (item) => {
           const fileName = item.key.split('/').filter(Boolean).pop();
           let destKey = prefix + fileName + (item.isFolder ? '/' : '');
-          
+
           // Check for same location paste
           if (item.bucket === bucketName && item.region === bucketRegion && destKey === item.key) {
              // Auto-rename
@@ -468,7 +482,7 @@ function BucketContent() {
              const extPart = (fileName?.split('.').length ?? 0) > 1 ? '.' + fileName?.split('.').pop() : '';
              destKey = prefix + namePart + `-${Date.now()}` + extPart + (item.isFolder ? '/' : '');
           }
-          
+
           if (clipboardMode === 'copy') {
             await operationsApi.copyObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey);
           } else {
@@ -492,7 +506,7 @@ function BucketContent() {
   const handleCopyRef = useRef(handleCopy);
   const handleCutRef = useRef(handleCut);
   const handlePasteRef = useRef(handlePaste);
-  
+
   useEffect(() => {
     handleCopyRef.current = handleCopy;
     handleCutRef.current = handleCut;
@@ -540,7 +554,7 @@ function BucketContent() {
          setDeleteConfirmOpen(true);
        }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []); // Empty deps - we use refs for latest values
@@ -554,18 +568,18 @@ function BucketContent() {
         multiple: true,
         title: 'Select files to upload'
       });
-      
+
       if (selected) {
         setIsUploading(true);
         const files = Array.isArray(selected) ? selected : [selected];
         let count = 0;
-        
+
         for (const file of files) {
            const filename = file.split(/[/\\]/).pop() || 'uploaded-file';
            const key = prefix + filename;
-           
-           const jobId = await transferApi.queueUpload(bucketName, bucketRegion, key, file, 0); 
-           
+
+           const jobId = await transferApi.queueUpload(bucketName, bucketRegion, key, file, 0);
+
            addJob({
               id: jobId,
               transfer_type: 'Upload',
@@ -598,17 +612,17 @@ function BucketContent() {
         multiple: true,
         title: 'Select folders to upload'
       });
-      
+
       if (selected) {
          setIsUploading(true);
          const folders = Array.isArray(selected) ? selected : [selected];
          let totalFiles = 0;
-         
+
          for (const folder of folders) {
              const count = await transferApi.queueFolderUpload(bucketName, bucketRegion, prefix, folder);
              totalFiles += count;
          }
-         
+
          displaySuccess(`Queued ${totalFiles} files from ${folders.length} folders`, '/uploads');
       }
     } catch (err) {
@@ -624,7 +638,7 @@ function BucketContent() {
     try {
       const cleanName = newFolderName.trim().replace(/^\/+/, '').replace(/\/+$/, '');
       const key = prefix + cleanName + '/';
-      
+
       await operationsApi.putObject(bucketName, bucketRegion, key);
       setCreateFolderOpen(false);
       setNewFolderName('');
@@ -639,21 +653,21 @@ function BucketContent() {
 
   const handleDownloadSelected = async () => {
     if (selectedKeys.size === 0) return;
-    
+
     // Select directory for downloads
     const selected = await open({
         directory: true,
         multiple: false,
         title: 'Select Download Directory'
     });
-    
+
     if (!selected) return;
-    
+
     const downloadDir = Array.isArray(selected) ? selected[0] : selected;
 
     setIsUploading(true);
     let count = 0;
-    
+
     // Convert to array for batching
     const keysArray = Array.from(selectedKeys);
     const BATCH_SIZE = 5;
@@ -663,12 +677,12 @@ function BucketContent() {
       // Process in batches to prevent WebKit from crashing
       for (let i = 0; i < keysArray.length; i += BATCH_SIZE) {
         const batch = keysArray.slice(i, i + BATCH_SIZE);
-        
+
         // Process batch items concurrently
         await Promise.all(batch.map(async (key) => {
           const selectedObjectSize = currentObjectSizeMap.get(key);
           const isSelectedFolder = currentFolderKeys.has(key);
-          
+
           if (isSelectedFolder) {
             const folderName = key.split('/').filter(Boolean).pop() || 'folder';
             const localPath = joinLocalPath(downloadDir, folderName);
@@ -681,13 +695,13 @@ function BucketContent() {
             count++;
           }
         }));
-        
+
         // Small delay between batches to let WebKit breathe
         if (i + BATCH_SIZE < keysArray.length) {
           await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
         }
       }
-      
+
       displaySuccess(`Queued ${count} items for download.`, '/downloads');
       setSelectedKeys(new Set());
     } catch (err) {
@@ -697,15 +711,15 @@ function BucketContent() {
     }
   };
 
-  
+
   const handleBulkDelete = async () => {
     if (!bucketName || selectedKeys.size === 0) return;
-    
+
     setIsDeleting(true);
     try {
         // Collect all keys to delete - for folders, we need to list ALL objects recursively
         const keysToDelete = new Set<string>();
-        
+
         for (const key of selectedKeys) {
           if (key.endsWith('/')) {
             // It's a folder - list ALL objects recursively under this prefix
@@ -733,13 +747,13 @@ function BucketContent() {
             keysToDelete.add(key);
           }
         }
-        
+
         if (keysToDelete.size === 0) {
           displaySuccess('No items to delete');
           setDeleteConfirmOpen(false);
           return;
         }
-        
+
         // Delete all collected keys
         const keysToDeleteList = Array.from(keysToDelete);
         await operationsApi.deleteObjects(bucketName, bucketRegion, keysToDeleteList);
@@ -772,7 +786,7 @@ function BucketContent() {
     const target = selectedObject;
     const selectedFileSize = currentObjectSizeMap.get(target.key);
     handleMenuClose();
-    
+
     try {
       if (target.isFolder) {
         // Select directory for folder download
@@ -781,7 +795,7 @@ function BucketContent() {
             multiple: false,
             title: 'Select Destination Directory'
         });
-        
+
         if (downloadDir) {
             const dir = Array.isArray(downloadDir) ? downloadDir[0] : downloadDir;
             const folderName = target.key.split('/').filter(Boolean).pop() || 'folder';
@@ -795,14 +809,14 @@ function BucketContent() {
           defaultPath: filename,
           title: 'Save file as'
         });
-        
+
         if (savePath) {
           // Use Transfer Queue
           await transferApi.queueDownload(
-              bucketName, 
-              bucketRegion, 
-              target.key, 
-              savePath, 
+              bucketName,
+              bucketRegion,
+              target.key,
+              savePath,
               selectedFileSize || 0
           );
           displaySuccess('Download queued', '/downloads');
@@ -823,12 +837,12 @@ function BucketContent() {
        setDeleteConfirmOpen(true);
     }
   };
-  
+
   // Rename
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [renameTarget, setRenameTarget] = useState<{ key: string; isFolder: boolean } | null>(null);
-  
+
   const handleRenamePrompt = () => {
     if (selectedObject) {
       const name = selectedObject.key.split('/').filter(Boolean).pop() || '';
@@ -872,7 +886,7 @@ function BucketContent() {
 
        let newKey = `${parentPrefix}${trimmedName}`;
        if (renameTarget.isFolder && !newKey.endsWith('/')) newKey += '/';
-       
+
        await operationsApi.moveObject(bucketName, bucketRegion, oldKey, bucketName, bucketRegion, newKey);
        displaySuccess('Renamed successfully');
        setRenameOpen(false);
@@ -904,17 +918,17 @@ function BucketContent() {
   // Show error state if bucket failed to load
   if (initialError && !isLoading) {
     // Check if this might be a prefix-restricted access issue
-    const isAccessDenied = initialError.toLowerCase().includes('access') || 
+    const isAccessDenied = initialError.toLowerCase().includes('access') ||
                            initialError.toLowerCase().includes('denied') ||
                            initialError.toLowerCase().includes('forbidden') ||
                            initialError.toLowerCase().includes('permission');
-    
+
     return (
-      <Box sx={{ 
-        p: 6, 
-        textAlign: 'center', 
-        display: 'flex', 
-        flexDirection: 'column', 
+      <Box sx={{
+        p: 6,
+        textAlign: 'center',
+        display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         gap: 2,
         maxWidth: 700,
@@ -928,7 +942,7 @@ function BucketContent() {
         <Typography color="text.secondary" variant="body1" sx={{ fontFamily: 'monospace', bgcolor: 'action.hover', p: 1, borderRadius: 1, maxWidth: '100%', overflow: 'auto' }}>
           {initialError}
         </Typography>
-        
+
         {isAccessDenied ? (
           <>
             <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
@@ -954,17 +968,17 @@ function BucketContent() {
             This bucket may not exist, or you might not have permission to access it.
           </Typography>
         )}
-        
+
         <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             startIcon={<HomeIcon />}
             onClick={() => router.push('/')}
           >
             Back to Home
           </Button>
-          <Button 
-            variant="outlined" 
+          <Button
+            variant="outlined"
             startIcon={<RefreshIcon />}
             onClick={() => refresh()}
           >
@@ -982,20 +996,20 @@ function BucketContent() {
         <IconButton onClick={handleBack} size="small">
           <ArrowBackIcon />
         </IconButton>
-        
+
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
           <Breadcrumbs maxItems={5} itemsBeforeCollapse={2}>
-            
+
             <Link
-              component="button" 
+              component="button"
               underline="hover"
               color={!prefix ? 'text.primary' : 'inherit'}
-              onClick={() => bucketName && handleNavigate('')} 
+              onClick={() => bucketName && handleNavigate('')}
               fontWeight={!prefix ? 800 : 500}
             >
               {bucketName}
             </Link>
-            
+
             {breadcrumbs.map((crumb, index) => {
               const isLast = index === breadcrumbs.length - 1;
               return (
@@ -1058,15 +1072,15 @@ function BucketContent() {
         {selectedKeys.size > 0 ? (
           <Fade in={selectedKeys.size > 0}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Chip 
-                label={`${selectedKeys.size} selected`} 
-                size="small" 
-                color="primary" 
-                variant="outlined" 
+              <Chip
+                label={`${selectedKeys.size} selected`}
+                size="small"
+                color="primary"
+                variant="outlined"
                 onDelete={() => setSelectedKeys(new Set())}
                 sx={{ fontWeight: 700, borderRadius: 1 }}
               />
-              <Button 
+              <Button
                 variant="outlined"
                 size="small"
                 onClick={handleDownloadSelected}
@@ -1076,10 +1090,10 @@ function BucketContent() {
               >
                 Download
               </Button>
-               <Button 
-                variant="contained" 
+               <Button
+                variant="contained"
                 color="error"
-                size="small" 
+                size="small"
                 onClick={handleDeletePrompt}
                 startIcon={<DeleteIcon />}
                 disabled={isDeleting}
@@ -1091,20 +1105,20 @@ function BucketContent() {
           </Fade>
         ) : (
           <>
-        <Button 
-          variant="outlined" 
-          startIcon={<CreateNewFolderIcon />} 
+        <Button
+          variant="outlined"
+          startIcon={<CreateNewFolderIcon />}
           size="small"
           onClick={() => setCreateFolderOpen(true)}
-          sx={{ fontWeight: 700 }} 
+          sx={{ fontWeight: 700 }}
         >
           New Folder
         </Button>
-        <Button 
-          variant="contained" 
-          startIcon={<CloudUploadIcon />} 
+        <Button
+          variant="contained"
+          startIcon={<CloudUploadIcon />}
           endIcon={<ArrowDropDownIcon />}
-          size="small" 
+          size="small"
           disabled={isUploading}
           onClick={(e) => setUploadMenuAnchor(e.currentTarget)}
           sx={{ fontWeight: 700 }}
@@ -1133,12 +1147,12 @@ function BucketContent() {
         )}
 
         <Tooltip title="Refresh">
-            <IconButton 
-              onClick={() => refresh()} 
-              disabled={isLoading} 
-              color="primary" 
-              sx={{ 
-                bgcolor: 'background.paper', 
+            <IconButton
+              onClick={() => refresh()}
+              disabled={isLoading}
+              color="primary"
+              sx={{
+                bgcolor: 'background.paper',
                 border: '1px solid',
                 borderColor: 'divider',
                 boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
@@ -1255,20 +1269,20 @@ function BucketContent() {
             if (!selectedObject || !bucketName) return;
             const target = selectedObject;
             handleMenuClose();
-            
+
             // Get folder to save to
             const folderPath = await open({
               directory: true,
               title: 'Select folder to save files',
             });
-            
+
             if (!folderPath) return;
-            
+
             try {
               const dir = Array.isArray(folderPath) ? folderPath[0] : folderPath;
               const folderName = target.key.split('/').filter(Boolean).pop() || 'folder';
               const localPath = joinLocalPath(dir, folderName);
-              
+
               // Use queueFolderDownload for proper grouping
               const count = await transferApi.queueFolderDownload(bucketName, bucketRegion, target.key, localPath);
               displaySuccess(`Queued ${count} files for download`, '/downloads');
@@ -1283,6 +1297,10 @@ function BucketContent() {
         <MenuItem onClick={handlePropertiesOpen}>
            <ListItemIcon><InfoIcon fontSize="small" /></ListItemIcon>
            Properties
+        </MenuItem>
+        <MenuItem onClick={handlePermissionsOpen}>
+           <ListItemIcon><LockIcon fontSize="small" /></ListItemIcon>
+           Permissions
         </MenuItem>
         <MenuItem onClick={() => {
           if (selectedObject && bucketName) {
@@ -1305,8 +1323,8 @@ function BucketContent() {
           handleMenuClose();
         }}>
           <ListItemIcon>
-            {selectedObject && isFavorite(selectedObject.key, bucketName || undefined, activeProfileId || undefined) 
-              ? <StarIcon fontSize="small" color="warning" /> 
+            {selectedObject && isFavorite(selectedObject.key, bucketName || undefined, activeProfileId || undefined)
+              ? <StarIcon fontSize="small" color="warning" />
               : <StarBorderIcon fontSize="small" />}
           </ListItemIcon>
           {selectedObject && isFavorite(selectedObject.key, bucketName || undefined, activeProfileId || undefined) ? 'Remove from Favorites' : 'Add to Favorites'}
@@ -1392,8 +1410,8 @@ function BucketContent() {
             }}
             error={newFolderName.includes('/') || newFolderName.includes('\\')}
             helperText={
-                (newFolderName.includes('/') || newFolderName.includes('\\')) 
-                ? "Folder names cannot contain slashes" 
+                (newFolderName.includes('/') || newFolderName.includes('\\'))
+                ? "Folder names cannot contain slashes"
                 : ""
             }
             sx={{ mt: 1 }}
@@ -1402,12 +1420,12 @@ function BucketContent() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCreateFolderClose}>Cancel</Button>
-          <Button 
-            onClick={handleCreateFolder} 
+          <Button
+            onClick={handleCreateFolder}
             disabled={
-                isCreatingFolder || 
-                !newFolderName.trim() || 
-                newFolderName.includes('/') || 
+                isCreatingFolder ||
+                !newFolderName.trim() ||
+                newFolderName.includes('/') ||
                 newFolderName.includes('\\')
             }
           >
@@ -1415,7 +1433,7 @@ function BucketContent() {
           </Button>
         </DialogActions>
       </Dialog>
-      
+
       {/* Rename Dialog */}
       <Dialog open={renameOpen} onClose={handleRenameClose}>
         <DialogTitle>Rename</DialogTitle>
@@ -1438,19 +1456,19 @@ function BucketContent() {
              }}
              error={renameValue.includes('/') || renameValue.includes('\\')}
              helperText={
-                (renameValue.includes('/') || renameValue.includes('\\')) 
-                ? "Names cannot contain slashes" 
+                (renameValue.includes('/') || renameValue.includes('\\'))
+                ? "Names cannot contain slashes"
                 : ""
              }
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={handleRenameClose}>Cancel</Button>
-          <Button 
-            onClick={handleRename} 
+          <Button
+            onClick={handleRename}
             disabled={
-                !renameValue.trim() || 
-                renameValue.includes('/') || 
+                !renameValue.trim() ||
+                renameValue.includes('/') ||
                 renameValue.includes('\\')
             }
           >
@@ -1458,14 +1476,23 @@ function BucketContent() {
           </Button>
         </DialogActions>
       </Dialog>
-      
+
       {/* Properties Dialog */}
-      <PropertiesDialog 
-        open={propertiesOpen} 
-        onClose={() => setPropertiesOpen(false)} 
-        bucketName={bucketName} 
+      <PropertiesDialog
+        open={propertiesOpen}
+        onClose={() => setPropertiesOpen(false)}
+        bucketName={bucketName}
         bucketRegion={bucketRegion}
-        objectKey={selectedObjectProp || ''} 
+        objectKey={selectedObjectProp || ''}
+      />
+
+      <PermissionsDialog
+        open={permissionsOpen}
+        onClose={() => setPermissionsOpen(false)}
+        bucketName={bucketName}
+        bucketRegion={bucketRegion}
+        objectKey={selectedObjectPermissions?.key || ''}
+        isFolder={selectedObjectPermissions?.isFolder || false}
       />
 
       {/* Preview/Edit Dialog */}

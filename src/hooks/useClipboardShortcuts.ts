@@ -28,27 +28,25 @@ export function useClipboardShortcuts() {
       const activeElement = document.activeElement;
       if (
         activeElement &&
-        (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement)
+        (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) &&
+        !activeElement.disabled &&
+        !activeElement.readOnly
       ) {
+        e.preventDefault();
+        e.stopPropagation();
+
         try {
           const text = await readText();
-          if (text) {
-            const start = activeElement.selectionStart || 0;
-            const end = activeElement.selectionEnd || 0;
-            const value = activeElement.value;
-            
-            activeElement.value = value.substring(0, start) + text + value.substring(end);
-            
-            // Set cursor position after the pasted text
-            const newPos = start + text.length;
-            activeElement.setSelectionRange(newPos, newPos);
-            
-            // Trigger input event for React/form libraries
-            activeElement.dispatchEvent(new Event('input', { bubbles: true }));
-            activeElement.dispatchEvent(new Event('change', { bubbles: true }));
-            
-            // Stop default browser behavior
-            e.preventDefault();
+          if (text !== null && text !== undefined) {
+            const start = activeElement.selectionStart ?? activeElement.value.length;
+            const end = activeElement.selectionEnd ?? activeElement.value.length;
+
+            activeElement.setRangeText(text, start, end, 'end');
+            activeElement.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              inputType: 'insertFromPaste',
+              data: text,
+            }));
           }
         } catch (err) {
           console.warn('Failed to read from clipboard:', err);

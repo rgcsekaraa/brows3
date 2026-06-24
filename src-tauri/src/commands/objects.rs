@@ -1,7 +1,9 @@
 use crate::commands::profiles::ProfileState;
-use crate::s3::{S3State, S3Object};
+use crate::s3::{FolderContent, S3Object, S3State};
 use crate::error::Result;
+use aws_sdk_s3::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use tauri::State;
 
 fn is_likely_binary_text_mismatch(bytes: &[u8]) -> bool {
@@ -33,6 +35,140 @@ pub struct ListObjectsResult {
     pub bucket_region: Option<String>,
 }
 
+fn normalize_sort_field(sort_field: Option<String>) -> Option<String> {
+    match sort_field.as_deref() {
+        Some("name") | Some("size") | Some("date") | Some("class") => sort_field,
+        _ => None,
+    }
+}
+
+fn normalize_sort_direction(sort_direction: Option<String>) -> String {
+    match sort_direction.as_deref() {
+        Some("desc") => "desc".to_string(),
+        _ => "asc".to_string(),
+    }
+}
+
+fn paginate_folder_content(
+    content: &FolderContent,
+    prefix: String,
+    bucket_region: Option<String>,
+    continuation_token: Option<String>,
+    max_keys: Option<i32>,
+) -> ListObjectsResult {
+    let offset = continuation_token
+        .and_then(|t| t.parse::<usize>().ok())
+        .unwrap_or(0);
+    let max = max_keys.unwrap_or(1000).max(1) as usize;
+    let end = (offset + max).min(content.objects.len());
+    let next_token = if end < content.objects.len() {
+        Some(end.to_string())
+    } else {
+        None
+    };
+
+    ListObjectsResult {
+        objects: content.objects[offset..end].to_vec(),
+        common_prefixes: if offset == 0 {
+            content.common_prefixes.clone()
+        } else {
+            Vec::new()
+        },
+        next_continuation_token: next_token.clone(),
+        is_truncated: next_token.is_some(),
+        prefix,
+        bucket_region,
+    }
+}
+
+async fn list_complete_folder_content(
+    client: &Client,
+    bucket_name: &str,
+    prefix: &str,
+    delimiter: &str,
+) -> Result<FolderContent> {
+    let mut objects = Vec::new();
+    let mut common_prefixes = Vec::new();
+    let mut seen_prefixes = HashSet::new();
+    let mut continuation_token: Option<String> = None;
+
+    loop {
+        let mut request = client
+            .list_objects_v2()
+            .bucket(bucket_name)
+            .prefix(prefix)
+            .max_keys(1000);
+
+        if !delimiter.is_empty() {
+            request = request.delimiter(delimiter);
+        }
+
+        if let Some(token) = &continuation_token {
+            request = request.continuation_token(token);
+        }
+
+        let output = request
+            .send()
+            .await
+            .map_err(|err| crate::error::AppError::S3Error(err.to_string()))?;
+
+        for obj in output.contents() {
+            let key = obj.key().unwrap_or_default();
+            let size = obj.size().unwrap_or(0);
+            if !delimiter.is_empty() && key.ends_with('/') && size == 0 {
+                continue;
+            }
+
+            objects.push(S3Object {
+                key: key.to_string(),
+                last_modified: obj.last_modified().map(|d| d.to_string()),
+                size,
+                storage_class: obj.storage_class().map(|s| s.as_str().to_string()),
+            });
+        }
+
+        for common_prefix in output.common_prefixes() {
+            let prefix = common_prefix.prefix().unwrap_or_default().to_string();
+            if seen_prefixes.insert(prefix.clone()) {
+                common_prefixes.push(prefix);
+            }
+        }
+
+        if output.is_truncated().unwrap_or(false) {
+            continuation_token = output.next_continuation_token().map(|s| s.to_string());
+        } else {
+            break;
+        }
+    }
+
+    Ok(FolderContent {
+        objects,
+        common_prefixes,
+    })
+}
+
+fn sort_folder_content(content: &mut FolderContent, sort_field: &str, sort_direction: &str) {
+    content.common_prefixes.sort();
+    if sort_direction == "desc" {
+        content.common_prefixes.reverse();
+    }
+
+    content.objects.sort_by(|a, b| {
+        let ordering = match sort_field {
+            "size" => a.size.cmp(&b.size).then_with(|| a.key.cmp(&b.key)),
+            "date" => a.last_modified.cmp(&b.last_modified).then_with(|| a.key.cmp(&b.key)),
+            "class" => a.storage_class.cmp(&b.storage_class).then_with(|| a.key.cmp(&b.key)),
+            _ => a.key.cmp(&b.key),
+        };
+
+        if sort_direction == "desc" {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    });
+}
+
 #[tauri::command]
 pub async fn list_objects(
     bucket_name: String,
@@ -42,12 +178,21 @@ pub async fn list_objects(
     continuation_token: Option<String>,
     max_keys: Option<i32>,
     bypass_cache: Option<bool>,
+    sort_field: Option<String>,
+    sort_direction: Option<String>,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<ListObjectsResult> {
     let prefix_str = prefix.clone().unwrap_or_default();
     let delimiter_str = delimiter.unwrap_or_else(|| "/".to_string());
     let requested_bucket_region = bucket_region.clone();
+    let sort_field = normalize_sort_field(sort_field);
+    let sort_direction = normalize_sort_direction(sort_direction);
+    let uses_complete_sort = sort_field
+        .as_deref()
+        .map(|field| field != "name" || sort_direction == "desc")
+        .unwrap_or(false)
+        && !delimiter_str.is_empty();
     
     // Get active profile
     let profile_manager = profile_state.read().await;
@@ -61,41 +206,35 @@ pub async fn list_objects(
     {
         let s3_manager = s3_state.read().await;
         let cached_bucket_region = s3_manager.get_bucket_region(&bucket_name).or(requested_bucket_region.clone());
-        if !bypass_cache.unwrap_or(false) && s3_manager.has_cache(&active_profile.id, &bucket_name) {
+        if uses_complete_sort && !bypass_cache.unwrap_or(false) {
+            if let Some(field) = sort_field.as_deref() {
+                if let Some(content) = s3_manager.get_sorted_folder_content(
+                    &active_profile.id,
+                    &bucket_name,
+                    &prefix_str,
+                    field,
+                    &sort_direction,
+                ) {
+                    return Ok(paginate_folder_content(
+                        content,
+                        prefix_str,
+                        cached_bucket_region,
+                        continuation_token,
+                        max_keys,
+                    ));
+                }
+            }
+        }
+
+        if !uses_complete_sort && !bypass_cache.unwrap_or(false) && s3_manager.has_cache(&active_profile.id, &bucket_name) {
             if let Some(content) = s3_manager.get_folder_content(&active_profile.id, &bucket_name, &prefix_str) {
-                 // Paginate cached objects
-                 let offset = continuation_token
-                     .clone()
-                     .and_then(|t| t.parse::<usize>().ok())
-                     .unwrap_or(0);
-                 
-                 let max = max_keys.unwrap_or(1000) as usize;
-                 let end = (offset + max).min(content.objects.len());
-                 
-                 let page_objects = content.objects[offset..end].to_vec();
-                 let next_token = if end < content.objects.len() {
-                     Some(end.to_string())
-                 } else {
-                     None
-                 };
-
-                 // Only return common_prefixes on the first page
-                 let prefixes = if offset == 0 {
-                     content.common_prefixes.clone()
-                 } else {
-                     Vec::new()
-                 };
-
-                 let is_truncated = next_token.is_some();
-
-                 return Ok(ListObjectsResult {
-                     objects: page_objects,
-                     common_prefixes: prefixes,
-                     next_continuation_token: next_token,
-                     is_truncated,
-                     prefix: prefix_str,
-                     bucket_region: cached_bucket_region.clone(),
-                 });
+                 return Ok(paginate_folder_content(
+                     content,
+                     prefix_str,
+                     cached_bucket_region.clone(),
+                     continuation_token,
+                     max_keys,
+                 ));
             } else if let Some(obj) = s3_manager.get_object_from_cache(&active_profile.id, &bucket_name, &prefix_str) {
                  // Fallback: Check if the prefix is actually a file object itself
                  return Ok(ListObjectsResult {
@@ -140,6 +279,57 @@ pub async fn list_objects(
             s3_manager.get_client(&active_profile).await?.clone()
         }
     };
+
+    if uses_complete_sort {
+        let field = sort_field.clone().unwrap_or_else(|| "name".to_string());
+        let mut content = match list_complete_folder_content(&client, &bucket_name, &prefix_str, &delimiter_str).await {
+            Ok(content) => content,
+            Err(err) => {
+                log::warn!("Sorted list_objects failed, attempting region discovery: {}", err);
+                let detected_region = {
+                    let retry_client = {
+                       let mut s3_manager = s3_state.write().await;
+                       s3_manager.get_client(&active_profile).await?.clone()
+                    };
+                    crate::s3::get_bucket_region(&retry_client, &bucket_name).await.ok()
+                };
+
+                if let Some(new_region) = detected_region {
+                    let new_client = {
+                        let mut s3_manager = s3_state.write().await;
+                        s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                        s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                    };
+                    resolved_bucket_region = Some(new_region);
+                    list_complete_folder_content(&new_client, &bucket_name, &prefix_str, &delimiter_str).await?
+                } else {
+                    return Err(err);
+                }
+            }
+        };
+
+        sort_folder_content(&mut content, &field, &sort_direction);
+
+        {
+            let mut s3_manager = s3_state.write().await;
+            s3_manager.set_sorted_folder_content(
+                &active_profile.id,
+                &bucket_name,
+                &prefix_str,
+                &field,
+                &sort_direction,
+                content.clone(),
+            );
+        }
+
+        return Ok(paginate_folder_content(
+            &content,
+            prefix_str,
+            resolved_bucket_region.or(requested_bucket_region),
+            continuation_token,
+            max_keys,
+        ));
+    }
 
     // 3. Perform network IO outside of locks, including retry logic
     let mut request = client
@@ -316,31 +506,14 @@ pub async fn search_objects(
     
     let prefix_str = prefix.unwrap_or_default();
     let query_lower = query.to_lowercase();
-    
-    // 1. Try Cache First
-    {
-        let s3_manager = s3_state.read().await;
-        if s3_manager.has_cache(&active_profile.id, &bucket_name) {
-            if let Some(all_objects) = s3_manager.get_cached_objects(&active_profile.id, &bucket_name) {
-                 let filtered: Vec<S3Object> = all_objects.iter()
-                     // If searching from a prefix, only include objects starting with that prefix
-                     .filter(|obj| obj.key.starts_with(&prefix_str) && obj.key.to_lowercase().contains(&query_lower))
-                     .cloned()
-                     .collect();
-                 return Ok(filtered);
-            }
-        }
-    }
 
-    // 2. Fallback to S3
-    
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(&bucket_name)
     }.or(bucket_region);
 
-    let client = {
+    let mut client = {
         let mut s3_manager = s3_state.write().await;
         if let Some(ref region) = bucket_region {
             s3_manager.get_client_for_region(&active_profile, region).await?.clone()
@@ -351,8 +524,6 @@ pub async fn search_objects(
 
     let mut objects = Vec::new();
     let mut continuation_token = None;
-    let max_search_api_calls = 50; // Increased from 10 to search deeper
-    let result_limit = 1000; // Increased from 500
     let mut calls = 0;
 
     loop {
@@ -372,8 +543,10 @@ pub async fn search_objects(
             Err(err) => {
                 log::warn!("Search list_objects failed: {}", err);
                 if calls > 0 {
-                    // If we already have some results, just return them instead of failing completely mid-stream
-                    return Ok(objects);
+                    return Err(crate::error::AppError::S3Error(format!(
+                        "Search failed after reading {} S3 pages: {}",
+                        calls, err
+                    )));
                 }
                 
                 // Attempt to detect region and retry (only if this is the first call)
@@ -391,6 +564,7 @@ pub async fn search_objects(
                         s3_manager.set_bucket_region(&bucket_name, new_region.clone());
                         s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
                     };
+                    client = new_client.clone();
                     
                     let mut retry_req = new_client.list_objects_v2()
                         .bucket(&bucket_name)
@@ -427,11 +601,7 @@ pub async fn search_objects(
             }
         }
         
-        if objects.len() >= result_limit {
-            break;
-        }
-
-        if !output.is_truncated().unwrap_or(false) || calls >= max_search_api_calls {
+        if !output.is_truncated().unwrap_or(false) {
             break;
         }
         continuation_token = output.next_continuation_token().map(|s| s.to_string());

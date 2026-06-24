@@ -214,14 +214,25 @@ export interface ListObjectsResult {
 }
 
 export const objectApi = {
-  async listObjects(bucketName: string, bucketRegion?: string, prefix = '', delimiter = '/', continuationToken?: string, bypassCache = false): Promise<ListObjectsResult> {
+  async listObjects(
+    bucketName: string,
+    bucketRegion?: string,
+    prefix = '',
+    delimiter = '/',
+    continuationToken?: string,
+    bypassCache = false,
+    sortField?: 'name' | 'size' | 'date' | 'class',
+    sortDirection?: 'asc' | 'desc'
+  ): Promise<ListObjectsResult> {
     return invoke<ListObjectsResult>('list_objects', { 
       bucketName, 
       bucketRegion,
       prefix: prefix || null, 
       delimiter: delimiter === undefined ? null : delimiter,
       continuationToken: continuationToken || null,
-      bypassCache
+      bypassCache,
+      sortField: sortField || null,
+      sortDirection: sortDirection || null
     });
   },
 
@@ -280,6 +291,22 @@ export const operationsApi = {
   async getObjectMetadata(bucketName: string, bucketRegion: string | undefined, key: string): Promise<ObjectMetadata> {
     return invoke<ObjectMetadata>('get_object_metadata', { bucketName, bucketRegion, key });
   },
+
+  async getObjectPermissions(bucketName: string, bucketRegion: string | undefined, key: string, isFolder: boolean): Promise<ObjectPermissions> {
+    return invoke<ObjectPermissions>('get_object_permissions', { bucketName, bucketRegion, key, isFolder });
+  },
+
+  async setObjectPermissions(
+    bucketName: string,
+    bucketRegion: string | undefined,
+    key: string,
+    isFolder: boolean,
+    cannedAcl: ObjectCannedAcl
+  ): Promise<SetObjectPermissionsResult> {
+    const result = await invoke<SetObjectPermissionsResult>('set_object_permissions', { bucketName, bucketRegion, key, isFolder, cannedAcl });
+    invalidateCache();
+    return result;
+  },
 };
 
 export interface ObjectMetadata {
@@ -290,6 +317,39 @@ export interface ObjectMetadata {
   e_tag: string | null;
   storage_class: string | null;
   user_metadata: Record<string, string>;
+}
+
+export type ObjectCannedAcl =
+  | 'private'
+  | 'public-read'
+  | 'public-read-write'
+  | 'authenticated-read'
+  | 'aws-exec-read'
+  | 'bucket-owner-read'
+  | 'bucket-owner-full-control';
+
+export interface ObjectAclGrant {
+  grantee_type: string | null;
+  display_name: string | null;
+  id: string | null;
+  uri: string | null;
+  email_address: string | null;
+  permission: string | null;
+}
+
+export interface ObjectPermissions {
+  key: string;
+  is_folder: boolean;
+  status: 'available' | 'unsupported' | 'access_denied';
+  message: string | null;
+  owner_display_name: string | null;
+  owner_id: string | null;
+  grants: ObjectAclGrant[];
+  target_count: number;
+}
+
+export interface SetObjectPermissionsResult {
+  affected_count: number;
 }
 
 export interface TransferJob {

@@ -39,7 +39,8 @@ Brows3 is a strong fit if you need:
 Traditional S3 tools often suffer from latency when navigating deep folder structures or listing large numbers of objects. If you are comparing tools like an S3 browser, S3 explorer, S3 GUI client, or desktop client for S3-compatible storage, Brows3 focuses the browsing experience around:
 
 - **Fast Cached Navigation**: Recently loaded folders and bucket views are cached so repeat navigation is quick.
-- **Deep Search**: Search recursively within a bucket or prefix, with practical limits to keep large object stores responsive.
+- **Deep Search**: Search recursively across the full selected bucket or prefix instead of only the objects already loaded in the table.
+- **Accurate Large-Bucket Sorting**: Sort large prefixes by name, size, modified date, or storage class with the backend ordering the complete S3 result set before paginating it to the UI.
 - **Prefix-Aware Object Cache**: Brows3 builds folder views from cached object keys, reducing repeated S3 listing calls.
 - **Virtualized Object Table**: The object table is tuned for large listings without rendering every row at once.
 
@@ -53,6 +54,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 - **Mixed Content Support**: Seamlessly handle folders and files in a single drag-and-drop operation.
 - **Copy-to-Clipboard**: Quick copy of S3 Paths, Keys, and Object URLs.
 - **Presigned URL Sharing**: Generate temporary object links with configurable expiry directly from the bucket view.
+- **Object Permissions**: View and apply S3 object ACLs for files and recursively for folder prefixes, with clear messages when a bucket or provider has ACLs disabled or unsupported.
 
 ### Rich Previews & Editing
 - **Built-in Editor**: Powered by **Monaco (VS Code's Engine)**. Edit text, JSON, and code files directly in S3.
@@ -68,7 +70,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
   - Sub-millisecond navigation for recently visited folders.
   - **Auto-Invalidation**: Cache automatically refreshes after you upload, delete, or modify files.
   - **30-Minute TTL**: Stale data (from external sources) is automatically purged.
-- **Lazy Loading**: Paginates large object listings to keep browsing responsive.
+- **Lazy Loading**: Paginates large object listings to keep browsing responsive while preserving complete-result sorting for non-default sort orders.
 
 #### **Enterprise & Restricted Access**
 - **Direct Bucket Access**: Instantly navigate to specific buckets (e.g., `s3://my-secure-bucket`) even if you don't have `s3:ListBuckets` permission.
@@ -180,7 +182,7 @@ Brows3 is available for all major desktop platforms. Download the latest version
 
 Windows releases are configured to bundle the WebView2 runtime with the installer so fresh machines do not depend on a separate runtime download during installation.
 
-Winget manifests are generated from each signed Windows release asset and attached to the GitHub release for package-manager submission.
+Winget manifests are generated from the signed Windows MSI release asset and attached to each GitHub release for package-manager submission. If the MSI asset is unavailable, the release workflow falls back to the NSIS installer manifest.
 
 ### Manual Build
 

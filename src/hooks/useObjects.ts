@@ -19,7 +19,13 @@ interface UseObjectsResult {
   hasMore: boolean;
 }
 
-export function useObjects(bucketName: string, bucketRegion?: string, prefix = ''): UseObjectsResult {
+export function useObjects(
+  bucketName: string,
+  bucketRegion?: string,
+  prefix = '',
+  sortField: 'name' | 'size' | 'date' | 'class' = 'name',
+  sortDirection: 'asc' | 'desc' = 'asc'
+): UseObjectsResult {
   const [data, setData] = useState<ListObjectsResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,13 +49,13 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
     if (!bucketName || !activeProfileId) return null;
     
     const currentFetchId = ++fetchIdRef.current;
-    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}`;
+    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}:${sortField}:${sortDirection}`;
     const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
     fetchInProgress.current = true;
     setIsLoading(true);
     setError(null);
 
-    const key = `${bucketName}/${prefix}`;
+    const key = `${bucketName}/${prefix}:${sortField}:${sortDirection}`;
     if (key !== lastDataKeyRef.current) {
         setData(null);
         lastDataKeyRef.current = key;
@@ -61,7 +67,7 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
     }
 
     try {
-      const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', undefined, bypassCache);
+      const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', undefined, bypassCache, sortField, sortDirection);
       
       // RACING CONDITION FIX:
       // If a new fetch started while we were awaiting, ignore this result.
@@ -93,11 +99,11 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
         fetchInProgress.current = false;
       }
     }
-  }, [bucketName, bucketRegion, prefix, activeProfileId]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection]);
 
   useEffect(() => {
     let cancelled = false;
-    const currentKey = `${activeProfileId}:${bucketName}:${prefix}`;
+    const currentKey = `${activeProfileId}:${bucketName}:${prefix}:${sortField}:${sortDirection}`;
     
     if (loadedViewKeyRef.current === currentKey) {
       return;
@@ -124,7 +130,7 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
         viewKeyRef.current = '';
       }
     };
-  }, [bucketName, prefix, activeProfileId, fetchItems]);
+  }, [bucketName, prefix, activeProfileId, sortField, sortDirection, fetchItems]);
 
   useEffect(() => {
     return subscribeCacheInvalidation(() => {
@@ -161,13 +167,13 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
   const loadMore = useCallback(async () => {
     if (!bucketName || !activeProfileId || !continuationToken || isLoadingMore || fetchInProgress.current) return;
     
-    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}`;
+    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}:${sortField}:${sortDirection}`;
     const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
     const currentFetchId = fetchIdRef.current;
     const requestToken = continuationToken;
     setIsLoadingMore(true);
     try {
-       const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', requestToken);
+       const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', requestToken, false, sortField, sortDirection);
        if (currentViewKey !== viewKeyRef.current || currentFetchId !== fetchIdRef.current) {
          return;
        }
@@ -188,7 +194,7 @@ export function useObjects(bucketName: string, bucketRegion?: string, prefix = '
     } finally {
        setIsLoadingMore(false);
     }
-  }, [bucketName, bucketRegion, prefix, activeProfileId, continuationToken, isLoadingMore]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, continuationToken, isLoadingMore, sortField, sortDirection]);
 
   const refresh = useCallback(async () => {
     if (!bucketName || !activeProfileId) return;

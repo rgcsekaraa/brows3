@@ -1,8 +1,9 @@
 use crate::commands::profiles::ProfileState;
 use crate::s3::S3State;
 use crate::error::Result;
+use aws_sdk_s3::Client;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::{Delete, ObjectIdentifier};
+use aws_sdk_s3::types::{Delete, ObjectCannedAcl, ObjectIdentifier};
 use tauri::State;
 use std::collections::HashSet;
 use std::path::Path;
@@ -55,6 +56,110 @@ fn validate_folder_target(
     }
 
     Ok(())
+}
+
+fn parse_object_canned_acl(value: &str) -> Result<ObjectCannedAcl> {
+    match value {
+        "private" => Ok(ObjectCannedAcl::Private),
+        "public-read" => Ok(ObjectCannedAcl::PublicRead),
+        "public-read-write" => Ok(ObjectCannedAcl::PublicReadWrite),
+        "authenticated-read" => Ok(ObjectCannedAcl::AuthenticatedRead),
+        "aws-exec-read" => Ok(ObjectCannedAcl::AwsExecRead),
+        "bucket-owner-read" => Ok(ObjectCannedAcl::BucketOwnerRead),
+        "bucket-owner-full-control" => Ok(ObjectCannedAcl::BucketOwnerFullControl),
+        _ => Err(crate::error::AppError::ConfigError(format!(
+            "Unsupported object ACL '{}'",
+            value
+        ))),
+    }
+}
+
+fn classify_acl_error(error: &str) -> Option<(&'static str, &'static str)> {
+    let normalized = error.to_ascii_lowercase();
+
+    if normalized.contains("accesscontrollistnotsupported")
+        || normalized.contains("acl is not supported")
+        || normalized.contains("acls are not supported")
+        || normalized.contains("bucket does not allow acls")
+        || normalized.contains("the bucket does not allow acls")
+        || normalized.contains("notimplemented")
+        || normalized.contains("not implemented")
+        || normalized.contains("methodnotallowed")
+        || normalized.contains("method not allowed")
+        || normalized.contains("xnotimplemented")
+    {
+        return Some((
+            "unsupported",
+            "ACL permissions are not supported for this bucket or provider. The bucket may use Object Ownership with ACLs disabled.",
+        ));
+    }
+
+    if normalized.contains("accessdenied")
+        || normalized.contains("access denied")
+        || normalized.contains("forbidden")
+        || normalized.contains("status code: 403")
+        || normalized.contains(" 403")
+    {
+        return Some((
+            "access_denied",
+            "Your credentials do not allow viewing or changing ACL permissions for this object.",
+        ));
+    }
+
+    None
+}
+
+fn map_acl_error(error: impl ToString) -> crate::error::AppError {
+    let error_string = error.to_string();
+    if let Some((_, message)) = classify_acl_error(&error_string) {
+        crate::error::AppError::S3Error(message.to_string())
+    } else {
+        crate::error::AppError::S3Error(error_string)
+    }
+}
+
+async fn list_keys_for_permission_target(
+    client: &Client,
+    bucket_name: &str,
+    key: &str,
+    is_folder: bool,
+) -> Result<Vec<String>> {
+    if !is_folder {
+        return Ok(vec![key.to_string()]);
+    }
+
+    let mut keys = Vec::new();
+    let mut continuation_token = None;
+
+    loop {
+        let mut request = client.list_objects_v2().bucket(bucket_name).prefix(key);
+        if let Some(token) = continuation_token {
+            request = request.continuation_token(token);
+        }
+
+        let output = request
+            .send()
+            .await
+            .map_err(|err| crate::error::AppError::S3Error(err.to_string()))?;
+
+        for object in output.contents() {
+            if let Some(object_key) = object.key() {
+                keys.push(object_key.to_string());
+            }
+        }
+
+        if output.is_truncated().unwrap_or(false) {
+            continuation_token = output.next_continuation_token().map(|token| token.to_string());
+        } else {
+            break;
+        }
+    }
+
+    if keys.is_empty() {
+        keys.push(key.to_string());
+    }
+
+    Ok(keys)
 }
 
 #[tauri::command]
@@ -786,6 +891,209 @@ pub struct ObjectMetadata {
     pub e_tag: Option<String>,
     pub storage_class: Option<String>,
     pub user_metadata: std::collections::HashMap<String, String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct ObjectAclGrant {
+    pub grantee_type: Option<String>,
+    pub display_name: Option<String>,
+    pub id: Option<String>,
+    pub uri: Option<String>,
+    pub email_address: Option<String>,
+    pub permission: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct ObjectPermissions {
+    pub key: String,
+    pub is_folder: bool,
+    pub status: String,
+    pub message: Option<String>,
+    pub owner_display_name: Option<String>,
+    pub owner_id: Option<String>,
+    pub grants: Vec<ObjectAclGrant>,
+    pub target_count: usize,
+}
+
+#[derive(serde::Serialize)]
+pub struct SetObjectPermissionsResult {
+    pub affected_count: usize,
+}
+
+#[tauri::command]
+pub async fn get_object_permissions(
+    bucket_name: String,
+    bucket_region: Option<String>,
+    key: String,
+    is_folder: bool,
+    profile_state: State<'_, ProfileState>,
+    s3_state: State<'_, S3State>,
+) -> Result<ObjectPermissions> {
+    let profile_manager = profile_state.read().await;
+    let active_profile = profile_manager
+        .get_active_profile()
+        .await?
+        .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
+    drop(profile_manager);
+
+    let bucket_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(&bucket_name)
+    }.or(bucket_region);
+
+    let mut client = {
+        let mut s3_manager = s3_state.write().await;
+        if let Some(ref region) = bucket_region {
+            s3_manager.get_client_for_region(&active_profile, region).await?.clone()
+        } else {
+            s3_manager.get_client(&active_profile).await?.clone()
+        }
+    };
+
+    let mut target_keys = match list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await {
+        Ok(keys) => keys,
+        Err(err) => {
+            log::warn!("Permission target listing failed, attempting region discovery: {}", err);
+            if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
+                client = {
+                    let mut s3_manager = s3_state.write().await;
+                    s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                };
+                list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await?
+            } else {
+                return Err(err);
+            }
+        }
+    };
+
+    target_keys.sort();
+    let representative_key = target_keys
+        .first()
+        .cloned()
+        .ok_or_else(|| crate::error::AppError::S3Error("No permission target found".to_string()))?;
+
+    let output = match client
+        .get_object_acl()
+        .bucket(&bucket_name)
+        .key(&representative_key)
+        .send()
+        .await
+    {
+        Ok(output) => output,
+        Err(err) => {
+            let error_string = err.to_string();
+            if let Some((status, message)) = classify_acl_error(&error_string) {
+                return Ok(ObjectPermissions {
+                    key,
+                    is_folder,
+                    status: status.to_string(),
+                    message: Some(message.to_string()),
+                    owner_display_name: None,
+                    owner_id: None,
+                    grants: Vec::new(),
+                    target_count: target_keys.len(),
+                });
+            }
+            return Err(crate::error::AppError::S3Error(error_string));
+        }
+    };
+
+    let grants = output
+        .grants()
+        .iter()
+        .map(|grant| {
+            let grantee = grant.grantee();
+            ObjectAclGrant {
+                grantee_type: grantee.map(|g| g.r#type().as_str().to_string()),
+                display_name: grantee.and_then(|g| g.display_name()).map(|value| value.to_string()),
+                id: grantee.and_then(|g| g.id()).map(|value| value.to_string()),
+                uri: grantee.and_then(|g| g.uri()).map(|value| value.to_string()),
+                email_address: grantee.and_then(|g| g.email_address()).map(|value| value.to_string()),
+                permission: grant.permission().map(|value| value.as_str().to_string()),
+            }
+        })
+        .collect();
+
+    Ok(ObjectPermissions {
+        key,
+        is_folder,
+        status: "available".to_string(),
+        message: None,
+        owner_display_name: output.owner().and_then(|owner| owner.display_name()).map(|value| value.to_string()),
+        owner_id: output.owner().and_then(|owner| owner.id()).map(|value| value.to_string()),
+        grants,
+        target_count: target_keys.len(),
+    })
+}
+
+#[tauri::command]
+pub async fn set_object_permissions(
+    bucket_name: String,
+    bucket_region: Option<String>,
+    key: String,
+    is_folder: bool,
+    canned_acl: String,
+    profile_state: State<'_, ProfileState>,
+    s3_state: State<'_, S3State>,
+) -> Result<SetObjectPermissionsResult> {
+    let acl = parse_object_canned_acl(&canned_acl)?;
+    let profile_manager = profile_state.read().await;
+    let active_profile = profile_manager
+        .get_active_profile()
+        .await?
+        .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
+    drop(profile_manager);
+
+    let bucket_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(&bucket_name)
+    }.or(bucket_region);
+
+    let mut client = {
+        let mut s3_manager = s3_state.write().await;
+        if let Some(ref region) = bucket_region {
+            s3_manager.get_client_for_region(&active_profile, region).await?.clone()
+        } else {
+            s3_manager.get_client(&active_profile).await?.clone()
+        }
+    };
+
+    let target_keys = match list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await {
+        Ok(keys) => keys,
+        Err(err) => {
+            log::warn!("Permission target listing failed, attempting region discovery: {}", err);
+            if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
+                client = {
+                    let mut s3_manager = s3_state.write().await;
+                    s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                };
+                list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await?
+            } else {
+                return Err(err);
+            }
+        }
+    };
+
+    for target_key in &target_keys {
+        client
+            .put_object_acl()
+            .bucket(&bucket_name)
+            .key(target_key)
+            .acl(acl.clone())
+            .send()
+            .await
+            .map_err(map_acl_error)?;
+    }
+
+    {
+        let profile_id = active_profile.id.clone();
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.remove_bucket_cache(&profile_id, &bucket_name);
+    }
+
+    Ok(SetObjectPermissionsResult {
+        affected_count: target_keys.len(),
+    })
 }
 
 #[tauri::command]

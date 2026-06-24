@@ -224,6 +224,8 @@ pub fn run() {
             operations::move_object,
             operations::delete_objects,
             operations::get_object_metadata,
+            operations::get_object_permissions,
+            operations::set_object_permissions,
             // Transfer commands
             transfer_cmd::queue_upload,
             transfer_cmd::queue_download,

@@ -38,6 +38,7 @@ pub struct S3ClientManager {
     clients: HashMap<(String, String), Client>,
     object_cache: HashMap<(String, String), Vec<S3Object>>, // (profile_id, bucket_name) -> objects
     folder_cache: HashMap<(String, String, String), FolderContent>, // (profile_id, bucket_name, prefix) -> children
+    sorted_folder_cache: HashMap<(String, String, String, String, String), FolderContent>, // (profile_id, bucket_name, prefix, sort_field, sort_direction) -> ordered children
     bucket_regions: HashMap<String, String>,                        // bucket_name -> region
 }
 
@@ -47,6 +48,7 @@ impl S3ClientManager {
             clients: HashMap::new(),
             object_cache: HashMap::new(),
             folder_cache: HashMap::new(),
+            sorted_folder_cache: HashMap::new(),
             bucket_regions: HashMap::new(),
         }
     }
@@ -159,6 +161,7 @@ impl S3ClientManager {
         self.clients.clear();
         self.object_cache.clear();
         self.folder_cache.clear();
+        self.sorted_folder_cache.clear();
         self.bucket_regions.clear();
     }
 
@@ -205,6 +208,44 @@ impl S3ClientManager {
             bucket_name.to_string(),
             prefix.to_string(),
         ))
+    }
+
+    pub fn get_sorted_folder_content(
+        &self,
+        profile_id: &str,
+        bucket_name: &str,
+        prefix: &str,
+        sort_field: &str,
+        sort_direction: &str,
+    ) -> Option<&FolderContent> {
+        self.sorted_folder_cache.get(&(
+            profile_id.to_string(),
+            bucket_name.to_string(),
+            prefix.to_string(),
+            sort_field.to_string(),
+            sort_direction.to_string(),
+        ))
+    }
+
+    pub fn set_sorted_folder_content(
+        &mut self,
+        profile_id: &str,
+        bucket_name: &str,
+        prefix: &str,
+        sort_field: &str,
+        sort_direction: &str,
+        content: FolderContent,
+    ) {
+        self.sorted_folder_cache.insert(
+            (
+                profile_id.to_string(),
+                bucket_name.to_string(),
+                prefix.to_string(),
+                sort_field.to_string(),
+                sort_direction.to_string(),
+            ),
+            content,
+        );
     }
 
     /// Set cached objects for a bucket
@@ -349,6 +390,8 @@ impl S3ClientManager {
 
         self.folder_cache
             .retain(|(p, b, _), _| p != &pid || b != &bname);
+        self.sorted_folder_cache
+            .retain(|(p, b, _, _, _), _| p != &pid || b != &bname);
         self.bucket_regions.remove(&bname);
     }
 }
