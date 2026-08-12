@@ -459,6 +459,9 @@ jobs:
           
           # Start building the platforms object
           PLATFORMS="{}"
+          RELEASE_DOWNLOAD_BASE="https://github.com/${{ github.repository }}/releases/download/$TAG"
+          SIGNATURE_DIR="$RUNNER_TEMP/brows3-release-signatures"
+          mkdir -p "$SIGNATURE_DIR"
           
           # Function to add platform
           add_platform() {
@@ -466,22 +469,33 @@ jobs:
             local PATTERN=$2
             local SIG_PATTERN=$3
             
-            # Find the asset URL
-            ASSET_URL=$(echo "$RELEASE_INFO" | jq -r --arg pattern "$PATTERN" '.assets[] | select(.name | test($pattern; "i")) | .browser_download_url' | head -1)
+            # Draft metadata exposes temporary `untagged-*` download URLs. Use
+            # the asset name to construct the stable URL that will exist after
+            # this exact draft is published.
+            ASSET_NAME=$(echo "$RELEASE_INFO" | jq -r --arg pattern "$PATTERN" '.assets[] | select(.name | test($pattern; "i")) | .name' | head -1)
             
-            if [ -n "$ASSET_URL" ] && [ "$ASSET_URL" != "null" ]; then
-              echo "Found $PLATFORM asset: $(basename "$ASSET_URL")"
+            if [ -n "$ASSET_NAME" ] && [ "$ASSET_NAME" != "null" ]; then
+              ASSET_URL="$RELEASE_DOWNLOAD_BASE/$ASSET_NAME"
+              echo "Found $PLATFORM asset: $ASSET_NAME"
               
-              # Download the signature
-              SIG_URL=$(echo "$RELEASE_INFO" | jq -r --arg pattern "$SIG_PATTERN" '.assets[] | select(.name | test($pattern; "i")) | .browser_download_url' | head -1)
+              # Draft browser_download_url values are not publicly readable.
+              # Download the signature through the authenticated release-asset
+              # API, and retain it for the pre-publication metadata audit.
+              SIG_ASSET_ID=$(echo "$RELEASE_INFO" | jq -r --arg pattern "$SIG_PATTERN" '.assets[] | select(.name | test($pattern; "i")) | .id' | head -1)
+              SIG_ASSET_NAME=$(echo "$RELEASE_INFO" | jq -r --arg pattern "$SIG_PATTERN" '.assets[] | select(.name | test($pattern; "i")) | .name' | head -1)
               
-              if [ -n "$SIG_URL" ] && [ "$SIG_URL" != "null" ]; then
-                SIG=$(curl -sL "$SIG_URL")
-                # Escape quotes in signature just in case
-                SIG=$(echo "$SIG" | jq -R '.')
-                # Remove enclosing quotes from jq output as we construct JSON manually/jq
-                SIG="${SIG%\"}"
-                SIG="${SIG#\"}"
+              if [ -n "$SIG_ASSET_ID" ] && [ "$SIG_ASSET_ID" != "null" ] && [ -n "$SIG_ASSET_NAME" ]; then
+                SIG_PATH="$SIGNATURE_DIR/$SIG_ASSET_NAME"
+                gh api \
+                  -H "Accept: application/octet-stream" \
+                  "repos/${{ github.repository }}/releases/assets/$SIG_ASSET_ID" \
+                  > "$SIG_PATH"
+                SIG=$(tr -d '\r\n' < "$SIG_PATH")
+
+                if [ "${#SIG}" -lt 300 ]; then
+                  echo "::error::Downloaded signature $SIG_ASSET_NAME is unexpectedly short."
+                  exit 1
+                fi
                 
                 PLATFORMS=$(echo "$PLATFORMS" | jq --arg p "$PLATFORM" --arg u "$ASSET_URL" --arg s "$SIG" '.[$p] = {"url": $u, "signature": $s}')
                 echo "✅ Added $PLATFORM with signature"
@@ -542,6 +556,13 @@ jobs:
           # Generate winget manifests from the actual release installer URL and SHA256.
           printf '%s' "$RELEASE_INFO" > release-info.json
           node .github/scripts/write-winget-manifests.js release-info.json dist/winget
+
+          node .github/scripts/validate-generated-release-metadata.js \
+            release-info.json \
+            update.json \
+            dist/winget/Brows3Team.Brows3.installer.yaml \
+            "$SIGNATURE_DIR" \
+            "$VERSION"
 
           echo ""
           echo "=== Generated winget manifests ==="

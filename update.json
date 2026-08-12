@@ -1,27 +1,27 @@
 {
-  "version": "0.2.44",
-  "notes": "See https://github.com/rgcsekaraa/brows3/releases/tag/app-v0.2.44 for release notes.",
-  "pub_date": "2026-08-12T11:16:57Z",
+  "version": "0.2.43",
+  "notes": "See https://github.com/rgcsekaraa/brows3/releases/tag/app-v0.2.43 for release notes.",
+  "pub_date": "2026-06-25T00:16:22Z",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/untagged-4310a22f6ff893a52717/Brows3_0.2.44_aarch64.app.tar.gz",
-      "signature": "Not Found"
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_aarch64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDJhZXUyanJiRHBwa0VGN2NObGI2VTBmODd4TVBPTGhIeFFlR0U4YXFKVlF6RE9rMk0yUVdFUWJkM2REQTNEdHdvMVJUK1NibG53QTgvSHo5ZytnOUE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ1OTU5CWZpbGU6QnJvd3MzLmFwcC50YXIuZ3oKYThCUjY5cGFLUFI0NitkZnFja052Mzl6L2trbzlVKzY0VDFNOHBBZ3RNdWxHK1dEM3o5T3c0ZG5EcE1QTmkwamFvbzN3YjE3c3JBS0pNd1lNVnFXRGc9PQo="
     },
     "darwin-x86_64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/untagged-4310a22f6ff893a52717/Brows3_0.2.44_x64.app.tar.gz",
-      "signature": "Not Found"
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_x64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUCtVa3k4UnNiVDd6MFYrYW5zbUkyQ1FkWFNUZ3JadlVOY2l0NHRtdEFpNXFDSHI1TkVJcUkxbW9oK0pUazFFekJEOHZJckNPT2JtbmZ5NXZGc0tTSGdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ1OTE3CWZpbGU6QnJvd3MzLmFwcC50YXIuZ3oKUkxzQVUvTGhWWFl1NzJEZzdPdWRiVW4vckxRbzFLQnFOMHBHQ09yRTkwUkJIM2hXL0JVZitYWkx3Rk9XaDg2Mmk3eC9OdnFneFdwbmtUUVFVTlNaQ2c9PQo="
     },
     "linux-x86_64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/untagged-4310a22f6ff893a52717/Brows3_0.2.44_amd64.AppImage",
-      "signature": "Not Found"
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_amd64.AppImage",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDErVGpFQ0poc05lWHVZbGwwMVNlWG1IWk04a2JCTHR4NjlmdmJXREhZa0d6QXRNb250YzVqckFPbFJWMGsyTWk5OEsyNk9JMlUzMUFOTDR6Nmp3YWcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ2MDc5CWZpbGU6QnJvd3MzXzAuMi40M19hbWQ2NC5BcHBJbWFnZQpPdDArR3BNVjBsOGNjM3F3dFJ5M3Q3MTcvT09qYUg2Vi9nQUhXWWRreGhscVVvZVpOVWN3YjV0b25WMVAzRDFxTUtxUWVycmZZL09kTDV0RTRUb0dBdz09Cg=="
     },
     "linux-aarch64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/untagged-4310a22f6ff893a52717/Brows3_0.2.44_aarch64.AppImage",
-      "signature": "Not Found"
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_aarch64.AppImage",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDBScnlzaUJDenVrdmhYajArVm55YWVtaHhSNTBGMmhHclpKaXg2ZTYwemdxU2JxS1NKbVMzT09VNy9xRW5iRnorTlF6czdWYUhQV0ZDeXorMHJHMWdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ2MDM2CWZpbGU6QnJvd3MzXzAuMi40M19hYXJjaDY0LkFwcEltYWdlCnNuZ203S0oxNXRZRy8xT0I0UzRPcFFGbjV1S1lkTCs1RTBoc2Vvc3VNTTdKVVFhMUN0VXYweGpCMUFmbGxXTDNZYXRpUUxpK2pWbzlEdzdxVU5OckRRPT0K"
     },
     "windows-x86_64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/untagged-4310a22f6ff893a52717/Brows3_0.2.44_x64-setup.exe",
-      "signature": "Not Found"
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUC9ZUWxNZXR6NXNrcmVCWUVOZUg0UlFic0JiQy85Y3VXUEhjRW84MUF4djNNMTZvMlNUbnpQMkRUaXIwRWs4aUV2VFZIWXo4S1hPYVZ0SjNZUkV3bHdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ2NTYwCWZpbGU6QnJvd3MzXzAuMi40M194NjQtc2V0dXAuZXhlCnZFN0NpanptTXJCcHNaWUhSei9JcW5sbVVIaFhXNElpM1NoelBueFNOdk1RT1p2Zjk5Y29JelBNUzFaaitQTGVEUnd6MHZFWmk4NVZJSGtDVy9BcUJBPT0K"
     }
   }
 }

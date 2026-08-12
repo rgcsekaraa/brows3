@@ -26,12 +26,12 @@ test('updates the published package identifier with both Windows installers', (t
     assets: [
       {
         name: 'Brows3_9.8.7_x64_en-US.msi',
-        browser_download_url: 'https://example.test/Brows3_9.8.7_x64_en-US.msi',
+        browser_download_url: 'https://github.com/rgcsekaraa/brows3/releases/download/untagged-temporary/Brows3_9.8.7_x64_en-US.msi',
         digest: `sha256:${'a'.repeat(64)}`,
       },
       {
         name: 'Brows3_9.8.7_x64-setup.exe',
-        browser_download_url: 'https://example.test/Brows3_9.8.7_x64-setup.exe',
+        browser_download_url: 'https://github.com/rgcsekaraa/brows3/releases/download/untagged-temporary/Brows3_9.8.7_x64-setup.exe',
         digest: `sha256:${'b'.repeat(64)}`,
       },
     ],
@@ -58,6 +58,15 @@ test('updates the published package identifier with both Windows installers', (t
   assert.match(installer, /Scope: user/);
   assert.match(installer, new RegExp('A'.repeat(64)));
   assert.match(installer, new RegExp('B'.repeat(64)));
+  assert.match(
+    installer,
+    /InstallerUrl: https:\/\/github\.com\/rgcsekaraa\/brows3\/releases\/download\/app-v9\.8\.7\/Brows3_9\.8\.7_x64_en-US\.msi/
+  );
+  assert.match(
+    installer,
+    /InstallerUrl: https:\/\/github\.com\/rgcsekaraa\/brows3\/releases\/download\/app-v9\.8\.7\/Brows3_9\.8\.7_x64-setup\.exe/
+  );
+  assert.doesNotMatch(installer, /untagged-/);
 });
 
 test('rejects assets without a verified GitHub SHA256 digest', (t) => {

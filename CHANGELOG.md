@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Credential Documentation**: Documented the plaintext `secrets.json` fallback used by portable mode or when native keychain storage fails.
-- **Release Quality Gate**: Publishing now waits for frontend linting, TypeScript checks, production export, Rust formatting, Clippy, backend tests, release-script tests, native Windows validation, and a complete signed artifact audit; incomplete builds remain unpublished drafts.
+- **Release Quality Gate**: Publishing now waits for frontend linting, TypeScript checks, production export, Rust formatting, Clippy, backend tests, release-script tests, native Windows validation, and a complete signed artifact audit. Updater signatures are fetched through the authenticated asset API, and updater/Winget manifests must use stable tag URLs and verified installer digests; incomplete builds remain unpublished drafts.
 - **Project Cleanup**: Removed unused state, dependencies, starter assets, and historical build logs.
 
 ## [0.2.43] - 2026-06-25

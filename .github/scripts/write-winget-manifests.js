@@ -16,6 +16,7 @@ const version = process.env.RELEASE_VERSION || String(releaseInfo.tag_name || ''
 const packageIdentifier = 'Brows3Team.Brows3';
 const manifestVersion = '1.12.0';
 const releaseUrl = `https://github.com/rgcsekaraa/brows3/releases/tag/app-v${version}`;
+const downloadBaseUrl = `https://github.com/rgcsekaraa/brows3/releases/download/app-v${version}`;
 
 if (!version) {
   console.error('Unable to determine release version.');
@@ -42,18 +43,23 @@ const installerEntries = windowsInstallers.map((asset) => {
     process.exit(1);
   }
 
+  // Draft release metadata contains a temporary `untagged-*` URL which stops
+  // working as soon as the release is published. Winget manifests must always
+  // use the stable, public tag URL.
+  const installerUrl = `${downloadBaseUrl}/${encodeURIComponent(asset.name)}`;
+
   if (asset.name.endsWith('.msi')) {
     return `- Architecture: x64
   InstallerType: wix
   Scope: machine
-  InstallerUrl: ${asset.browser_download_url}
+  InstallerUrl: ${installerUrl}
   InstallerSha256: ${sha256}`;
   }
 
   return `- Architecture: x64
   InstallerType: nullsoft
   Scope: user
-  InstallerUrl: ${asset.browser_download_url}
+  InstallerUrl: ${installerUrl}
   InstallerSha256: ${sha256}
   ProductCode: Brows3
   InstallerSwitches:
