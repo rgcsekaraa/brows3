@@ -183,7 +183,7 @@ pub fn run() {
             }
 
             // Initialize credentials manager synchronously before any profile commands can run.
-            credentials::init(&app.handle())?;
+            credentials::init(app.handle())?;
 
             // Show the main window after initialization to prevent white flash
             if let Some(window) = app.get_webview_window("main") {

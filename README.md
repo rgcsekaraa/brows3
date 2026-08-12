@@ -38,10 +38,10 @@ Brows3 is a strong fit if you need:
 
 Traditional S3 tools often suffer from latency when navigating deep folder structures or listing large numbers of objects. If you are comparing tools like an S3 browser, S3 explorer, S3 GUI client, or desktop client for S3-compatible storage, Brows3 focuses the browsing experience around:
 
-- **Fast Cached Navigation**: Recently loaded folders and bucket views are cached so repeat navigation is quick.
-- **Deep Search**: Search recursively across the full selected bucket or prefix instead of only the objects already loaded in the table.
-- **Accurate Large-Bucket Sorting**: Sort large prefixes by name, size, modified date, or storage class with the backend ordering the complete S3 result set before paginating it to the UI.
-- **Prefix-Aware Object Cache**: Brows3 builds folder views from cached object keys, reducing repeated S3 listing calls.
+- **Cached Bucket Discovery**: Bucket lists are cached per profile for 30 minutes so returning to the explorer is quick.
+- **Deep Search**: Search recursively within the selected bucket or prefix, with explicit scan, result, and request limits to bound cost and memory use.
+- **Accurate Large-Bucket Sorting**: Sort prefixes by name, size, modified date, or storage class with the backend ordering the complete result before pagination, up to 100,000 items or 100 S3 LIST requests.
+- **Sorted-View Cache**: Complete-result folder sorts are cached in memory for the session and invalidated after writes or manual refreshes.
 - **Virtualized Object Table**: The object table is tuned for large listings without rendering every row at once.
 
 ## Feature Deep Dive
@@ -66,22 +66,22 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 
 #### **Speed & Performance**
 - **Rust-Powered Backend**: Core logic is written in Rust for near-instant operations.
-- **Smart In-Memory Caching**: 
-  - Sub-millisecond navigation for recently visited folders.
-  - **Auto-Invalidation**: Cache automatically refreshes after you upload, delete, or modify files.
-  - **30-Minute TTL**: Stale data (from external sources) is automatically purged.
+- **Targeted In-Memory Caching**:
+  - Per-profile bucket discovery uses a **30-minute TTL**.
+  - Complete-result sorted folder views are reused during the current app session, with FIFO eviction capped at 32 views and 100,000 listed items across the cache.
+  - **Auto-Invalidation**: Relevant cached views are refreshed after uploads, deletes, edits, copies, and moves.
 - **Lazy Loading**: Paginates large object listings to keep browsing responsive while preserving complete-result sorting for non-default sort orders.
 
 #### **Enterprise & Restricted Access**
 - **Direct Bucket Access**: Instantly navigate to specific buckets (e.g., `s3://my-secure-bucket`) even if you don't have `s3:ListBuckets` permission.
 - **Profile-Gated Access**: Create isolated profiles for different AWS accounts or environments.
-- **Persistent Secure Profiles**: Manual and S3-compatible profiles survive restarts while secrets stay in the OS keychain instead of plain JSON.
-- **Cost Awareness**: UI indicators for cached data help you manage S3 API costs.
+- **Persistent Secure Profiles**: Manual and S3-compatible profiles survive restarts. Secrets use the OS keychain when available; portable mode and native-keychain failures use a local `secrets.json` fallback (restricted to mode `0600` on Unix) so portable installs remain self-contained.
+- **Cost Awareness**: UI indicators show when the bucket-discovery list came from the frontend cache.
 
 - **In-App PDF Preview**: View PDFs directly within the application through an embedded presigned preview.
 - **Automatic Region Discovery**: Profiles now automatically detect the correct AWS region from system configurations, enabling zero-config setup.
 - **Smart Tab Management**: Intelligent tab deduplication ensures you never have multiple tabs open for the same S3 path—automatically switching to existing tabs when searching.
-- **Deep Recursive Search**: Search recursively within specific folders with auto-region retry support and safety limits.
+- **Deep Recursive Search**: Search recursively within specific folders with auto-region retry support, scanning at most 100,000 objects, issuing at most 100 S3 LIST requests, and returning at most 10,000 matches per search.
 - **System Monitor**: Real-time visibility into application performance. Track API request success/failure rates and view live logs for debugging.
 - **Profile-Gated Access**: Create isolated profiles for different AWS accounts or environments. Switch contexts instantly with zero friction.
 - **Enhanced Settings**:
@@ -95,8 +95,8 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 
 Brows3 leverages a tiered data strategy to achieve its performance:
 
-1. **Rust Core (The Muscle)**: Handles S3 networking, credential management, and local caching using high-speed concurrency.
-2. **Prefix-Indexed Tree**: An in-memory data structure that organizes S3's flat object list into a hierarchical tree, enabling instant directory lookup.
+1. **Rust Core (The Muscle)**: Handles S3 networking, credential management, bounded deep search, sorted-view caching, and concurrent transfers.
+2. **Prefix-Aware S3 Pagination**: Folder views use S3 prefixes, delimiters, and continuation tokens instead of loading an entire bucket before browsing.
 3. **Paginated IPC Bridge**: Data is transferred between Rust and the React frontend over a high-speed, paginated IPC channel, preventing UI hangs during large data transfers.
 4. **SSG React (The UI)**: A Next.js-based frontend exported as a static site, providing the smallest possible memory footprint.
 

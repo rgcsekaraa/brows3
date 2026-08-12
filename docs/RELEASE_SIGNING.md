@@ -92,10 +92,13 @@ Then:
 
 The release workflow now:
 
-- writes the App Store Connect private key to a temporary file when configured
-- exports Apple signing variables only when the matching secret exists
-- falls back to ad-hoc signing when Apple certificate secrets are absent
-- warns when notarization is not configured
+- exports `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, and `APPLE_SIGNING_IDENTITY` only when all three signing secrets are configured
+- writes `APPLE_API_PRIVATE_KEY` to a mode-`0600` temporary `.p8` file and exports `APPLE_API_KEY`, `APPLE_API_ISSUER`, and `APPLE_API_KEY_PATH` when the complete App Store Connect set is configured
+- otherwise exports the Apple ID notarization variables only when `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` are all configured
+- falls back to ad-hoc signing when Apple certificate secrets are absent and warns instead of partially exporting an incomplete secret set
+- skips every release job when the head commit contains `[skip release]`; standard GitHub skip markers such as `[skip ci]` prevent the push workflow from being queued at all
+
+Use both `[skip ci]` and `[skip release]` on maintenance commits that must be pushed to `main` without publishing a release. The explicit release guard remains useful if GitHub's general workflow skip behavior changes or a commit is rerun manually.
 
 ## Expected Result
 

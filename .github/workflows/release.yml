@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   prepare-release:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip release]')
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -66,7 +66,7 @@ jobs:
           fi
 
   publish-tauri:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip release]')
     needs: prepare-release
     permissions:
       contents: write
@@ -143,6 +143,63 @@ jobs:
             exit 1
           else
             echo "✅ TAURI_SIGNING_PRIVATE_KEY is configured"
+          fi
+
+      - name: Prepare optional macOS code signing and notarization
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_SECRET: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD_SECRET: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_SECRET: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY_SECRET: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_SECRET: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          append_env() {
+            local name="$1"
+            local value="$2"
+            local delimiter="BROWS3_${name}_EOF"
+            {
+              echo "${name}<<${delimiter}"
+              printf '%s\n' "$value"
+              echo "$delimiter"
+            } >> "$GITHUB_ENV"
+          }
+
+          if [ -n "$APPLE_CERTIFICATE_SECRET" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD_SECRET" ] && [ -n "$APPLE_SIGNING_IDENTITY_SECRET" ]; then
+            append_env APPLE_CERTIFICATE "$APPLE_CERTIFICATE_SECRET"
+            append_env APPLE_CERTIFICATE_PASSWORD "$APPLE_CERTIFICATE_PASSWORD_SECRET"
+            append_env APPLE_SIGNING_IDENTITY "$APPLE_SIGNING_IDENTITY_SECRET"
+            echo "Apple Developer ID signing is configured."
+          elif [ -n "$APPLE_CERTIFICATE_SECRET$APPLE_CERTIFICATE_PASSWORD_SECRET$APPLE_SIGNING_IDENTITY_SECRET" ]; then
+            echo "::warning::Apple signing secrets are incomplete; using the configured ad-hoc signing fallback."
+          else
+            echo "Apple signing secrets are absent; using the configured ad-hoc signing fallback."
+          fi
+
+          if [ -n "$APPLE_API_KEY_SECRET" ] && [ -n "$APPLE_API_ISSUER_SECRET" ] && [ -n "$APPLE_API_PRIVATE_KEY_SECRET" ]; then
+            API_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_SECRET}.p8"
+            printf '%s\n' "$APPLE_API_PRIVATE_KEY_SECRET" > "$API_KEY_PATH"
+            chmod 600 "$API_KEY_PATH"
+            append_env APPLE_API_KEY "$APPLE_API_KEY_SECRET"
+            append_env APPLE_API_ISSUER "$APPLE_API_ISSUER_SECRET"
+            append_env APPLE_API_KEY_PATH "$API_KEY_PATH"
+            echo "App Store Connect API notarization is configured."
+          elif [ -n "$APPLE_API_KEY_SECRET$APPLE_API_ISSUER_SECRET$APPLE_API_PRIVATE_KEY_SECRET" ]; then
+            echo "::warning::App Store Connect API secrets are incomplete; notarization is disabled."
+          elif [ -n "$APPLE_ID_SECRET" ] && [ -n "$APPLE_PASSWORD_SECRET" ] && [ -n "$APPLE_TEAM_ID_SECRET" ]; then
+            append_env APPLE_ID "$APPLE_ID_SECRET"
+            append_env APPLE_PASSWORD "$APPLE_PASSWORD_SECRET"
+            append_env APPLE_TEAM_ID "$APPLE_TEAM_ID_SECRET"
+            echo "Apple ID notarization is configured."
+          elif [ -n "$APPLE_ID_SECRET$APPLE_PASSWORD_SECRET$APPLE_TEAM_ID_SECRET" ]; then
+            echo "::warning::Apple ID notarization secrets are incomplete; notarization is disabled."
+          else
+            echo "::warning::Apple notarization is not configured."
           fi
 
       - name: Build desktop bundles
@@ -235,7 +292,7 @@ jobs:
           gh release upload "$TAG_NAME" "${FILES[@]}" --clobber
 
   update-manifest:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip release]')
     needs:
       - prepare-release
       - publish-tauri

@@ -5,7 +5,12 @@ use aws_sdk_s3::config::{RequestChecksumCalculation, ResponseChecksumValidation}
 use aws_sdk_s3::Client;
 use serde::{Deserialize, Serialize};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+
+type SortedFolderCacheKey = (String, String, String, String, String);
+
+const MAX_SORTED_CACHE_ENTRIES: usize = 32;
+const MAX_SORTED_CACHE_ITEMS: usize = 100_000;
 
 /// Normalize an endpoint URL to ensure it has a scheme.
 /// Many S3-compatible providers (Linode, DigitalOcean, etc.) may be configured
@@ -36,19 +41,19 @@ pub struct FolderContent {
 /// S3 Client Manager - creates and caches S3 clients per profile and region
 pub struct S3ClientManager {
     clients: HashMap<(String, String), Client>,
-    object_cache: HashMap<(String, String), Vec<S3Object>>, // (profile_id, bucket_name) -> objects
-    folder_cache: HashMap<(String, String, String), FolderContent>, // (profile_id, bucket_name, prefix) -> children
-    sorted_folder_cache: HashMap<(String, String, String, String, String), FolderContent>, // (profile_id, bucket_name, prefix, sort_field, sort_direction) -> ordered children
-    bucket_regions: HashMap<String, String>,                        // bucket_name -> region
+    sorted_folder_cache: HashMap<SortedFolderCacheKey, FolderContent>,
+    sorted_folder_cache_order: VecDeque<SortedFolderCacheKey>,
+    sorted_folder_cache_items: usize,
+    bucket_regions: HashMap<String, String>, // bucket_name -> region
 }
 
 impl S3ClientManager {
     pub fn new() -> Self {
         Self {
             clients: HashMap::new(),
-            object_cache: HashMap::new(),
-            folder_cache: HashMap::new(),
             sorted_folder_cache: HashMap::new(),
+            sorted_folder_cache_order: VecDeque::new(),
+            sorted_folder_cache_items: 0,
             bucket_regions: HashMap::new(),
         }
     }
@@ -156,12 +161,12 @@ impl S3ClientManager {
         Ok(Client::from_conf(s3_config_builder.build()))
     }
 
-    /// Clear the cached clients and objects
+    /// Clear cached clients, sorted folder results, and discovered regions.
     pub fn clear_cache(&mut self) {
         self.clients.clear();
-        self.object_cache.clear();
-        self.folder_cache.clear();
         self.sorted_folder_cache.clear();
+        self.sorted_folder_cache_order.clear();
+        self.sorted_folder_cache_items = 0;
         self.bucket_regions.clear();
     }
 
@@ -184,30 +189,6 @@ impl S3ClientManager {
         for bucket_name in bucket_names {
             self.set_bucket_region(bucket_name.as_ref(), region.to_string());
         }
-    }
-
-    /// Get cached objects for a bucket
-    pub fn get_cached_objects(
-        &self,
-        profile_id: &str,
-        bucket_name: &str,
-    ) -> Option<&Vec<S3Object>> {
-        self.object_cache
-            .get(&(profile_id.to_string(), bucket_name.to_string()))
-    }
-
-    /// Get cached folder content
-    pub fn get_folder_content(
-        &self,
-        profile_id: &str,
-        bucket_name: &str,
-        prefix: &str,
-    ) -> Option<&FolderContent> {
-        self.folder_cache.get(&(
-            profile_id.to_string(),
-            bucket_name.to_string(),
-            prefix.to_string(),
-        ))
     }
 
     pub fn get_sorted_folder_content(
@@ -236,163 +217,73 @@ impl S3ClientManager {
         sort_direction: &str,
         content: FolderContent,
     ) {
-        self.sorted_folder_cache.insert(
-            (
-                profile_id.to_string(),
-                bucket_name.to_string(),
-                prefix.to_string(),
-                sort_field.to_string(),
-                sort_direction.to_string(),
-            ),
-            content,
+        let key = (
+            profile_id.to_string(),
+            bucket_name.to_string(),
+            prefix.to_string(),
+            sort_field.to_string(),
+            sort_direction.to_string(),
         );
-    }
+        let item_count = content
+            .objects
+            .len()
+            .saturating_add(content.common_prefixes.len());
 
-    /// Set cached objects for a bucket
-    pub fn set_cached_objects(
-        &mut self,
-        profile_id: &str,
-        bucket_name: &str,
-        objects: Vec<S3Object>,
-    ) {
-        let profile_id_str = profile_id.to_string();
-        let bucket_name_str = bucket_name.to_string();
-
-        // Build folder cache in a single pass O(N)
-        let mut folders: HashMap<String, FolderContent> = HashMap::new();
-        // Ensure root exists
-        folders.insert(
-            "".to_string(),
-            FolderContent {
-                objects: Vec::new(),
-                common_prefixes: Vec::new(),
-            },
-        );
-
-        // Track unique prefixes per folder to avoid O(M) contains check (M = parts)
-        let mut folder_prefixes: HashMap<String, std::collections::HashSet<String>> =
-            HashMap::new();
-
-        for obj in &objects {
-            let key = &obj.key;
-
-            // Find the immediate parent prefix
-            let parent_prefix = if let Some(last_slash) = key.rfind('/') {
-                // If the key itself ends with /, the parent is the substring BEFORE that slash (if any)
-                if key.ends_with('/') {
-                    let without_last = &key[..last_slash];
-                    if let Some(prev_slash) = without_last.rfind('/') {
-                        &key[..prev_slash + 1]
-                    } else {
-                        ""
-                    }
-                } else {
-                    &key[..last_slash + 1]
-                }
-            } else {
-                ""
-            };
-
-            // Add object to its parent folder (if it's not a folder placeholder)
-            if !key.ends_with('/') {
-                folders
-                    .entry(parent_prefix.to_string())
-                    .or_insert_with(|| FolderContent {
-                        objects: Vec::new(),
-                        common_prefixes: Vec::new(),
-                    })
+        if let Some(previous) = self.sorted_folder_cache.remove(&key) {
+            self.sorted_folder_cache_items = self.sorted_folder_cache_items.saturating_sub(
+                previous
                     .objects
-                    .push(obj.clone());
-            }
-
-            // Build the prefix tree up to the root
-            // We only need to iterate if there are slashes
-            if key.contains('/') {
-                let parts_vec: Vec<&str> = key.split('/').collect();
-                // If it's a folder "a/b/", parts are ["a", "b", ""]
-                // If it's a file "a/b/c.txt", parts are ["a", "b", "c.txt"]
-                let depth = if key.ends_with('/') {
-                    parts_vec.len() - 2
-                } else {
-                    parts_vec.len() - 1
-                };
-
-                let mut path = String::new();
-                for i in 0..depth {
-                    let parent = path.clone();
-                    path.push_str(parts_vec[i]);
-                    path.push('/');
-
-                    // Add this folder to parent's common_prefixes
-                    let seen_prefixes = folder_prefixes.entry(parent.clone()).or_default();
-                    if !seen_prefixes.contains(&path) {
-                        seen_prefixes.insert(path.clone());
-                        folders
-                            .entry(parent)
-                            .or_default()
-                            .common_prefixes
-                            .push(path.clone());
-                    }
-                }
-            }
-        }
-
-        // Store in the manager's folder_cache
-        for (prefix, mut content) in folders {
-            content.objects.sort_by(|a, b| a.key.cmp(&b.key));
-            content.common_prefixes.sort();
-            self.folder_cache.insert(
-                (profile_id_str.clone(), bucket_name_str.clone(), prefix),
-                content,
+                    .len()
+                    .saturating_add(previous.common_prefixes.len()),
             );
+            self.sorted_folder_cache_order
+                .retain(|cached_key| cached_key != &key);
         }
 
-        self.object_cache
-            .insert((profile_id_str, bucket_name_str), objects);
-    }
+        if item_count > MAX_SORTED_CACHE_ITEMS {
+            return;
+        }
 
-    /// Check if a bucket is cached
-    pub fn has_cache(&self, profile_id: &str, bucket_name: &str) -> bool {
-        self.object_cache
-            .contains_key(&(profile_id.to_string(), bucket_name.to_string()))
-    }
-
-    /// Get a single object from cache by key
-    pub fn get_object_from_cache(
-        &self,
-        profile_id: &str,
-        bucket_name: &str,
-        key: &str,
-    ) -> Option<S3Object> {
-        if let Some(objects) = self
-            .object_cache
-            .get(&(profile_id.to_string(), bucket_name.to_string()))
+        while self.sorted_folder_cache.len() >= MAX_SORTED_CACHE_ENTRIES
+            || self.sorted_folder_cache_items.saturating_add(item_count) > MAX_SORTED_CACHE_ITEMS
         {
-            return objects.iter().find(|obj| obj.key == key).cloned();
+            let Some(oldest_key) = self.sorted_folder_cache_order.pop_front() else {
+                break;
+            };
+            if let Some(evicted) = self.sorted_folder_cache.remove(&oldest_key) {
+                self.sorted_folder_cache_items = self.sorted_folder_cache_items.saturating_sub(
+                    evicted
+                        .objects
+                        .len()
+                        .saturating_add(evicted.common_prefixes.len()),
+                );
+            }
         }
-        None
+
+        self.sorted_folder_cache_items = self.sorted_folder_cache_items.saturating_add(item_count);
+        self.sorted_folder_cache_order.push_back(key.clone());
+        self.sorted_folder_cache.insert(key, content);
     }
 
-    /// Remove cache for a specific bucket
+    /// Remove cached sorted results for a specific profile and bucket.
     pub fn remove_bucket_cache(&mut self, profile_id: &str, bucket_name: &str) {
-        // Remove object list
-        self.object_cache
-            .remove(&(profile_id.to_string(), bucket_name.to_string()));
-
-        // Remove all folder entries for this bucket
-        // Since folder_cache keys are (profile, bucket, prefix), we need to retain others
-        // A full scan is necessary or we could use another map for efficiently tracking keys.
-        // For now, retain is acceptable if cache isn't massive, or we can just accept it.
-        // A better approach might be to use a nested HashMap structure, but for this fix,
-        // we will iterate and remove.
         let pid = profile_id.to_string();
         let bname = bucket_name.to_string();
 
-        self.folder_cache
-            .retain(|(p, b, _), _| p != &pid || b != &bname);
         self.sorted_folder_cache
             .retain(|(p, b, _, _, _), _| p != &pid || b != &bname);
-        self.bucket_regions.remove(&bname);
+        self.sorted_folder_cache_order
+            .retain(|(p, b, _, _, _)| p != &pid || b != &bname);
+        self.sorted_folder_cache_items = self
+            .sorted_folder_cache
+            .values()
+            .map(|content| {
+                content
+                    .objects
+                    .len()
+                    .saturating_add(content.common_prefixes.len())
+            })
+            .sum();
     }
 }
 
@@ -480,54 +371,6 @@ pub async fn get_bucket_region(client: &Client, bucket_name: &str) -> Result<Str
     Ok(region)
 }
 
-/// List all objects in a bucket recursively
-pub async fn list_all_objects_recursive(client: &Client, bucket: &str) -> Result<Vec<S3Object>> {
-    let mut objects = Vec::new();
-    let mut token = None;
-
-    loop {
-        let mut builder = client.list_objects_v2().bucket(bucket);
-        if let Some(t) = token {
-            builder = builder.continuation_token(t);
-        }
-
-        let response = builder
-            .send()
-            .await
-            .map_err(|e| AppError::S3Error(e.to_string()))?;
-
-        for obj in response.contents() {
-            objects.push(S3Object {
-                key: obj.key().unwrap_or_default().to_string(),
-                last_modified: obj
-                    .last_modified()
-                    .map(|d: &aws_sdk_s3::primitives::DateTime| d.to_string()),
-                size: obj.size().unwrap_or_default(),
-                storage_class: obj
-                    .storage_class()
-                    .map(|s: &aws_sdk_s3::types::ObjectStorageClass| s.as_str().to_string()),
-            });
-        }
-
-        // SAFEGUARD: Don't load more than 100k objects into memory
-        if objects.len() >= 100_000 {
-            log::warn!(
-                "Bucket {} is too large. Truncating listing at 100,000 objects to prevent OOM.",
-                bucket
-            );
-            break;
-        }
-
-        if response.is_truncated().unwrap_or(false) {
-            token = response.next_continuation_token().map(|t| t.to_string());
-        } else {
-            break;
-        }
-    }
-
-    Ok(objects)
-}
-
 /// Format bytes to human-readable size
 pub fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
@@ -550,7 +393,9 @@ pub fn format_size(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_endpoint_url;
+    use super::{
+        normalize_endpoint_url, FolderContent, S3ClientManager, S3Object, MAX_SORTED_CACHE_ENTRIES,
+    };
 
     #[test]
     fn normalize_endpoint_url_preserves_existing_scheme() {
@@ -578,5 +423,43 @@ mod tests {
             normalize_endpoint_url("  us-east-1.linodeobjects.com  "),
             "https://us-east-1.linodeobjects.com"
         );
+    }
+
+    #[test]
+    fn sorted_folder_cache_evicts_the_oldest_entry_at_its_limit() {
+        let mut manager = S3ClientManager::new();
+
+        for index in 0..=MAX_SORTED_CACHE_ENTRIES {
+            manager.set_sorted_folder_content(
+                "profile",
+                "bucket",
+                &format!("prefix-{index}/"),
+                "size",
+                "desc",
+                FolderContent {
+                    objects: vec![S3Object {
+                        key: format!("object-{index}"),
+                        last_modified: None,
+                        size: index as i64,
+                        storage_class: None,
+                    }],
+                    common_prefixes: Vec::new(),
+                },
+            );
+        }
+
+        assert!(manager
+            .get_sorted_folder_content("profile", "bucket", "prefix-0/", "size", "desc")
+            .is_none());
+        assert!(manager
+            .get_sorted_folder_content(
+                "profile",
+                "bucket",
+                &format!("prefix-{MAX_SORTED_CACHE_ENTRIES}/"),
+                "size",
+                "desc"
+            )
+            .is_some());
+        assert_eq!(manager.sorted_folder_cache.len(), MAX_SORTED_CACHE_ENTRIES);
     }
 }

@@ -2,10 +2,10 @@ pub mod manager;
 
 pub use manager::TransferManager;
 
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransferType {
@@ -26,6 +26,7 @@ pub enum TransferStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransferJob {
     pub id: String,
+    pub profile_id: String,
     pub bucket: String,
     pub bucket_region: Option<String>,
     pub key: String,
@@ -34,7 +35,7 @@ pub struct TransferJob {
     pub status: TransferStatus,
     pub total_bytes: u64,
     pub processed_bytes: u64,
-    pub created_at: i64, // Timestamp (ms)
+    pub created_at: i64,          // Timestamp (ms)
     pub finished_at: Option<i64>, // Timestamp (ms)
     // Grouping fields
     pub parent_group_id: Option<String>,
@@ -54,6 +55,7 @@ pub struct TransferEvent {
 impl TransferJob {
     pub fn new(
         transfer_type: TransferType,
+        profile_id: String,
         bucket: String,
         bucket_region: Option<String>,
         key: String,
@@ -62,6 +64,7 @@ impl TransferJob {
     ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
+            profile_id,
             bucket,
             bucket_region,
             key,
@@ -82,5 +85,26 @@ impl TransferJob {
         self.parent_group_id = Some(group_id);
         self.group_name = Some(name);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TransferJob, TransferType};
+    use std::path::PathBuf;
+
+    #[test]
+    fn transfer_job_keeps_the_profile_that_queued_it() {
+        let job = TransferJob::new(
+            TransferType::Download,
+            "profile-a".to_string(),
+            "bucket".to_string(),
+            Some("ap-southeast-2".to_string()),
+            "folder/file.txt".to_string(),
+            PathBuf::from("/tmp/file.txt"),
+            42,
+        );
+
+        assert_eq!(job.profile_id, "profile-a");
     }
 }

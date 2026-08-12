@@ -199,14 +199,18 @@ function BucketContent() {
                 setTimeout(() => reject(new Error('Search timed out after 30 seconds')), SEARCH_TIMEOUT_MS)
             );
 
-            const results = await Promise.race([searchPromise, timeoutPromise]);
+            const result = await Promise.race([searchPromise, timeoutPromise]);
 
             // CRITICAL FIX: Only update if this is still the latest search request
             if (currentSequence === searchSequenceRef.current) {
-                setSearchResults(results);
+                setSearchResults(result.objects);
 
-                // Show message if no results
-                if (results.length === 0) {
+                if (result.is_truncated) {
+                    toast.info(
+                        'Search Limit Reached',
+                        `Scanned ${result.scanned_objects.toLocaleString()} objects and returned ${result.objects.length.toLocaleString()} matches. Narrow the prefix or query to continue.`
+                    );
+                } else if (result.objects.length === 0) {
                     toast.info('No Results', `No objects found matching "${query}"`);
                 }
             }
@@ -582,6 +586,7 @@ function BucketContent() {
 
            addJob({
               id: jobId,
+              profile_id: activeProfileId || '',
               transfer_type: 'Upload',
               bucket: bucketName,
               bucket_region: bucketRegion,
@@ -1199,6 +1204,7 @@ function BucketContent() {
             // Add to transfer store so it shows in the panel
             addJob({
               id: jobId,
+              profile_id: activeProfileId || '',
               transfer_type: 'Download',
               bucket: bucketName,
               bucket_region: bucketRegion,

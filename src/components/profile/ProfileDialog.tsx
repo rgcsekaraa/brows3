@@ -114,6 +114,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   const [awsEnv, setAwsEnv] = useState<{ has_access_key: boolean; has_secret_key: boolean; has_session_token: boolean; region?: string } | null>(null);
   const discoveryRequestIdRef = useRef(0);
   const editLoadRequestIdRef = useRef(0);
+  const testRequestIdRef = useRef(0);
 
   // Discover local profiles and check environment
   useEffect(() => {
@@ -179,13 +180,12 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     });
   }, [defaultRegion]);
 
-  // Reset testing state when form data changes
+  // Invalidate an in-flight connection test when any tested field changes.
   useEffect(() => {
-    if (testing || testResult) {
-      setTesting(false);
-      setTestResult(null);
-    }
-  }, [formData, testing, testResult]);
+    testRequestIdRef.current += 1;
+    setTesting(false);
+    setTestResult(null);
+  }, [formData]);
 
   // Reset state when dialog opens/closes
   useEffect(() => {
@@ -201,6 +201,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     if (!open) {
       discoveryRequestIdRef.current += 1;
       editLoadRequestIdRef.current += 1;
+      testRequestIdRef.current += 1;
+      setTesting(false);
       setSelectedProfile(null);
     }
   }, [open, editProfile, resetForm]);
@@ -271,6 +273,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   };
   
   const handleTestConnection = async () => {
+    const requestId = ++testRequestIdRef.current;
     setTesting(true);
     setTestResult(null);
     setError(null);
@@ -285,11 +288,17 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       };
       
       const result = await profileApi.testConnection(profile as Profile);
-      setTestResult(result);
+      if (requestId === testRequestIdRef.current) {
+        setTestResult(result);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection test failed');
+      if (requestId === testRequestIdRef.current) {
+        setError(err instanceof Error ? err.message : 'Connection test failed');
+      }
     } finally {
-      setTesting(false);
+      if (requestId === testRequestIdRef.current) {
+        setTesting(false);
+      }
     }
   };
   

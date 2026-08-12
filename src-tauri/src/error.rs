@@ -5,30 +5,30 @@ use thiserror::Error;
 pub enum AppError {
     #[error("Profile not found: {0}")]
     ProfileNotFound(String),
-    
+
     #[error("Profile already exists: {0}")]
     ProfileExists(String),
-    
+
     #[error("Invalid credentials: {0}")]
     InvalidCredentials(String),
-    
+
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
-    
+
     #[error("S3 error: {0}")]
     S3Error(String),
     #[error("Access Denied: {0}")]
     AccessDenied(String),
-    
+
     #[error("Keychain error: {0}")]
     KeychainError(String),
-    
+
     #[error("IO error: {0}")]
     IoError(String),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(String),
-    
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
 

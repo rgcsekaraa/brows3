@@ -1,16 +1,14 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::sync::{Mutex, Notify, RwLock};
-use tauri::{AppHandle, Emitter};
-use crate::credentials::Profile;
+use super::{TransferEvent, TransferJob, TransferStatus, TransferType};
+use crate::credentials::{Profile, ProfileManager};
 use crate::s3::S3ClientManager;
-use super::{TransferJob, TransferStatus, TransferType, TransferEvent};
 use aws_sdk_s3::primitives::ByteStream;
-use tokio::io::AsyncWriteExt;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter};
 use tokio::fs::File;
-
-
+use tokio::io::AsyncWriteExt;
+use tokio::sync::{Mutex, Notify, RwLock};
 
 // Define a safe shared state for the manager
 pub struct TransferManager {
@@ -32,6 +30,12 @@ impl Drop for ActiveSlotGuard {
     fn drop(&mut self) {
         self.active_count.fetch_sub(1, Ordering::AcqRel);
         self.slot_notify.notify_waiters();
+    }
+}
+
+impl Default for TransferManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -58,15 +62,15 @@ impl TransferManager {
             let mut jobs = self.jobs.write().await;
             jobs.insert(job.id.clone(), job.clone());
         }
-        
+
         let mut queue = self.queue.lock().await;
         queue.push(job.id.clone());
-        
+
         // Emit added event with full job data
         if let Some(app) = self.app_handle.read().await.as_ref() {
             let _ = app.emit("transfer-added", &job);
         }
-        
+
         // Also emit initial status update
         self.emit_update(&job).await;
     }
@@ -76,19 +80,19 @@ impl TransferManager {
         self.max_concurrency.store(clamped, Ordering::Release);
         self.slot_notify.notify_waiters();
     }
-    
+
     pub async fn get_job(&self, id: &str) -> Option<TransferJob> {
         let jobs = self.jobs.read().await;
         jobs.get(id).cloned()
     }
-    
+
     pub async fn list_jobs(&self) -> Vec<TransferJob> {
         let jobs = self.jobs.read().await;
         let mut list: Vec<TransferJob> = jobs.values().cloned().collect();
         list.sort_by(|a, b| b.created_at.cmp(&a.created_at)); // Newest first
         list
     }
-    
+
     /// Cancel a transfer job
     pub async fn cancel_job(&self, id: &str) -> bool {
         let mut jobs = self.jobs.write().await;
@@ -103,14 +107,14 @@ impl TransferManager {
                         let mut queue = self.queue.lock().await;
                         queue.retain(|job_id| job_id != id);
                     }
-                    
+
                     // CRITICAL FIX: Abort the actual tokio task to stop Phantom I/O
                     let mut handles = self.abort_handles.write().await;
                     if let Some(handle) = handles.remove(id) {
                         handle.abort();
                         log::info!("Aborted job task: {}", id);
                     }
-                    
+
                     drop(handles);
                     drop(jobs);
                     self.emit_update(&job_clone).await;
@@ -121,7 +125,7 @@ impl TransferManager {
         }
         false
     }
-    
+
     /// Remove a specific transfer job from history
     pub async fn remove_job(&self, id: &str) -> bool {
         {
@@ -138,17 +142,20 @@ impl TransferManager {
         let mut jobs = self.jobs.write().await;
         jobs.remove(id).is_some()
     }
-    
+
     /// Clear all completed/failed/cancelled transfers
     pub async fn clear_completed(&self) -> usize {
         let mut jobs = self.jobs.write().await;
         let initial_count = jobs.len();
         jobs.retain(|_, job| {
-            matches!(job.status, TransferStatus::Pending | TransferStatus::InProgress)
+            matches!(
+                job.status,
+                TransferStatus::Pending | TransferStatus::InProgress
+            )
         });
         initial_count - jobs.len()
     }
-    
+
     /// Retry a failed transfer
     pub async fn retry_job(&self, id: &str) -> Option<String> {
         let jobs = self.jobs.read().await;
@@ -159,21 +166,22 @@ impl TransferManager {
                     // Create a new job with same details
                     let mut new_job = TransferJob::new(
                         job.transfer_type.clone(),
+                        job.profile_id.clone(),
                         job.bucket.clone(),
                         job.bucket_region.clone(),
                         job.key.clone(),
                         std::path::PathBuf::from(&job.local_path),
                         job.total_bytes,
                     );
-                    
+
                     // Preserve grouping info
                     new_job.parent_group_id = job.parent_group_id.clone();
                     new_job.group_name = job.group_name.clone();
                     new_job.is_group_root = job.is_group_root;
-                    
+
                     let new_id = new_job.id.clone();
                     drop(jobs);
-                    
+
                     // Add the new job to queue
                     self.add_job(new_job).await;
                     return Some(new_id);
@@ -203,7 +211,8 @@ impl TransferManager {
             let active = self.active_count.load(Ordering::Acquire);
 
             if active < max {
-                if self.active_count
+                if self
+                    .active_count
                     .compare_exchange_weak(active, active + 1, Ordering::AcqRel, Ordering::Acquire)
                     .is_ok()
                 {
@@ -218,17 +227,23 @@ impl TransferManager {
             self.slot_notify.notified().await;
         }
     }
-    
+
     // Process the queue using a worker pool that respects max concurrency
-    pub async fn process_queue(self: Arc<Self>, s3_manager: Arc<RwLock<S3ClientManager>>, profile: Profile) {
+    pub async fn process_queue(
+        self: Arc<Self>,
+        s3_manager: Arc<RwLock<S3ClientManager>>,
+        profile_manager: Arc<RwLock<ProfileManager>>,
+    ) {
         let manager = self.clone();
-        
+
         tokio::spawn(async move {
             loop {
                 // 1. Get next job from queue
                 let next_id = {
                     let mut queue = manager.queue.lock().await;
-                    if queue.is_empty() { break; }
+                    if queue.is_empty() {
+                        break;
+                    }
                     queue.remove(0)
                 };
 
@@ -238,7 +253,7 @@ impl TransferManager {
                 // 3. Spawn the task
                 let manager_inner = manager.clone();
                 let s3_inner = s3_manager.clone();
-                let profile_inner = profile.clone();
+                let profiles_inner = profile_manager.clone();
                 let id_inner = next_id.clone();
 
                 let handle = tokio::spawn(async move {
@@ -253,24 +268,47 @@ impl TransferManager {
                     }
 
                     // Update status to InProgress
-                    manager_inner.update_job_status(&id_inner, TransferStatus::InProgress).await;
-                    
+                    manager_inner
+                        .update_job_status(&id_inner, TransferStatus::InProgress)
+                        .await;
+
                     // Run the job
                     let job_opt = manager_inner.get_job(&id_inner).await;
                     if let Some(job) = job_opt {
-                        match manager_inner.execute_job(&job, s3_inner, &profile_inner).await {
+                        let profile_result = {
+                            let profiles = profiles_inner.read().await;
+                            profiles.get_profile(&job.profile_id).await
+                        };
+
+                        let result = match profile_result {
+                            Ok(profile) => {
+                                manager_inner.execute_job(&job, s3_inner, &profile).await
+                            }
+                            Err(err) => Err(err),
+                        };
+
+                        match result {
                             Ok(_) => {
                                 // Double check if it was cancelled while we were working
                                 if let Some(current_job) = manager_inner.get_job(&id_inner).await {
                                     if !matches!(current_job.status, TransferStatus::Cancelled) {
-                                        manager_inner.update_job_status(&id_inner, TransferStatus::Completed).await;
+                                        manager_inner
+                                            .update_job_status(&id_inner, TransferStatus::Completed)
+                                            .await;
                                     }
                                 }
-                            },
-                            Err(e) => manager_inner.update_job_status(&id_inner, TransferStatus::Failed(e.to_string())).await,
+                            }
+                            Err(e) => {
+                                manager_inner
+                                    .update_job_status(
+                                        &id_inner,
+                                        TransferStatus::Failed(e.to_string()),
+                                    )
+                                    .await
+                            }
                         }
                     }
-                    
+
                     // Remove abort handle when done
                     let mut handles = manager_inner.abort_handles.write().await;
                     handles.remove(&id_inner);
@@ -290,7 +328,9 @@ impl TransferManager {
                 job.status = status.clone();
                 // If final status, set finished_at
                 match status {
-                    TransferStatus::Completed | TransferStatus::Failed(_) | TransferStatus::Cancelled => {
+                    TransferStatus::Completed
+                    | TransferStatus::Failed(_)
+                    | TransferStatus::Cancelled => {
                         job.finished_at = Some(chrono::Utc::now().timestamp_millis());
                     }
                     _ => {}
@@ -298,10 +338,10 @@ impl TransferManager {
             }
         }
         if let Some(job) = self.get_job(id).await {
-             self.emit_update(&job).await;
+            self.emit_update(&job).await;
         }
     }
-    
+
     async fn update_job_total_size(&self, id: &str, size: u64) {
         {
             let mut jobs = self.jobs.write().await;
@@ -326,11 +366,17 @@ impl TransferManager {
         }
     }
 
-    async fn execute_job(&self, job: &TransferJob, s3_manager: Arc<RwLock<S3ClientManager>>, profile: &Profile) -> crate::error::Result<()> {
+    async fn execute_job(
+        &self,
+        job: &TransferJob,
+        s3_manager: Arc<RwLock<S3ClientManager>>,
+        profile: &Profile,
+    ) -> crate::error::Result<()> {
         let resolved_region = {
             let s3 = s3_manager.read().await;
             s3.get_bucket_region(&job.bucket)
-        }.or(job.bucket_region.clone());
+        }
+        .or(job.bucket_region.clone());
 
         let client = {
             let mut s3 = s3_manager.write().await;
@@ -348,54 +394,76 @@ impl TransferManager {
                 s3.get_client(profile).await?.clone()
             };
 
-            let new_region = crate::s3::get_bucket_region(&retry_client, &job.bucket).await.ok();
+            let new_region = crate::s3::get_bucket_region(&retry_client, &job.bucket)
+                .await
+                .ok();
             if let Some(ref region) = new_region {
                 let mut s3 = s3_manager.write().await;
                 s3.set_bucket_region(&job.bucket, region.clone());
             }
             Ok::<Option<String>, crate::error::AppError>(new_region)
         };
-        
+
         match job.transfer_type {
             TransferType::Upload => {
-                 let body = ByteStream::from_path(&job.local_path).await
+                let body = ByteStream::from_path(&job.local_path)
+                    .await
                     .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
 
-                 if let Err(err) = client.put_object()
+                if let Err(err) = client
+                    .put_object()
                     .bucket(&job.bucket)
                     .key(&job.key)
                     .body(body)
                     .send()
                     .await
-                 {
-                    log::warn!("upload transfer failed, attempting region discovery: {}", err);
+                {
+                    log::warn!(
+                        "upload transfer failed, attempting region discovery: {}",
+                        err
+                    );
 
                     if let Some(new_region) = detect_region.await? {
                         let retry_client = {
                             let mut s3 = s3_manager.write().await;
-                            s3.get_client_for_region(profile, &new_region).await?.clone()
+                            s3.get_client_for_region(profile, &new_region)
+                                .await?
+                                .clone()
                         };
-                        let retry_body = ByteStream::from_path(&job.local_path).await
+                        let retry_body = ByteStream::from_path(&job.local_path)
+                            .await
                             .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
 
-                        retry_client.put_object()
+                        retry_client
+                            .put_object()
                             .bucket(&job.bucket)
                             .key(&job.key)
                             .body(retry_body)
                             .send()
                             .await
-                            .map_err(|e| crate::error::AppError::S3Error(format!("Retry upload failed: {}", e)))?;
+                            .map_err(|e| {
+                                crate::error::AppError::S3Error(format!(
+                                    "Retry upload failed: {}",
+                                    e
+                                ))
+                            })?;
                     } else {
                         return Err(crate::error::AppError::S3Error(err.to_string()));
                     }
-                 }
+                }
 
-                 if let Ok(meta) = std::fs::metadata(&job.local_path) {
-                     self.update_job_progress(&job.id, meta.len()).await;
-                 }
+                if let Ok(meta) = std::fs::metadata(&job.local_path) {
+                    self.update_job_progress(&job.id, meta.len()).await;
+                }
+
+                {
+                    let mut s3 = s3_manager.write().await;
+                    s3.remove_bucket_cache(&profile.id, &job.bucket);
+                }
             }
             TransferType::Download => {
-                let result = client.get_object()
+                let result = client
+                    .get_object()
                     .bucket(&job.bucket)
                     .key(&job.key)
                     .send()
@@ -404,20 +472,31 @@ impl TransferManager {
                 let mut output = match result {
                     Ok(output) => output,
                     Err(err) => {
-                        log::warn!("download transfer failed, attempting region discovery: {}", err);
+                        log::warn!(
+                            "download transfer failed, attempting region discovery: {}",
+                            err
+                        );
 
                         if let Some(new_region) = detect_region.await? {
                             let retry_client = {
                                 let mut s3 = s3_manager.write().await;
-                                s3.get_client_for_region(profile, &new_region).await?.clone()
+                                s3.get_client_for_region(profile, &new_region)
+                                    .await?
+                                    .clone()
                             };
 
-                            retry_client.get_object()
+                            retry_client
+                                .get_object()
                                 .bucket(&job.bucket)
                                 .key(&job.key)
                                 .send()
                                 .await
-                                .map_err(|e| crate::error::AppError::S3Error(format!("Retry download failed: {}", e)))?
+                                .map_err(|e| {
+                                    crate::error::AppError::S3Error(format!(
+                                        "Retry download failed: {}",
+                                        e
+                                    ))
+                                })?
                         } else {
                             return Err(crate::error::AppError::S3Error(err.to_string()));
                         }
@@ -425,38 +504,43 @@ impl TransferManager {
                 };
 
                 if let Some(parent) = std::path::Path::new(&job.local_path).parent() {
-                    tokio::fs::create_dir_all(parent).await
+                    tokio::fs::create_dir_all(parent)
+                        .await
                         .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
                 }
 
-                let mut file = File::create(&job.local_path).await
+                let mut file = File::create(&job.local_path)
+                    .await
                     .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
 
                 let mut downloaded: u64 = 0;
                 let mut last_update = std::time::Instant::now();
-                
 
-                while let Some(bytes) = output.body.try_next().await
-                    .map_err(|e| crate::error::AppError::S3Error(e.to_string()))? 
+                while let Some(bytes) = output
+                    .body
+                    .try_next()
+                    .await
+                    .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?
                 {
-                    file.write_all(&bytes).await
-                         .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
-                    
+                    file.write_all(&bytes)
+                        .await
+                        .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
+
                     downloaded += bytes.len() as u64;
-                    
+
                     if last_update.elapsed() >= std::time::Duration::from_millis(100) {
                         self.update_job_progress(&job.id, downloaded).await;
                         last_update = std::time::Instant::now();
                     }
                 }
-                
+
                 self.update_job_progress(&job.id, downloaded).await;
                 if job.total_bytes == 0 {
                     self.update_job_total_size(&job.id, downloaded).await;
                 }
             }
         }
-        
+
         Ok(())
     }
 }

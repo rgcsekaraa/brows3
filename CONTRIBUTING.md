@@ -42,7 +42,7 @@ Brows3 is a **Tauri v2** application with a **Next.js** frontend and a **Rust** 
 
 - `/src` — Next.js frontend (React with MUI).
 - `/src-tauri` — Rust backend, including core logic, the S3 client, and IPC handlers.
-- `/src-tauri/src/s3` — Custom prefix-indexed caching engine.
+- `/src-tauri/src/s3` — AWS S3 clients, region discovery, and sorted-folder caching.
 
 ## Contribution Workflow
 

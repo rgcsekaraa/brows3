@@ -1,12 +1,12 @@
 use crate::commands::profiles::ProfileState;
-use crate::s3::S3State;
 use crate::error::Result;
-use aws_sdk_s3::Client;
+use crate::s3::S3State;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{Delete, ObjectCannedAcl, ObjectIdentifier};
-use tauri::State;
+use aws_sdk_s3::Client;
 use std::collections::HashSet;
 use std::path::Path;
+use tauri::State;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
@@ -20,7 +20,9 @@ async fn detect_and_cache_bucket_region(
         s3_manager.get_client(active_profile).await?.clone()
     };
 
-    let detected_region = crate::s3::get_bucket_region(&retry_client, bucket_name).await.ok();
+    let detected_region = crate::s3::get_bucket_region(&retry_client, bucket_name)
+        .await
+        .ok();
 
     if let Some(ref new_region) = detected_region {
         let mut s3_manager = s3_state.write().await;
@@ -149,7 +151,9 @@ async fn list_keys_for_permission_target(
         }
 
         if output.is_truncated().unwrap_or(false) {
-            continuation_token = output.next_continuation_token().map(|token| token.to_string());
+            continuation_token = output
+                .next_continuation_token()
+                .map(|token| token.to_string());
         } else {
             break;
         }
@@ -183,26 +187,28 @@ pub async fn put_object(
     let bucket_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(&bucket_name)
-    }.or(bucket_region);
+    }
+    .or(bucket_region);
 
     // Get S3 client
     let client = {
         let mut s3_manager = s3_state.write().await;
         if let Some(ref d) = bucket_region {
-            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+            s3_manager
+                .get_client_for_region(&active_profile, d)
+                .await?
+                .clone()
         } else {
             s3_manager.get_client(&active_profile).await?.clone()
         }
     };
 
-    let mut request = client
-        .put_object()
-        .bucket(&bucket_name)
-        .key(&key);
+    let mut request = client.put_object().bucket(&bucket_name).key(&key);
 
     if let Some(ref path) = local_path {
         // Upload file
-        let body = ByteStream::from_path(Path::new(path)).await
+        let body = ByteStream::from_path(Path::new(path))
+            .await
             .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
         request = request.body(body);
     } else {
@@ -213,19 +219,22 @@ pub async fn put_object(
     if let Err(err) = request.send().await {
         log::warn!("put_object failed, attempting region discovery: {}", err);
 
-        if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
+        if let Some(new_region) =
+            detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await?
+        {
             let new_client = {
                 let mut s3_manager = s3_state.write().await;
-                s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                s3_manager
+                    .get_client_for_region(&active_profile, &new_region)
+                    .await?
+                    .clone()
             };
 
-            let mut retry_request = new_client
-                .put_object()
-                .bucket(&bucket_name)
-                .key(&key);
+            let mut retry_request = new_client.put_object().bucket(&bucket_name).key(&key);
 
             if let Some(ref path) = local_path {
-                let body = ByteStream::from_path(Path::new(path)).await
+                let body = ByteStream::from_path(Path::new(path))
+                    .await
                     .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
                 retry_request = retry_request.body(body);
             } else {
@@ -239,6 +248,11 @@ pub async fn put_object(
         } else {
             return Err(crate::error::AppError::S3Error(err.to_string()));
         }
+    }
+
+    {
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.remove_bucket_cache(&active_profile.id, &bucket_name);
     }
 
     Ok(())
@@ -265,13 +279,17 @@ pub async fn get_object(
     let bucket_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(&bucket_name)
-    }.or(bucket_region);
+    }
+    .or(bucket_region);
 
     // Get S3 client
     let client = {
         let mut s3_manager = s3_state.write().await;
         if let Some(ref d) = bucket_region {
-            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+            s3_manager
+                .get_client_for_region(&active_profile, d)
+                .await?
+                .clone()
         } else {
             s3_manager.get_client(&active_profile).await?.clone()
         }
@@ -290,10 +308,15 @@ pub async fn get_object(
         Err(err) => {
             log::warn!("get_object failed, attempting region discovery: {}", err);
 
-            if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
+            if let Some(new_region) =
+                detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await?
+            {
                 let new_client = {
                     let mut s3_manager = s3_state.write().await;
-                    s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                    s3_manager
+                        .get_client_for_region(&active_profile, &new_region)
+                        .await?
+                        .clone()
                 };
 
                 new_client
@@ -302,7 +325,9 @@ pub async fn get_object(
                     .key(&key)
                     .send()
                     .await
-                    .map_err(|e| crate::error::AppError::S3Error(format!("Retry get failed: {}", e)))?
+                    .map_err(|e| {
+                        crate::error::AppError::S3Error(format!("Retry get failed: {}", e))
+                    })?
             } else {
                 return Err(crate::error::AppError::S3Error(err.to_string()));
             }
@@ -311,20 +336,26 @@ pub async fn get_object(
 
     if let Some(parent) = Path::new(&local_path).parent() {
         if !parent.as_os_str().is_empty() {
-            tokio::fs::create_dir_all(parent).await
+            tokio::fs::create_dir_all(parent)
+                .await
                 .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
         }
     }
 
     // Create local file
-    let mut file = File::create(&local_path).await
+    let mut file = File::create(&local_path)
+        .await
         .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
 
     // Stream to file
-    while let Some(bytes) = output.body.try_next().await
-        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))? 
+    while let Some(bytes) = output
+        .body
+        .try_next()
+        .await
+        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?
     {
-        file.write_all(&bytes).await
+        file.write_all(&bytes)
+            .await
             .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
     }
 
@@ -351,13 +382,17 @@ pub async fn delete_object(
     let bucket_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(&bucket_name)
-    }.or(bucket_region);
+    }
+    .or(bucket_region);
 
     // Get S3 client
     let client = {
         let mut s3_manager = s3_state.write().await;
         if let Some(ref d) = bucket_region {
-            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+            s3_manager
+                .get_client_for_region(&active_profile, d)
+                .await?
+                .clone()
         } else {
             s3_manager.get_client(&active_profile).await?.clone()
         }
@@ -373,10 +408,15 @@ pub async fn delete_object(
     if let Err(err) = result {
         log::warn!("delete_object failed, attempting region discovery: {}", err);
 
-        if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
+        if let Some(new_region) =
+            detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await?
+        {
             let new_client = {
                 let mut s3_manager = s3_state.write().await;
-                s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                s3_manager
+                    .get_client_for_region(&active_profile, &new_region)
+                    .await?
+                    .clone()
             };
 
             new_client
@@ -385,15 +425,23 @@ pub async fn delete_object(
                 .key(&key)
                 .send()
                 .await
-                .map_err(|e| crate::error::AppError::S3Error(format!("Retry delete failed: {}", e)))?;
+                .map_err(|e| {
+                    crate::error::AppError::S3Error(format!("Retry delete failed: {}", e))
+                })?;
         } else {
             return Err(crate::error::AppError::S3Error(err.to_string()));
         }
     }
 
+    {
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.remove_bucket_cache(&active_profile.id, &bucket_name);
+    }
+
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn copy_object(
     source_bucket: String,
@@ -408,7 +456,12 @@ pub async fn copy_object(
     if source_bucket == destination_bucket && source_key == destination_key {
         return Ok(());
     }
-    validate_folder_target(&source_bucket, &source_key, &destination_bucket, &destination_key)?;
+    validate_folder_target(
+        &source_bucket,
+        &source_key,
+        &destination_bucket,
+        &destination_key,
+    )?;
 
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
@@ -420,40 +473,52 @@ pub async fn copy_object(
     // Check if this is a folder copy (key ends with /)
     if source_key.ends_with('/') {
         // RECURSIVE FOLDER COPY
-        log::info!("Starting recursive folder copy from {}/{} to {}/{}", 
-                   source_bucket, source_key, destination_bucket, destination_key);
-        
+        log::info!(
+            "Starting recursive folder copy from {}/{} to {}/{}",
+            source_bucket,
+            source_key,
+            destination_bucket,
+            destination_key
+        );
+
         // Get client for listing source bucket
         let source_region_resolved = {
             let s3_manager = s3_state.read().await;
             s3_manager.get_bucket_region(&source_bucket)
-        }.or(source_region.clone());
-        
+        }
+        .or(source_region.clone());
+
         let client = {
             let mut s3_manager = s3_state.write().await;
             if let Some(ref r) = source_region_resolved {
-                s3_manager.get_client_for_region(&active_profile, r).await?.clone()
+                s3_manager
+                    .get_client_for_region(&active_profile, r)
+                    .await?
+                    .clone()
             } else {
                 s3_manager.get_client(&active_profile).await?.clone()
             }
         };
-        
+
         // List all objects under the source prefix
         let mut continuation_token = None;
         let mut all_keys = Vec::new();
-        
+
         loop {
-            let mut req = client.list_objects_v2()
+            let mut req = client
+                .list_objects_v2()
                 .bucket(&source_bucket)
                 .prefix(&source_key);
-            
+
             if let Some(token) = continuation_token {
                 req = req.continuation_token(token);
             }
-            
-            let resp = req.send().await
+
+            let resp = req
+                .send()
+                .await
                 .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
-            
+
             if let Some(contents) = resp.contents {
                 for obj in contents {
                     if let Some(key) = obj.key {
@@ -461,23 +526,23 @@ pub async fn copy_object(
                     }
                 }
             }
-            
+
             if resp.is_truncated.unwrap_or(false) {
                 continuation_token = resp.next_continuation_token;
             } else {
                 break;
             }
         }
-        
+
         log::info!("Found {} objects to copy in folder", all_keys.len());
         let has_folder_marker = all_keys.iter().any(|key| key == &source_key);
-        
+
         // Copy each object individually
         for key in &all_keys {
             // Calculate destination key by replacing source prefix with destination prefix
             let relative_path = key.strip_prefix(&source_key).unwrap_or(key);
             let new_key = format!("{}{}", destination_key, relative_path);
-            
+
             // Perform the copy using internal helper (non-recursive single file copy)
             copy_single_object(
                 &source_bucket,
@@ -487,9 +552,10 @@ pub async fn copy_object(
                 &new_key,
                 &active_profile,
                 &s3_state,
-            ).await?;
+            )
+            .await?;
         }
-        
+
         // Preserve explicitly-created empty folders without duplicating an existing marker.
         if !has_folder_marker {
             let destination_marker = if destination_key.ends_with('/') {
@@ -504,10 +570,14 @@ pub async fn copy_object(
                 None,
                 profile_state.clone(),
                 s3_state.clone(),
-            ).await?;
+            )
+            .await?;
         }
-        
-        log::info!("Recursive folder copy completed: {} objects copied", all_keys.len());
+
+        log::info!(
+            "Recursive folder copy completed: {} objects copied",
+            all_keys.len()
+        );
         Ok(())
     } else {
         // Single file copy
@@ -519,7 +589,10 @@ pub async fn copy_object(
             &destination_key,
             &active_profile,
             &s3_state,
-        ).await
+        )
+        .await?;
+
+        Ok(())
     }
 }
 
@@ -537,14 +610,20 @@ async fn copy_single_object(
     let destination_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(destination_bucket)
-    }.or(destination_region);
+    }
+    .or(destination_region);
 
-    let mut s3_manager = s3_state.write().await;
-    // We need the client for the DESTINATION region to initiate copy
-    let client = if let Some(ref d) = destination_region {
-        s3_manager.get_client_for_region(active_profile, d).await?
-    } else {
-        s3_manager.get_client(active_profile).await?
+    let client = {
+        let mut s3_manager = s3_state.write().await;
+        // We need the client for the destination region to initiate the copy.
+        if let Some(ref d) = destination_region {
+            s3_manager
+                .get_client_for_region(active_profile, d)
+                .await?
+                .clone()
+        } else {
+            s3_manager.get_client(active_profile).await?.clone()
+        }
     };
 
     // Copy source must be URL encoded
@@ -560,23 +639,29 @@ async fn copy_single_object(
         .await
         .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
 
+    {
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.remove_bucket_cache(&active_profile.id, destination_bucket);
+    }
+
     Ok(())
 }
 
 fn build_delete_request(chunk: &[String]) -> Result<Delete> {
     let mut delete_ids = Vec::new();
     for key in chunk {
-        let obj_id = ObjectIdentifier::builder()
-            .key(key)
-            .build()
-            .map_err(|e| crate::error::AppError::S3Error(format!("Invalid object key '{}': {}", key, e)))?;
+        let obj_id = ObjectIdentifier::builder().key(key).build().map_err(|e| {
+            crate::error::AppError::S3Error(format!("Invalid object key '{}': {}", key, e))
+        })?;
         delete_ids.push(obj_id);
     }
 
     Delete::builder()
         .set_objects(Some(delete_ids))
         .build()
-        .map_err(|e| crate::error::AppError::S3Error(format!("Failed to build delete request: {}", e)))
+        .map_err(|e| {
+            crate::error::AppError::S3Error(format!("Failed to build delete request: {}", e))
+        })
 }
 
 fn validate_delete_result(
@@ -654,12 +739,16 @@ pub async fn delete_objects(
     let bucket_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(&bucket_name)
-    }.or(bucket_region);
+    }
+    .or(bucket_region);
 
     let client = {
         let mut s3_manager = s3_state.write().await;
         if let Some(ref d) = bucket_region {
-            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+            s3_manager
+                .get_client_for_region(&active_profile, d)
+                .await?
+                .clone()
         } else {
             s3_manager.get_client(&active_profile).await?.clone()
         }
@@ -678,48 +767,57 @@ pub async fn delete_objects(
             .await;
 
         match result {
-             Ok(output) => validate_delete_result(&bucket_name, &output)?,
-             Err(err) => {
-                 // Retry logic for bulk delete
-                 log::warn!("delete_objects failed, attempting region discovery: {}", err);
-                 let detected_region = {
-                     let retry_client = {
+            Ok(output) => validate_delete_result(&bucket_name, &output)?,
+            Err(err) => {
+                // Retry logic for bulk delete
+                log::warn!(
+                    "delete_objects failed, attempting region discovery: {}",
+                    err
+                );
+                let detected_region = {
+                    let retry_client = {
                         let mut s3_manager = s3_state.write().await;
                         s3_manager.get_client(&active_profile).await?.clone()
-                     };
-                     crate::s3::get_bucket_region(&retry_client, &bucket_name).await.ok()
-                 };
+                    };
+                    crate::s3::get_bucket_region(&retry_client, &bucket_name)
+                        .await
+                        .ok()
+                };
 
-                 if let Some(new_region) = detected_region {
-                     let new_client = {
-                         let mut s3_manager = s3_state.write().await;
-                         s3_manager.set_bucket_region(&bucket_name, new_region.clone());
-                         s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
-                     };
+                if let Some(new_region) = detected_region {
+                    let new_client = {
+                        let mut s3_manager = s3_state.write().await;
+                        s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                        s3_manager
+                            .get_client_for_region(&active_profile, &new_region)
+                            .await?
+                            .clone()
+                    };
 
-                     match new_client.delete_objects()
-                         .bucket(&bucket_name)
-                         .delete(delete)
-                         .send()
-                         .await
-                     {
-                         Ok(output) => validate_delete_result(&bucket_name, &output)?,
-                         Err(retry_err) => {
-                             log::warn!(
-                                 "delete_objects retry failed, falling back to single deletes: {}",
-                                 retry_err
-                             );
-                             delete_keys_individually(&new_client, &bucket_name, chunk).await?;
-                         }
-                     }
-                 } else {
-                     log::warn!(
+                    match new_client
+                        .delete_objects()
+                        .bucket(&bucket_name)
+                        .delete(delete)
+                        .send()
+                        .await
+                    {
+                        Ok(output) => validate_delete_result(&bucket_name, &output)?,
+                        Err(retry_err) => {
+                            log::warn!(
+                                "delete_objects retry failed, falling back to single deletes: {}",
+                                retry_err
+                            );
+                            delete_keys_individually(&new_client, &bucket_name, chunk).await?;
+                        }
+                    }
+                } else {
+                    log::warn!(
                          "delete_objects region discovery failed, falling back to single deletes: {}",
                          err
                      );
-                     delete_keys_individually(&client, &bucket_name, chunk).await?;
-                 }
-             }
+                    delete_keys_individually(&client, &bucket_name, chunk).await?;
+                }
+            }
         }
     }
 
@@ -732,6 +830,7 @@ pub async fn delete_objects(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn move_object(
     source_bucket: String,
@@ -746,7 +845,12 @@ pub async fn move_object(
     if source_bucket == destination_bucket && source_key == destination_key {
         return Ok(());
     }
-    validate_folder_target(&source_bucket, &source_key, &destination_bucket, &destination_key)?;
+    validate_folder_target(
+        &source_bucket,
+        &source_key,
+        &destination_bucket,
+        &destination_key,
+    )?;
 
     // Check if this is a folder move (key ends with /)
     if source_key.ends_with('/') {
@@ -757,38 +861,45 @@ pub async fn move_object(
             .await?
             .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
         drop(profile_manager);
-        
+
         // Get client for listing source bucket
         let source_region_resolved = {
             let s3_manager = s3_state.read().await;
             s3_manager.get_bucket_region(&source_bucket)
-        }.or(source_region.clone());
+        }
+        .or(source_region.clone());
 
         let client = {
             let mut s3_manager = s3_state.write().await;
             if let Some(ref r) = source_region_resolved {
-                s3_manager.get_client_for_region(&active_profile, r).await?.clone()
+                s3_manager
+                    .get_client_for_region(&active_profile, r)
+                    .await?
+                    .clone()
             } else {
                 s3_manager.get_client(&active_profile).await?.clone()
             }
         };
-        
+
         // List all objects under the source prefix
         let mut continuation_token = None;
         let mut all_keys = Vec::new();
-        
+
         loop {
-            let mut req = client.list_objects_v2()
+            let mut req = client
+                .list_objects_v2()
                 .bucket(&source_bucket)
                 .prefix(&source_key);
-            
+
             if let Some(token) = continuation_token {
                 req = req.continuation_token(token);
             }
-            
-            let resp = req.send().await
+
+            let resp = req
+                .send()
+                .await
                 .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
-            
+
             if let Some(contents) = resp.contents {
                 for obj in contents {
                     if let Some(key) = obj.key {
@@ -796,14 +907,14 @@ pub async fn move_object(
                     }
                 }
             }
-            
+
             if resp.is_truncated.unwrap_or(false) {
                 continuation_token = resp.next_continuation_token;
             } else {
                 break;
             }
         }
-        
+
         let unique_keys: HashSet<String> = all_keys.into_iter().collect();
         let mut all_keys: Vec<String> = unique_keys.into_iter().collect();
         all_keys.sort();
@@ -826,7 +937,8 @@ pub async fn move_object(
                     &destination_folder_key,
                     &active_profile,
                     &s3_state,
-                ).await?;
+                )
+                .await?;
             } else {
                 let relative_path = key.strip_prefix(&source_key).unwrap_or(key);
                 let new_key = format!("{}{}", destination_key, relative_path);
@@ -839,10 +951,11 @@ pub async fn move_object(
                     &new_key,
                     &active_profile,
                     &s3_state,
-                ).await?;
+                )
+                .await?;
             }
         }
-        
+
         // Delete all source objects at once
         if !all_keys.is_empty() {
             delete_objects(
@@ -850,10 +963,11 @@ pub async fn move_object(
                 source_region_resolved,
                 all_keys,
                 profile_state,
-                s3_state
-            ).await?;
+                s3_state,
+            )
+            .await?;
         }
-        
+
         Ok(())
     } else {
         // Single file move (original behavior)
@@ -866,18 +980,20 @@ pub async fn move_object(
             destination_region.clone(),
             destination_key.clone(),
             profile_state.clone(),
-            s3_state.clone()
-        ).await?;
-        
+            s3_state.clone(),
+        )
+        .await?;
+
         // 2. Delete source
         delete_object(
             source_bucket,
             source_region,
             source_key,
             profile_state,
-            s3_state
-        ).await?;
-        
+            s3_state,
+        )
+        .await?;
+
         Ok(())
     }
 }
@@ -939,32 +1055,45 @@ pub async fn get_object_permissions(
     let bucket_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(&bucket_name)
-    }.or(bucket_region);
+    }
+    .or(bucket_region);
 
     let mut client = {
         let mut s3_manager = s3_state.write().await;
         if let Some(ref region) = bucket_region {
-            s3_manager.get_client_for_region(&active_profile, region).await?.clone()
+            s3_manager
+                .get_client_for_region(&active_profile, region)
+                .await?
+                .clone()
         } else {
             s3_manager.get_client(&active_profile).await?.clone()
         }
     };
 
-    let mut target_keys = match list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await {
-        Ok(keys) => keys,
-        Err(err) => {
-            log::warn!("Permission target listing failed, attempting region discovery: {}", err);
-            if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
-                client = {
-                    let mut s3_manager = s3_state.write().await;
-                    s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
-                };
-                list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await?
-            } else {
-                return Err(err);
+    let mut target_keys =
+        match list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await {
+            Ok(keys) => keys,
+            Err(err) => {
+                log::warn!(
+                    "Permission target listing failed, attempting region discovery: {}",
+                    err
+                );
+                if let Some(new_region) =
+                    detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await?
+                {
+                    client = {
+                        let mut s3_manager = s3_state.write().await;
+                        s3_manager
+                            .get_client_for_region(&active_profile, &new_region)
+                            .await?
+                            .clone()
+                    };
+                    list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await?
+                } else {
+                    return Err(err);
+                }
             }
-        }
-    };
+        };
 
     target_keys.sort();
     let representative_key = target_keys
@@ -1005,10 +1134,14 @@ pub async fn get_object_permissions(
             let grantee = grant.grantee();
             ObjectAclGrant {
                 grantee_type: grantee.map(|g| g.r#type().as_str().to_string()),
-                display_name: grantee.and_then(|g| g.display_name()).map(|value| value.to_string()),
+                display_name: grantee
+                    .and_then(|g| g.display_name())
+                    .map(|value| value.to_string()),
                 id: grantee.and_then(|g| g.id()).map(|value| value.to_string()),
                 uri: grantee.and_then(|g| g.uri()).map(|value| value.to_string()),
-                email_address: grantee.and_then(|g| g.email_address()).map(|value| value.to_string()),
+                email_address: grantee
+                    .and_then(|g| g.email_address())
+                    .map(|value| value.to_string()),
                 permission: grant.permission().map(|value| value.as_str().to_string()),
             }
         })
@@ -1019,8 +1152,14 @@ pub async fn get_object_permissions(
         is_folder,
         status: "available".to_string(),
         message: None,
-        owner_display_name: output.owner().and_then(|owner| owner.display_name()).map(|value| value.to_string()),
-        owner_id: output.owner().and_then(|owner| owner.id()).map(|value| value.to_string()),
+        owner_display_name: output
+            .owner()
+            .and_then(|owner| owner.display_name())
+            .map(|value| value.to_string()),
+        owner_id: output
+            .owner()
+            .and_then(|owner| owner.id())
+            .map(|value| value.to_string()),
         grants,
         target_count: target_keys.len(),
     })
@@ -1047,32 +1186,45 @@ pub async fn set_object_permissions(
     let bucket_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(&bucket_name)
-    }.or(bucket_region);
+    }
+    .or(bucket_region);
 
     let mut client = {
         let mut s3_manager = s3_state.write().await;
         if let Some(ref region) = bucket_region {
-            s3_manager.get_client_for_region(&active_profile, region).await?.clone()
+            s3_manager
+                .get_client_for_region(&active_profile, region)
+                .await?
+                .clone()
         } else {
             s3_manager.get_client(&active_profile).await?.clone()
         }
     };
 
-    let target_keys = match list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await {
-        Ok(keys) => keys,
-        Err(err) => {
-            log::warn!("Permission target listing failed, attempting region discovery: {}", err);
-            if let Some(new_region) = detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await? {
-                client = {
-                    let mut s3_manager = s3_state.write().await;
-                    s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
-                };
-                list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await?
-            } else {
-                return Err(err);
+    let target_keys =
+        match list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await {
+            Ok(keys) => keys,
+            Err(err) => {
+                log::warn!(
+                    "Permission target listing failed, attempting region discovery: {}",
+                    err
+                );
+                if let Some(new_region) =
+                    detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await?
+                {
+                    client = {
+                        let mut s3_manager = s3_state.write().await;
+                        s3_manager
+                            .get_client_for_region(&active_profile, &new_region)
+                            .await?
+                            .clone()
+                    };
+                    list_keys_for_permission_target(&client, &bucket_name, &key, is_folder).await?
+                } else {
+                    return Err(err);
+                }
             }
-        }
-    };
+        };
 
     for target_key in &target_keys {
         client
@@ -1110,23 +1262,28 @@ pub async fn get_object_metadata(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
-    
+
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
         s3_manager.get_bucket_region(&bucket_name)
-    }.or(bucket_region);
+    }
+    .or(bucket_region);
 
     let client = {
         let mut s3_manager = s3_state.write().await;
         if let Some(ref d) = bucket_region {
-            s3_manager.get_client_for_region(&active_profile, d).await?.clone()
+            s3_manager
+                .get_client_for_region(&active_profile, d)
+                .await?
+                .clone()
         } else {
             s3_manager.get_client(&active_profile).await?.clone()
         }
     };
 
-    let result = client.head_object()
+    let result = client
+        .head_object()
         .bucket(&bucket_name)
         .key(&key)
         .send()
@@ -1139,33 +1296,43 @@ pub async fn get_object_metadata(
             // If access denied (403), likely permissions, but could be region mismatch too in some cases.
             // But usually region mismatch is 301 or 400.
             if error_str.contains("403") || error_str.contains("Access Denied") {
-                 return Err(crate::error::AppError::AccessDenied(error_str));
+                return Err(crate::error::AppError::AccessDenied(error_str));
             }
-            
+
             // Retry logic
             log::warn!("head_object failed, attempting region discovery: {}", err);
             let detected_region = {
                 let retry_client = {
-                   let mut s3_manager = s3_state.write().await;
-                   s3_manager.get_client(&active_profile).await?.clone()
+                    let mut s3_manager = s3_state.write().await;
+                    s3_manager.get_client(&active_profile).await?.clone()
                 };
-                crate::s3::get_bucket_region(&retry_client, &bucket_name).await.ok()
+                crate::s3::get_bucket_region(&retry_client, &bucket_name)
+                    .await
+                    .ok()
             };
 
             if let Some(new_region) = detected_region {
                 let new_client = {
                     let mut s3_manager = s3_state.write().await;
                     s3_manager.set_bucket_region(&bucket_name, new_region.clone());
-                    s3_manager.get_client_for_region(&active_profile, &new_region).await?.clone()
+                    s3_manager
+                        .get_client_for_region(&active_profile, &new_region)
+                        .await?
+                        .clone()
                 };
-                new_client.head_object().bucket(&bucket_name).key(&key).send().await
+                new_client
+                    .head_object()
+                    .bucket(&bucket_name)
+                    .key(&key)
+                    .send()
+                    .await
                     .map_err(|e| {
-                         let e_str = e.to_string();
-                         if e_str.contains("403") || e_str.contains("Access Denied") {
-                             crate::error::AppError::AccessDenied(e_str)
-                         } else {
-                             crate::error::AppError::S3Error(format!("Retry head failed: {}", e_str))
-                         }
+                        let e_str = e.to_string();
+                        if e_str.contains("403") || e_str.contains("Access Denied") {
+                            crate::error::AppError::AccessDenied(e_str)
+                        } else {
+                            crate::error::AppError::S3Error(format!("Retry head failed: {}", e_str))
+                        }
                     })?
             } else {
                 return Err(crate::error::AppError::S3Error(error_str));
@@ -1174,7 +1341,7 @@ pub async fn get_object_metadata(
     };
 
     let last_modified = output.last_modified.map(|d| d.to_string());
-    
+
     // Convert HashMap<String, String> from SDK to standard HashMap
     let user_metadata = output.metadata.unwrap_or_default();
 

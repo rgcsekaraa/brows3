@@ -213,6 +213,12 @@ export interface ListObjectsResult {
   bucket_region?: string;
 }
 
+export interface SearchObjectsResult {
+  objects: S3Object[];
+  scanned_objects: number;
+  is_truncated: boolean;
+}
+
 export const objectApi = {
   async listObjects(
     bucketName: string,
@@ -236,8 +242,8 @@ export const objectApi = {
     });
   },
 
-  async searchObjects(bucketName: string, bucketRegion: string | undefined, query: string, prefix: string = ''): Promise<S3Object[]> {
-    return invoke<S3Object[]>('search_objects', { bucketName, bucketRegion, query, prefix: prefix || null });
+  async searchObjects(bucketName: string, bucketRegion: string | undefined, query: string, prefix: string = ''): Promise<SearchObjectsResult> {
+    return invoke<SearchObjectsResult>('search_objects', { bucketName, bucketRegion, query, prefix: prefix || null });
   },
 
   async getPresignedUrl(bucketName: string, bucketRegion: string | undefined, key: string, expiresIn: number = 3600): Promise<string> {
@@ -354,6 +360,7 @@ export interface SetObjectPermissionsResult {
 
 export interface TransferJob {
   id: string;
+  profile_id: string;
   transfer_type: 'Upload' | 'Download';
   bucket: string;
   bucket_region: string | null;

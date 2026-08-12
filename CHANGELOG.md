@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Profile Connection Tests**: Test progress and results now remain visible until the form changes, and stale asynchronous responses cannot overwrite a newer test.
+- **Transfer Profile Isolation**: Queued transfers retain the profile that created them instead of using whichever account is active when a worker starts.
+- **Safe Folder Downloads**: Recursive download paths reject traversal, absolute, rooted, drive-prefixed, and null-containing object keys before joining them to the selected directory.
+- **Bounded Search And Sorting**: Deep search is capped at 100 S3 LIST requests, 100,000 scanned objects, and 10,000 matches, while complete non-default folder sorts are capped at 100 requests and 100,000 entries.
+- **Cache Accuracy**: Removed the unused full-bucket cache implementation, bounded the actual sorted-view cache, and invalidated it after object writes.
+- **Release Signing Workflow**: macOS builds now receive configured Apple signing and notarization secrets, while `[skip release]` suppresses release jobs for maintenance pushes.
+
+### Changed
+- **Credential Documentation**: Documented the plaintext `secrets.json` fallback used by portable mode or when native keychain storage fails.
+- **Project Cleanup**: Removed unused state, dependencies, starter assets, and historical build logs.
+
 ## [0.2.43] - 2026-06-25
 
 ### Added

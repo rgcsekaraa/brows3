@@ -1,6 +1,9 @@
 pub mod client;
 
-pub use client::{S3ClientManager, BucketInfo, FolderContent, S3Object, list_buckets, get_bucket_region, format_size};
+pub use client::{
+    format_size, get_bucket_region, list_buckets, BucketInfo, FolderContent, S3ClientManager,
+    S3Object,
+};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

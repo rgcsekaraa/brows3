@@ -30,4 +30,4 @@ Relevant issues include:
 
 ## Storage Model
 
-Brows3 is designed so that credentials remain on the local machine. Manual and custom S3 secrets should be stored in secure OS keychain facilities instead of plain JSON configuration files.
+Brows3 is designed so that credentials remain on the local machine. Manual and custom S3 secrets use secure OS keychain facilities when available. Portable mode and native-keychain failures fall back to a local `secrets.json` file; Unix builds restrict that file to mode `0600`, while users remain responsible for protecting the portable data directory and Windows account.
