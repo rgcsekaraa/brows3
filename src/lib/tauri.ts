@@ -258,8 +258,8 @@ export const objectApi = {
     return invoke<string>('get_object_content', { bucketName, bucketRegion, key, maxBytes });
   },
 
-  async putObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, content: string): Promise<void> {
-    await invoke<void>('put_object_content', { bucketName, bucketRegion, key, content });
+  async putObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, content: string, contentType?: string | null): Promise<void> {
+    await invoke<void>('put_object_content', { bucketName, bucketRegion, key, content, contentType });
     invalidateCache();
   },
 
@@ -300,6 +300,11 @@ export const operationsApi = {
 
   async getObjectMetadata(bucketName: string, bucketRegion: string | undefined, key: string): Promise<ObjectMetadata> {
     return invoke<ObjectMetadata>('get_object_metadata', { bucketName, bucketRegion, key });
+  },
+
+  async setObjectContentType(bucketName: string, bucketRegion: string | undefined, key: string, contentType: string): Promise<void> {
+    await invoke<void>('set_object_content_type', { bucketName, bucketRegion, key, contentType });
+    invalidateCache();
   },
 
   async getObjectPermissions(bucketName: string, bucketRegion: string | undefined, key: string, isFolder: boolean): Promise<ObjectPermissions> {

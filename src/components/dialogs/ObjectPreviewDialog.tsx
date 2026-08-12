@@ -203,7 +203,7 @@ export default function ObjectPreviewDialog({
     setError(null);
 
     try {
-      await objectApi.putObjectContent(bucketName, bucketRegion, objectKey, editedContent);
+      await objectApi.putObjectContent(bucketName, bucketRegion, objectKey, editedContent, contentType);
       setContent(editedContent);
       // Reset version tracking - current state is now the new baseline
       if (editorRef.current) {

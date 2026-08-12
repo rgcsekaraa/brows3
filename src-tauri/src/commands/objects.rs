@@ -995,6 +995,7 @@ pub async fn put_object_content(
     bucket_region: Option<String>,
     key: String,
     content: String,
+    content_type: Option<String>,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
@@ -1025,6 +1026,10 @@ pub async fn put_object_content(
         }
     };
 
+    let content_type = match content_type {
+        Some(value) => crate::s3::validate_content_type(&value)?,
+        None => crate::s3::infer_content_type(&key),
+    };
     let body_bytes = content.into_bytes();
     let body = ByteStream::from(body_bytes.clone());
 
@@ -1032,6 +1037,7 @@ pub async fn put_object_content(
         .put_object()
         .bucket(&bucket_name)
         .key(&key)
+        .content_type(&content_type)
         .body(body)
         .send()
         .await;
@@ -1067,6 +1073,7 @@ pub async fn put_object_content(
                     .put_object()
                     .bucket(&bucket_name)
                     .key(&key)
+                    .content_type(&content_type)
                     .body(retry_body)
                     .send()
                     .await

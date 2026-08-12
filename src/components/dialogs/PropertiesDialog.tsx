@@ -12,13 +12,35 @@ import {
   Paper,
   CircularProgress,
   Chip,
+  Autocomplete,
+  TextField,
+  Alert,
   alpha,
   useTheme,
 } from '@mui/material';
+import { Save as SaveIcon } from '@mui/icons-material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { operationsApi, ObjectMetadata } from '@/lib/tauri';
 import { BaseDialog } from '../common/BaseDialog';
 import { formatSize } from '@/lib/utils';
+import { toast } from '@/store/toastStore';
+
+const COMMON_CONTENT_TYPES = [
+  'text/html',
+  'text/plain',
+  'text/css',
+  'text/csv',
+  'application/json',
+  'application/javascript',
+  'application/xml',
+  'application/pdf',
+  'application/octet-stream',
+  'image/jpeg',
+  'image/png',
+  'image/svg+xml',
+  'audio/mpeg',
+  'video/mp4',
+];
 
 interface PropertiesDialogProps {
   open: boolean;
@@ -53,6 +75,9 @@ export default function PropertiesDialog({ open, onClose, bucketName, bucketRegi
   const [loading, setLoading] = useState(false);
   const [metadata, setMetadata] = useState<ObjectMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [contentType, setContentType] = useState('');
+  const [savingContentType, setSavingContentType] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const theme = useTheme();
   const requestIdRef = useRef(0);
 
@@ -64,6 +89,8 @@ export default function PropertiesDialog({ open, onClose, bucketName, bucketRegi
       const data = await operationsApi.getObjectMetadata(bucketName, bucketRegion, objectKey);
       if (requestId === requestIdRef.current) {
         setMetadata(data);
+        setContentType(data.content_type || 'application/octet-stream');
+        setSaveError(null);
       }
     } catch (err) {
       const errorMsg = String(err);
@@ -87,12 +114,36 @@ export default function PropertiesDialog({ open, onClose, bucketName, bucketRegi
     } else {
         setMetadata(null);
         setError(null);
+        setContentType('');
+        setSaveError(null);
         setTabValue(0);
     }
   }, [open, bucketName, objectKey, fetchMetadata]);
 
   const handleChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
+  };
+
+  const handleSaveContentType = async () => {
+    const nextContentType = contentType.trim();
+    if (!metadata || !nextContentType || nextContentType === metadata.content_type) return;
+
+    setSavingContentType(true);
+    setSaveError(null);
+    try {
+      await operationsApi.setObjectContentType(
+        bucketName,
+        bucketRegion,
+        objectKey,
+        nextContentType
+      );
+      await fetchMetadata();
+      toast.success('Content-Type updated', `${objectKey} now uses ${nextContentType}`);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingContentType(false);
+    }
   };
 
   return (
@@ -102,9 +153,24 @@ export default function PropertiesDialog({ open, onClose, bucketName, bucketRegi
       title={`Properties: ${objectKey.split('/').pop()}`}
       maxWidth="sm"
       actions={
-        <Button onClick={onClose} variant="contained">
-          Close
-        </Button>
+        <Box sx={{ display: 'flex', width: '100%', justifyContent: 'flex-end', gap: 1 }}>
+          <Button onClick={onClose} disabled={savingContentType}>
+            Close
+          </Button>
+          <Button
+            onClick={handleSaveContentType}
+            variant="contained"
+            startIcon={savingContentType ? <CircularProgress size={16} /> : <SaveIcon />}
+            disabled={
+              savingContentType
+              || !contentType.trim()
+              || !metadata
+              || contentType.trim() === metadata.content_type
+            }
+          >
+            {savingContentType ? 'Saving…' : 'Save Content-Type'}
+          </Button>
+        </Box>
       }
     >
       {loading ? (
@@ -146,7 +212,23 @@ export default function PropertiesDialog({ open, onClose, bucketName, bucketRegi
                             </TableRow>
                             <TableRow sx={{ '&:last-child td': { border: 0 } }}>
                                 <TableCell sx={{ fontWeight: 700, color: 'text.secondary' }}>Content Type</TableCell>
-                                <TableCell sx={{ fontWeight: 600 }}>{metadata.content_type || '-'}</TableCell>
+                                <TableCell>
+                                  <Autocomplete
+                                    freeSolo
+                                    size="small"
+                                    options={COMMON_CONTENT_TYPES}
+                                    value={contentType}
+                                    onChange={(_, value) => setContentType(value || '')}
+                                    onInputChange={(_, value) => setContentType(value)}
+                                    renderInput={(params) => (
+                                      <TextField
+                                        {...params}
+                                        placeholder="application/octet-stream"
+                                        inputProps={{ ...params.inputProps, 'aria-label': 'Object Content-Type' }}
+                                      />
+                                    )}
+                                  />
+                                </TableCell>
                             </TableRow>
                             <TableRow sx={{ '&:last-child td': { border: 0 } }}>
                                 <TableCell sx={{ fontWeight: 700, color: 'text.secondary' }}>Modified</TableCell>
@@ -176,6 +258,10 @@ export default function PropertiesDialog({ open, onClose, bucketName, bucketRegi
                         </TableBody>
                     </Table>
                 </TableContainer>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+                  Updating Content-Type copies the object in place to replace its metadata. Versioned buckets may create a new object version.
+                </Typography>
+                {saveError && <Alert severity="error" sx={{ mt: 1.5 }}>{saveError}</Alert>}
             </CustomTabPanel>
             
             <CustomTabPanel value={tabValue} index={1}>

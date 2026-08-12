@@ -2,7 +2,10 @@ use crate::commands::profiles::ProfileState;
 use crate::error::Result;
 use crate::s3::S3State;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::{Delete, ObjectCannedAcl, ObjectIdentifier};
+use aws_sdk_s3::types::{
+    CompletedMultipartUpload, CompletedPart, Delete, MetadataDirective, ObjectCannedAcl,
+    ObjectIdentifier, Permission, TaggingDirective,
+};
 use aws_sdk_s3::Client;
 use std::collections::HashSet;
 use std::path::Path;
@@ -120,6 +123,297 @@ fn map_acl_error(error: impl ToString) -> crate::error::AppError {
     }
 }
 
+#[derive(Debug, Default)]
+struct CopyAclHeaders {
+    full_control: Vec<String>,
+    read: Vec<String>,
+    read_acp: Vec<String>,
+    write_acp: Vec<String>,
+}
+
+impl CopyAclHeaders {
+    fn joined(values: &[String]) -> Option<String> {
+        (!values.is_empty()).then(|| values.join(", "))
+    }
+}
+
+fn quoted_acl_value(kind: &str, value: &str) -> Result<String> {
+    if value.chars().any(|character| character.is_control()) {
+        return Err(crate::error::AppError::InvalidContent(
+            "Object ACL contains an invalid control character".to_string(),
+        ));
+    }
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    Ok(format!("{kind}=\"{escaped}\""))
+}
+
+fn acl_grantee_header(grantee: &aws_sdk_s3::types::Grantee) -> Result<String> {
+    match grantee.r#type() {
+        aws_sdk_s3::types::Type::CanonicalUser => grantee
+            .id()
+            .ok_or_else(|| {
+                crate::error::AppError::InvalidContent(
+                    "Object ACL canonical user is missing its ID".to_string(),
+                )
+            })
+            .and_then(|value| quoted_acl_value("id", value)),
+        aws_sdk_s3::types::Type::AmazonCustomerByEmail => grantee
+            .email_address()
+            .ok_or_else(|| {
+                crate::error::AppError::InvalidContent(
+                    "Object ACL email grantee is missing its address".to_string(),
+                )
+            })
+            .and_then(|value| quoted_acl_value("emailAddress", value)),
+        aws_sdk_s3::types::Type::Group => grantee
+            .uri()
+            .ok_or_else(|| {
+                crate::error::AppError::InvalidContent(
+                    "Object ACL group grantee is missing its URI".to_string(),
+                )
+            })
+            .and_then(|value| quoted_acl_value("uri", value)),
+        other => Err(crate::error::AppError::InvalidContent(format!(
+            "Cannot safely preserve unsupported ACL grantee type '{}'",
+            other.as_str()
+        ))),
+    }
+}
+
+fn copy_acl_headers(
+    output: &aws_sdk_s3::operation::get_object_acl::GetObjectAclOutput,
+) -> Result<CopyAclHeaders> {
+    let mut headers = CopyAclHeaders::default();
+    for grant in output.grants() {
+        let Some(grantee) = grant.grantee() else {
+            continue;
+        };
+        let Some(permission) = grant.permission() else {
+            continue;
+        };
+        let header = acl_grantee_header(grantee)?;
+
+        match permission {
+            Permission::FullControl => headers.full_control.push(header),
+            Permission::Read => headers.read.push(header),
+            Permission::ReadAcp => headers.read_acp.push(header),
+            Permission::WriteAcp => headers.write_acp.push(header),
+            other => {
+                return Err(crate::error::AppError::InvalidContent(format!(
+                    "Cannot safely preserve unsupported object ACL permission '{}'",
+                    other.as_str()
+                )))
+            }
+        }
+    }
+    Ok(headers)
+}
+
+fn copy_source(bucket_name: &str, key: &str, version_id: Option<&str>) -> String {
+    let base = format!("{}/{}", bucket_name, urlencoding::encode(key));
+    match version_id {
+        Some(version_id) => format!("{base}?versionId={}", urlencoding::encode(version_id)),
+        None => base,
+    }
+}
+
+fn encode_object_tags(tags: &[aws_sdk_s3::types::Tag]) -> Option<String> {
+    (!tags.is_empty()).then(|| {
+        tags.iter()
+            .map(|tag| {
+                format!(
+                    "{}={}",
+                    urlencoding::encode(tag.key()),
+                    urlencoding::encode(tag.value())
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("&")
+    })
+}
+
+async fn multipart_copy_content_type(
+    client: &Client,
+    bucket_name: &str,
+    key: &str,
+    content_type: &str,
+    head: &aws_sdk_s3::operation::head_object::HeadObjectOutput,
+    acl_headers: Option<&CopyAclHeaders>,
+) -> Result<()> {
+    let object_size = head
+        .content_length()
+        .and_then(|value| u64::try_from(value).ok())
+        .ok_or_else(|| {
+            crate::error::AppError::S3Error(format!(
+                "S3 returned an invalid size for s3://{bucket_name}/{key}"
+            ))
+        })?;
+    let copy_source = copy_source(bucket_name, key, head.version_id());
+    let tag_output = match client
+        .get_object_tagging()
+        .bucket(bucket_name)
+        .key(key)
+        .set_version_id(head.version_id.clone())
+        .send()
+        .await
+    {
+        Ok(output) => Some(output),
+        Err(error) => {
+            let error_string = error.to_string();
+            if matches!(classify_acl_error(&error_string), Some(("unsupported", _))) {
+                None
+            } else {
+                return Err(crate::error::AppError::S3Error(format!(
+                    "Cannot safely update Content-Type because the object's tags could not be read and preserved: {error_string}"
+                )));
+            }
+        }
+    };
+    let tagging = tag_output
+        .as_ref()
+        .and_then(|output| encode_object_tags(output.tag_set()));
+    let plan = crate::s3::plan_multipart_upload(object_size)?;
+
+    let build_create_request = |acl: Option<&CopyAclHeaders>| {
+        let mut request = client
+            .create_multipart_upload()
+            .bucket(bucket_name)
+            .key(key)
+            .content_type(content_type)
+            .set_cache_control(head.cache_control.clone())
+            .set_content_disposition(head.content_disposition.clone())
+            .set_content_encoding(head.content_encoding.clone())
+            .set_content_language(head.content_language.clone())
+            .set_metadata(head.metadata.clone())
+            .set_website_redirect_location(head.website_redirect_location.clone())
+            .set_storage_class(head.storage_class.clone())
+            .set_server_side_encryption(head.server_side_encryption.clone())
+            .set_ssekms_key_id(head.ssekms_key_id.clone())
+            .set_bucket_key_enabled(head.bucket_key_enabled)
+            .set_object_lock_mode(head.object_lock_mode.clone())
+            .set_object_lock_retain_until_date(head.object_lock_retain_until_date)
+            .set_object_lock_legal_hold_status(head.object_lock_legal_hold_status.clone())
+            .set_tagging(tagging.clone());
+
+        #[allow(deprecated)]
+        {
+            request = request.set_expires(head.expires);
+        }
+
+        if let Some(acl) = acl {
+            request = request
+                .set_grant_full_control(CopyAclHeaders::joined(&acl.full_control))
+                .set_grant_read(CopyAclHeaders::joined(&acl.read))
+                .set_grant_read_acp(CopyAclHeaders::joined(&acl.read_acp))
+                .set_grant_write_acp(CopyAclHeaders::joined(&acl.write_acp));
+        }
+
+        request
+    };
+
+    let created = match build_create_request(acl_headers).send().await {
+        Ok(output) => output,
+        Err(error) => {
+            let error_string = error.to_string();
+            if acl_headers.is_some()
+                && matches!(classify_acl_error(&error_string), Some(("unsupported", _)))
+            {
+                build_create_request(None).send().await.map_err(|retry_error| {
+                    crate::error::AppError::S3Error(format!(
+                        "Could not start multipart Content-Type copy after retrying without ACL headers: {retry_error}"
+                    ))
+                })?
+            } else {
+                return Err(crate::error::AppError::S3Error(format!(
+                    "Could not start multipart Content-Type copy: {error_string}"
+                )));
+            }
+        }
+    };
+    let upload_id = created.upload_id().ok_or_else(|| {
+        crate::error::AppError::S3Error(format!(
+            "S3 did not return an upload ID while updating Content-Type for s3://{bucket_name}/{key}"
+        ))
+    })?;
+    let mut guard = crate::s3::MultipartUploadGuard::new(
+        client.clone(),
+        bucket_name,
+        key,
+        upload_id.to_string(),
+    );
+
+    let copy_result: Result<()> = async {
+        let mut completed_parts = Vec::with_capacity(plan.parts.len());
+        for part in &plan.parts {
+            let end = part.offset + part.length - 1;
+            let output = client
+                .upload_part_copy()
+                .bucket(bucket_name)
+                .key(key)
+                .upload_id(guard.upload_id())
+                .part_number(part.number)
+                .copy_source(&copy_source)
+                .copy_source_range(format!("bytes={}-{}", part.offset, end))
+                .set_copy_source_if_match(head.e_tag.clone())
+                .send()
+                .await
+                .map_err(|error| {
+                    crate::error::AppError::S3Error(format!(
+                        "Multipart Content-Type copy failed at part {} of {} for s3://{bucket_name}/{key}: {error}",
+                        part.number,
+                        plan.parts.len()
+                    ))
+                })?;
+            let e_tag = output
+                .copy_part_result()
+                .and_then(|result| result.e_tag())
+                .ok_or_else(|| {
+                    crate::error::AppError::S3Error(format!(
+                        "S3 did not return an ETag for copied part {} of s3://{bucket_name}/{key}",
+                        part.number
+                    ))
+                })?;
+            completed_parts.push(
+                CompletedPart::builder()
+                    .part_number(part.number)
+                    .e_tag(e_tag)
+                    .build(),
+            );
+        }
+
+        client
+            .complete_multipart_upload()
+            .bucket(bucket_name)
+            .key(key)
+            .upload_id(guard.upload_id())
+            .multipart_upload(
+                CompletedMultipartUpload::builder()
+                    .set_parts(Some(completed_parts))
+                    .build(),
+            )
+            .send()
+            .await
+            .map_err(|error| {
+                crate::error::AppError::S3Error(format!(
+                    "Could not complete multipart Content-Type copy for s3://{bucket_name}/{key}: {error}"
+                ))
+            })?;
+
+        Ok(())
+    }
+    .await;
+
+    if let Err(error) = copy_result {
+        if let Err(abort_error) = guard.abort().await {
+            log::error!("{}", abort_error);
+        }
+        return Err(error);
+    }
+
+    guard.disarm();
+    Ok(())
+}
+
 async fn list_keys_for_permission_target(
     client: &Client,
     bucket_name: &str,
@@ -203,7 +497,14 @@ pub async fn put_object(
         }
     };
 
-    let mut request = client.put_object().bucket(&bucket_name).key(&key);
+    let content_type = local_path
+        .as_ref()
+        .map(|_| crate::s3::infer_content_type(&key));
+    let mut request = client
+        .put_object()
+        .bucket(&bucket_name)
+        .key(&key)
+        .set_content_type(content_type.clone());
 
     if let Some(ref path) = local_path {
         // Upload file
@@ -230,7 +531,11 @@ pub async fn put_object(
                     .clone()
             };
 
-            let mut retry_request = new_client.put_object().bucket(&bucket_name).key(&key);
+            let mut retry_request = new_client
+                .put_object()
+                .bucket(&bucket_name)
+                .key(&key)
+                .set_content_type(content_type);
 
             if let Some(ref path) = local_path {
                 let body = ByteStream::from_path(Path::new(path))
@@ -998,6 +1303,188 @@ pub async fn move_object(
     }
 }
 
+#[tauri::command]
+pub async fn set_object_content_type(
+    bucket_name: String,
+    bucket_region: Option<String>,
+    key: String,
+    content_type: String,
+    profile_state: State<'_, ProfileState>,
+    s3_state: State<'_, S3State>,
+) -> Result<()> {
+    const MAX_SINGLE_COPY_SIZE: u64 = 5 * 1024 * 1024 * 1024;
+
+    let content_type = crate::s3::validate_content_type(&content_type)?;
+    let profile_manager = profile_state.read().await;
+    let active_profile = profile_manager
+        .get_active_profile()
+        .await?
+        .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
+    drop(profile_manager);
+
+    let resolved_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(&bucket_name)
+    }
+    .or(bucket_region);
+
+    let client = {
+        let mut s3_manager = s3_state.write().await;
+        if let Some(ref region) = resolved_region {
+            s3_manager
+                .get_client_for_region(&active_profile, region)
+                .await?
+                .clone()
+        } else {
+            s3_manager.get_client(&active_profile).await?.clone()
+        }
+    };
+
+    let head = client
+        .head_object()
+        .bucket(&bucket_name)
+        .key(&key)
+        .send()
+        .await
+        .map_err(|error| crate::error::AppError::S3Error(error.to_string()))?;
+
+    if head.content_type() == Some(content_type.as_str()) {
+        return Ok(());
+    }
+    if head.e_tag().is_none() {
+        return Err(crate::error::AppError::S3Error(format!(
+            "Cannot safely update Content-Type because S3 did not return an ETag for s3://{bucket_name}/{key}"
+        )));
+    }
+
+    let object_size = head
+        .content_length()
+        .ok_or_else(|| {
+            crate::error::AppError::S3Error(format!(
+                "S3 did not return the size of s3://{bucket_name}/{key}"
+            ))
+        })
+        .and_then(|value| {
+            u64::try_from(value).map_err(|_| {
+                crate::error::AppError::S3Error(format!(
+                    "S3 returned an invalid negative size for s3://{bucket_name}/{key}"
+                ))
+            })
+        })?;
+    if head.sse_customer_algorithm().is_some() {
+        return Err(crate::error::AppError::ConfigError(
+            "Content-Type cannot be changed safely for an SSE-C encrypted object because its customer encryption key is not available"
+                .to_string(),
+        ));
+    }
+
+    let acl_headers = match client
+        .get_object_acl()
+        .bucket(&bucket_name)
+        .key(&key)
+        .set_version_id(head.version_id.clone())
+        .send()
+        .await
+    {
+        Ok(output) => Some(copy_acl_headers(&output)?),
+        Err(error) => {
+            let error_string = error.to_string();
+            if matches!(classify_acl_error(&error_string), Some(("unsupported", _))) {
+                None
+            } else {
+                return Err(crate::error::AppError::S3Error(format!(
+                    "Cannot safely update Content-Type because the current object ACL could not be read and preserved: {error_string}"
+                )));
+            }
+        }
+    };
+
+    let copy_source = copy_source(&bucket_name, &key, head.version_id());
+    if object_size > MAX_SINGLE_COPY_SIZE {
+        multipart_copy_content_type(
+            &client,
+            &bucket_name,
+            &key,
+            &content_type,
+            &head,
+            acl_headers.as_ref(),
+        )
+        .await?;
+
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.remove_bucket_cache(&active_profile.id, &bucket_name);
+        return Ok(());
+    }
+
+    let build_request = |acl: Option<&CopyAclHeaders>| {
+        let mut request = client
+            .copy_object()
+            .bucket(&bucket_name)
+            .key(&key)
+            .copy_source(&copy_source)
+            .content_type(&content_type)
+            .metadata_directive(MetadataDirective::Replace)
+            .tagging_directive(TaggingDirective::Copy)
+            .set_copy_source_if_match(head.e_tag.clone())
+            .set_cache_control(head.cache_control.clone())
+            .set_content_disposition(head.content_disposition.clone())
+            .set_content_encoding(head.content_encoding.clone())
+            .set_content_language(head.content_language.clone())
+            .set_metadata(head.metadata.clone())
+            .set_website_redirect_location(head.website_redirect_location.clone())
+            .set_storage_class(head.storage_class.clone())
+            .set_server_side_encryption(head.server_side_encryption.clone())
+            .set_ssekms_key_id(head.ssekms_key_id.clone())
+            .set_bucket_key_enabled(head.bucket_key_enabled)
+            .set_object_lock_mode(head.object_lock_mode.clone())
+            .set_object_lock_retain_until_date(head.object_lock_retain_until_date)
+            .set_object_lock_legal_hold_status(head.object_lock_legal_hold_status.clone());
+
+        #[allow(deprecated)]
+        {
+            request = request.set_expires(head.expires);
+        }
+
+        if let Some(acl) = acl {
+            request = request
+                .set_grant_full_control(CopyAclHeaders::joined(&acl.full_control))
+                .set_grant_read(CopyAclHeaders::joined(&acl.read))
+                .set_grant_read_acp(CopyAclHeaders::joined(&acl.read_acp))
+                .set_grant_write_acp(CopyAclHeaders::joined(&acl.write_acp));
+        }
+
+        request
+    };
+
+    let result = build_request(acl_headers.as_ref()).send().await;
+    if let Err(error) = result {
+        let error_string = error.to_string();
+        if acl_headers.is_some()
+            && matches!(classify_acl_error(&error_string), Some(("unsupported", _)))
+        {
+            // Object Ownership with ACLs disabled can still return an ACL-like
+            // response while rejecting grant headers. Retry without ACL headers;
+            // there is no ACL state to lose in that mode.
+            build_request(None).send().await.map_err(|retry_error| {
+                crate::error::AppError::S3Error(format!(
+                    "Content-Type update failed after retrying without ACL headers: {retry_error}"
+                ))
+            })?;
+        } else {
+            return Err(crate::error::AppError::S3Error(format!(
+                "Content-Type update failed: {error_string}"
+            )));
+        }
+    }
+
+    {
+        let mut s3_manager = s3_state.write().await;
+        s3_manager.remove_bucket_cache(&active_profile.id, &bucket_name);
+    }
+
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 pub struct ObjectMetadata {
     pub key: String,
@@ -1354,4 +1841,215 @@ pub async fn get_object_metadata(
         storage_class: output.storage_class.map(|s| s.as_str().to_string()),
         user_metadata: user_metadata.into_iter().collect(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        classify_acl_error, copy_source, encode_object_tags, multipart_copy_content_type,
+        quoted_acl_value,
+    };
+    use crate::credentials::{CredentialType, Profile};
+    use aws_sdk_s3::primitives::ByteStream;
+    use aws_sdk_s3::types::{Tag, Tagging};
+
+    #[test]
+    fn copy_source_encodes_keys_and_pins_versioned_objects() {
+        assert_eq!(
+            copy_source("bucket", "folder/a file#.txt", None),
+            "bucket/folder%2Fa%20file%23.txt"
+        );
+        assert_eq!(
+            copy_source("bucket", "folder/a.txt", Some("version+one=")),
+            "bucket/folder%2Fa.txt?versionId=version%2Bone%3D"
+        );
+    }
+
+    #[test]
+    fn multipart_copy_tag_header_is_url_encoded() {
+        let tags = vec![
+            Tag::builder()
+                .key("team name")
+                .value("web+docs")
+                .build()
+                .unwrap(),
+            Tag::builder().key("empty").value("").build().unwrap(),
+        ];
+
+        assert_eq!(
+            encode_object_tags(&tags).as_deref(),
+            Some("team%20name=web%2Bdocs&empty=")
+        );
+        assert_eq!(encode_object_tags(&[]), None);
+    }
+
+    #[test]
+    fn acl_preservation_escapes_values_and_classifies_provider_errors() {
+        assert_eq!(
+            quoted_acl_value("id", "user\\\"one").unwrap(),
+            "id=\"user\\\\\\\"one\""
+        );
+        assert!(quoted_acl_value("id", "bad\nvalue").is_err());
+        assert_eq!(
+            classify_acl_error("AccessControlListNotSupported"),
+            Some((
+                "unsupported",
+                "ACL permissions are not supported for this bucket or provider. The bucket may use Object Ownership with ACLs disabled."
+            ))
+        );
+        assert!(matches!(
+            classify_acl_error("403 AccessDenied"),
+            Some(("access_denied", _))
+        ));
+    }
+
+    /// Run with BROWS3_S3_TEST_ENDPOINT=http://127.0.0.1:<port> against MinIO.
+    #[tokio::test]
+    #[ignore = "requires an S3-compatible integration-test endpoint"]
+    async fn multipart_content_type_copy_preserves_object_state() {
+        let endpoint = std::env::var("BROWS3_S3_TEST_ENDPOINT")
+            .expect("BROWS3_S3_TEST_ENDPOINT must identify the test S3 endpoint");
+        let access_key =
+            std::env::var("BROWS3_S3_TEST_ACCESS_KEY").unwrap_or_else(|_| "minioadmin".into());
+        let secret_key =
+            std::env::var("BROWS3_S3_TEST_SECRET_KEY").unwrap_or_else(|_| "minioadmin".into());
+        let profile = Profile::new(
+            "content-type-integration".to_string(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: endpoint,
+                access_key_id: access_key,
+                secret_access_key: secret_key,
+            },
+            Some("us-east-1".to_string()),
+        );
+        let sdk_config = crate::s3::client::load_sdk_config(&profile, None).await;
+        let client = crate::s3::client::client_from_sdk_config(&sdk_config, &profile);
+        let bucket = format!("brows3-content-type-{}", uuid::Uuid::new_v4().simple());
+        let key = "folder/a file.bin";
+        client
+            .create_bucket()
+            .bucket(&bucket)
+            .send()
+            .await
+            .expect("test bucket should be created");
+
+        let path = std::env::temp_dir().join(format!(
+            "brows3-content-type-{}.bin",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let file = tokio::fs::File::create(&path)
+            .await
+            .expect("sparse test file should be created");
+        let size = 129 * 1024 * 1024;
+        file.set_len(size)
+            .await
+            .expect("sparse test file should be sized");
+        drop(file);
+
+        client
+            .put_object()
+            .bucket(&bucket)
+            .key(key)
+            .content_type("application/octet-stream")
+            .cache_control("max-age=60")
+            .metadata("owner", "brows3")
+            .body(
+                ByteStream::from_path(&path)
+                    .await
+                    .expect("test body should be readable"),
+            )
+            .send()
+            .await
+            .expect("source object should be uploaded");
+        client
+            .put_object_tagging()
+            .bucket(&bucket)
+            .key(key)
+            .tagging(
+                Tagging::builder()
+                    .tag_set(
+                        Tag::builder()
+                            .key("team name")
+                            .value("web+docs")
+                            .build()
+                            .unwrap(),
+                    )
+                    .build()
+                    .unwrap(),
+            )
+            .send()
+            .await
+            .expect("source tags should be applied");
+
+        let head = client
+            .head_object()
+            .bucket(&bucket)
+            .key(key)
+            .send()
+            .await
+            .expect("source metadata should be readable");
+        multipart_copy_content_type(
+            &client,
+            &bucket,
+            key,
+            "text/html; charset=utf-8",
+            &head,
+            None,
+        )
+        .await
+        .expect("multipart copy should complete");
+
+        let copied = client
+            .head_object()
+            .bucket(&bucket)
+            .key(key)
+            .send()
+            .await
+            .expect("copied metadata should be readable");
+        assert_eq!(copied.content_length(), Some(size as i64));
+        assert_eq!(copied.content_type(), Some("text/html; charset=utf-8"));
+        assert_eq!(copied.cache_control(), Some("max-age=60"));
+        assert_eq!(
+            copied
+                .metadata()
+                .and_then(|metadata| metadata.get("owner"))
+                .map(String::as_str),
+            Some("brows3")
+        );
+
+        let tags = client
+            .get_object_tagging()
+            .bucket(&bucket)
+            .key(key)
+            .send()
+            .await
+            .expect("copied tags should be readable");
+        assert_eq!(tags.tag_set().len(), 1);
+        assert_eq!(tags.tag_set()[0].key(), "team name");
+        assert_eq!(tags.tag_set()[0].value(), "web+docs");
+        let incomplete = client
+            .list_multipart_uploads()
+            .bucket(&bucket)
+            .send()
+            .await
+            .expect("multipart uploads should be listable");
+        assert!(incomplete.uploads().is_empty());
+
+        client
+            .delete_object()
+            .bucket(&bucket)
+            .key(key)
+            .send()
+            .await
+            .expect("test object should be deleted");
+        client
+            .delete_bucket()
+            .bucket(&bucket)
+            .send()
+            .await
+            .expect("test bucket should be deleted");
+        tokio::fs::remove_file(path)
+            .await
+            .expect("sparse test file should be deleted");
+    }
 }
