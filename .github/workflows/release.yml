@@ -64,9 +64,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --all-features --locked
 
   validate-windows:
-    # VS 2022/MSVC v143 matches Brows3's declared Windows 10 baseline. The
-    # VS 2026 runner currently produces test executables that fail at process
-    # startup with STATUS_ENTRYPOINT_NOT_FOUND before the Rust harness runs.
+    # VS 2022/MSVC v143 matches Brows3's declared Windows 10 baseline.
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v5
