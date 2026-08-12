@@ -29,6 +29,12 @@ fn portable_data_dir() -> Option<PathBuf> {
 /// Initialize the credentials manager and register it as app state.
 /// This must happen during Tauri setup before frontend commands run.
 pub fn init<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<()> {
+    // When both Linux backends are compiled, make the persistent desktop
+    // Secret Service selection explicit. Kernel keyutils is retained only so
+    // KeychainStorage can migrate credentials written by older Brows3 builds.
+    #[cfg(target_os = "linux")]
+    keyring::set_default_credential_builder(keyring::secret_service::default_credential_builder());
+
     let portable_config_dir = portable_data_dir();
     let force_secret_fallback = portable_config_dir.is_some();
     let config_dir = match portable_config_dir {

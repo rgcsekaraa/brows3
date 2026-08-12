@@ -35,8 +35,9 @@ aws-config = { version = "1", default-features = false, features = ["behavior-ve
 aws-sdk-s3 = "1"
 aws-credential-types = "1"
 
-# Secure credential storage
-keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+# Secure credential storage. Linux defaults to the persistent freedesktop
+# Secret Service; keyutils remains available only to migrate legacy entries.
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native", "sync-secret-service", "crypto-rust", "vendored"] }
 
 # Error handling
 thiserror = "2"

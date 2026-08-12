@@ -35,6 +35,18 @@ impl KeychainStorage {
             .map_err(|e| AppError::KeychainError(e.to_string()))
     }
 
+    #[cfg(target_os = "linux")]
+    fn get_legacy_linux_entry(&self, key: &str) -> Result<Entry> {
+        let credential = keyring::keyutils::KeyutilsCredential::new_with_target(
+            None,
+            SERVICE_NAME,
+            &format!("{}-{}", self.app_name, key),
+        )
+        .map_err(|e| AppError::KeychainError(e.to_string()))?;
+
+        Ok(Entry::new_with_credential(Box::new(credential)))
+    }
+
     fn read_fallback_secrets(&self) -> Result<SecretsData> {
         if !self.fallback_path.exists() {
             return Ok(SecretsData::default());
@@ -120,11 +132,31 @@ impl KeychainStorage {
         match entry.get_password() {
             Ok(secret) => Ok(secret),
             Err(err) => {
-                log::warn!(
-                    "Native keychain read failed for '{}', trying local secrets file: {}",
-                    key,
-                    err
-                );
+                log::warn!("Native keychain read failed for '{}': {}", key, err);
+
+                // v0.2.43 and older selected Linux kernel keyutils, whose
+                // entries disappear on reboot. If an entry is still present
+                // in this login session, migrate it immediately to Secret
+                // Service (or the fallback file if Secret Service is down).
+                #[cfg(target_os = "linux")]
+                if let Ok(legacy_entry) = self.get_legacy_linux_entry(key) {
+                    if let Ok(secret) = legacy_entry.get_password() {
+                        if let Err(migration_err) = entry.set_password(&secret) {
+                            log::warn!(
+                                "Secret Service migration failed for '{}', using local fallback: {}",
+                                key,
+                                migration_err
+                            );
+                            self.store_fallback(key, &secret)?;
+                        } else {
+                            let _ = legacy_entry.delete_credential();
+                            let _ = self.delete_fallback(key);
+                        }
+                        return Ok(secret);
+                    }
+                }
+
+                log::warn!("Trying local secrets file for '{}'", key);
                 self.get_fallback(key)
             }
         }
@@ -144,6 +176,10 @@ impl KeychainStorage {
                 key,
                 err
             );
+        }
+        #[cfg(target_os = "linux")]
+        if let Ok(legacy_entry) = self.get_legacy_linux_entry(key) {
+            let _ = legacy_entry.delete_credential();
         }
         let _ = self.delete_fallback(key);
         Ok(())
