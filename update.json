@@ -1,27 +1,27 @@
 {
-  "version": "0.2.43",
-  "notes": "See https://github.com/rgcsekaraa/brows3/releases/tag/app-v0.2.43 for release notes.",
-  "pub_date": "2026-06-25T00:16:22Z",
+  "version": "0.2.44",
+  "notes": "See https://github.com/rgcsekaraa/brows3/releases/tag/app-v0.2.44 for release notes.",
+  "pub_date": "2026-08-12T11:48:22Z",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_aarch64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDJhZXUyanJiRHBwa0VGN2NObGI2VTBmODd4TVBPTGhIeFFlR0U4YXFKVlF6RE9rMk0yUVdFUWJkM2REQTNEdHdvMVJUK1NibG53QTgvSHo5ZytnOUE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ1OTU5CWZpbGU6QnJvd3MzLmFwcC50YXIuZ3oKYThCUjY5cGFLUFI0NitkZnFja052Mzl6L2trbzlVKzY0VDFNOHBBZ3RNdWxHK1dEM3o5T3c0ZG5EcE1QTmkwamFvbzN3YjE3c3JBS0pNd1lNVnFXRGc9PQo="
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.44/Brows3_0.2.44_aarch64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUHdUOHhZT1FueFp4Z2E0VVFtVnNET0V5emU1eFdvRFhwNXZCWXd2T0xsdWZTcjBKV1I0ZTN0SFpFdld6U1o5aWszM29KWVBPSHVLbUtDMWQrTUZlUWdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NTM0OTQzCWZpbGU6QnJvd3MzLmFwcC50YXIuZ3oKQ2dhQWgzd0xQYUFhbVlGSFhVcksySVBnS1VZVkxiSlQrcXI0S2o5cnp1ZUYwbXI3Nzk0UE1vMnhFVFhlQ3c5SXRtbEZnYWdyYVdZcmRVa2JUaXVBREE9PQo="
     },
     "darwin-x86_64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_x64.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUCtVa3k4UnNiVDd6MFYrYW5zbUkyQ1FkWFNUZ3JadlVOY2l0NHRtdEFpNXFDSHI1TkVJcUkxbW9oK0pUazFFekJEOHZJckNPT2JtbmZ5NXZGc0tTSGdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ1OTE3CWZpbGU6QnJvd3MzLmFwcC50YXIuZ3oKUkxzQVUvTGhWWFl1NzJEZzdPdWRiVW4vckxRbzFLQnFOMHBHQ09yRTkwUkJIM2hXL0JVZitYWkx3Rk9XaDg2Mmk3eC9OdnFneFdwbmtUUVFVTlNaQ2c9PQo="
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.44/Brows3_0.2.44_x64.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDdNcHRXYzBqZVFnZmUvUTBFR2NieEx2Y2ViZ21hS0NLVDRmdHIrM2tXVENmTEpxdEFGem5hN2NTUzFhZnFkWXFmdXZyV1VrUjJNSCtDeTVNbWNKYmc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NTM0NzczCWZpbGU6QnJvd3MzLmFwcC50YXIuZ3oKVHBJZ0VGajVOMkovdlZDOEF2bXh5Y3BBL1M0aEE2bmtUMTB1THpUSUVXVnFoVytFeDlKYW9uVWZXa2JpWVdMV3hFNzRxZTNiTmc1T2IxMmx0MUFMQUE9PQo="
     },
     "linux-x86_64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_amd64.AppImage",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDErVGpFQ0poc05lWHVZbGwwMVNlWG1IWk04a2JCTHR4NjlmdmJXREhZa0d6QXRNb250YzVqckFPbFJWMGsyTWk5OEsyNk9JMlUzMUFOTDR6Nmp3YWcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ2MDc5CWZpbGU6QnJvd3MzXzAuMi40M19hbWQ2NC5BcHBJbWFnZQpPdDArR3BNVjBsOGNjM3F3dFJ5M3Q3MTcvT09qYUg2Vi9nQUhXWWRreGhscVVvZVpOVWN3YjV0b25WMVAzRDFxTUtxUWVycmZZL09kTDV0RTRUb0dBdz09Cg=="
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.44/Brows3_0.2.44_amd64.AppImage",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDcycUZBaWNGV01nR3N0WUYxbFR1eXlWRE1ZcCtkUVFpZkhRWTl3S3FJZEtidEpBSzl6dVFaNGRaYWgzckhIQVlTM2J2RFRwWnRLZUx1WXZxY25JZndZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NTM0OTQwCWZpbGU6QnJvd3MzXzAuMi40NF9hbWQ2NC5BcHBJbWFnZQpjb3B0RnlDNWNDaEFFUDZQaVQ1YllzRVVZT25RMzlpMVRTaUhRN1lpL0lFQU5kSG8vME9VWW1tN0ROSkFNTVB3QUFJbUJhNWx6OG9HZm5tWHRpalpCZz09Cg=="
     },
     "linux-aarch64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_aarch64.AppImage",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDBScnlzaUJDenVrdmhYajArVm55YWVtaHhSNTBGMmhHclpKaXg2ZTYwemdxU2JxS1NKbVMzT09VNy9xRW5iRnorTlF6czdWYUhQV0ZDeXorMHJHMWdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ2MDM2CWZpbGU6QnJvd3MzXzAuMi40M19hYXJjaDY0LkFwcEltYWdlCnNuZ203S0oxNXRZRy8xT0I0UzRPcFFGbjV1S1lkTCs1RTBoc2Vvc3VNTTdKVVFhMUN0VXYweGpCMUFmbGxXTDNZYXRpUUxpK2pWbzlEdzdxVU5OckRRPT0K"
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.44/Brows3_0.2.44_aarch64.AppImage",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDdmMXhOdW5EWldzWTVxdU5CTXIvb1JtTXRjSHlpY1ZmRnd6L2U1OU8vbjJyU0pORGRJaFRaVHBIa1U2NFR1STVjdDhxUFRBWGpRcmtLSks0MnNlVFFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NTM0OTE5CWZpbGU6QnJvd3MzXzAuMi40NF9hYXJjaDY0LkFwcEltYWdlCjFLMnhYbGJLT0FpNjF0dURRa1ppdjlZTzF2YzRCdTh0L1FyZkJ5TmpOakppYjVRKy9pSkdkaGpra0tLL0N5T1o2R0s5dHRlVTV5bVhVMU1yUWFlWENBPT0K"
     },
     "windows-x86_64": {
-      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.43/Brows3_0.2.43_x64-setup.exe",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUC9ZUWxNZXR6NXNrcmVCWUVOZUg0UlFic0JiQy85Y3VXUEhjRW84MUF4djNNMTZvMlNUbnpQMkRUaXIwRWs4aUV2VFZIWXo4S1hPYVZ0SjNZUkV3bHdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMzQ2NTYwCWZpbGU6QnJvd3MzXzAuMi40M194NjQtc2V0dXAuZXhlCnZFN0NpanptTXJCcHNaWUhSei9JcW5sbVVIaFhXNElpM1NoelBueFNOdk1RT1p2Zjk5Y29JelBNUzFaaitQTGVEUnd6MHZFWmk4NVZJSGtDVy9BcUJBPT0K"
+      "url": "https://github.com/rgcsekaraa/brows3/releases/download/app-v0.2.44/Brows3_0.2.44_x64-setup.exe",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTEc4VTlEbXFPUDJwNkE4R2d5a1A3bXc4aGhmWFZycWFXMWl2SGdqZ1pHRGE3MkRiTnB0aTljdm9KOWhHK0pnb0UyaEVoQUJkRVFUTHhYQlFlZHFjK1dzb3I0ekp4dHd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NTM1Mjc3CWZpbGU6QnJvd3MzXzAuMi40NF94NjQtc2V0dXAuZXhlCjJzcVpUdlFJTlhGNWliaER4Q000UWpmRnhPVWY5WmVBQjBZMWtsaU9PV2g3VERqMUo2c3ROQXRqVy9nc1QvcUFRWlBiOWx1MGN6ZUlCOGtmeGxqZENBPT0K"
     }
   }
 }
