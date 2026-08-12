@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
-#[derive(Debug, Error, Serialize, Deserialize)]
+#[derive(Debug, Error, Deserialize)]
 pub enum AppError {
     #[error("Profile not found: {0}")]
     ProfileNotFound(String),
@@ -36,6 +36,19 @@ pub enum AppError {
     InvalidContent(String),
 }
 
+// Tauri forwards command errors to JavaScript through Serde. The default enum
+// representation is an object such as `{ "S3Error": "..." }`, which becomes
+// `[object Object]` when a caller displays it. Serialize the Display value so
+// every command exposes the same useful message that is written to the logs.
+impl Serialize for AppError {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 impl From<std::io::Error> for AppError {
     fn from(err: std::io::Error) -> Self {
         AppError::IoError(err.to_string())
@@ -55,3 +68,16 @@ impl From<keyring::Error> for AppError {
 }
 
 pub type Result<T> = std::result::Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::AppError;
+
+    #[test]
+    fn command_errors_serialize_as_human_readable_messages() {
+        let value = serde_json::to_value(AppError::S3Error("PutObject failed".to_string()))
+            .expect("AppError should serialize");
+
+        assert_eq!(value, "S3 error: PutObject failed");
+    }
+}
