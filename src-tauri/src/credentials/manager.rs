@@ -427,21 +427,12 @@ impl ProfileManager {
     fn store_secret(&self, profile: &Profile) -> Result<()> {
         match &profile.credential_type {
             CredentialType::Manual {
-                access_key_id: _,
-                secret_access_key,
-            } => {
-                if !secret_access_key.is_empty() {
-                    self.keychain.store(&profile.id, secret_access_key)?;
-                }
+                secret_access_key, ..
             }
-            CredentialType::CustomEndpoint {
-                access_key_id: _,
-                secret_access_key,
-                ..
-            } => {
-                if !secret_access_key.is_empty() {
-                    self.keychain.store(&profile.id, secret_access_key)?;
-                }
+            | CredentialType::CustomEndpoint {
+                secret_access_key, ..
+            } if !secret_access_key.is_empty() => {
+                self.keychain.store(&profile.id, secret_access_key)?;
             }
             _ => {}
         }

@@ -34,8 +34,8 @@ jobs:
         with:
           version: 11.2.2
 
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: install Rust 1.97.1
+        uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: clippy,rustfmt
 
@@ -64,12 +64,15 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --all-features --locked
 
   validate-windows:
-    runs-on: windows-2025-vs2026
+    # VS 2022/MSVC v143 matches Brows3's declared Windows 10 baseline. The
+    # VS 2026 runner currently produces test executables that fail at process
+    # startup with STATUS_ENTRYPOINT_NOT_FOUND before the Rust harness runs.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v5
 
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: install Rust 1.97.1
+        uses: dtolnay/rust-toolchain@1.97.1
 
       - name: validate Windows backend
         run: |
@@ -151,7 +154,7 @@ jobs:
             args: ""
           - platform: "ubuntu-22.04-arm" # for Linux ARM64
             args: ""
-          - platform: "windows-2025-vs2026" # for Windows
+          - platform: "windows-2022" # Windows 10-compatible MSVC v143 baseline
             args: ""
 
     runs-on: ${{ matrix.platform }}
@@ -169,8 +172,8 @@ jobs:
         with:
           version: 11.2.2
 
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: install Rust 1.97.1
+        uses: dtolnay/rust-toolchain@1.97.1
         with:
           # Those targets are only used on macos-latest
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}

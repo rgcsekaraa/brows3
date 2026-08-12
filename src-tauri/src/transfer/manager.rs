@@ -94,7 +94,7 @@ impl TransferManager {
     pub async fn list_jobs(&self) -> Vec<TransferJob> {
         let jobs = self.jobs.read().await;
         let mut list: Vec<TransferJob> = jobs.values().cloned().collect();
-        list.sort_by(|a, b| b.created_at.cmp(&a.created_at)); // Newest first
+        list.sort_by_key(|job| std::cmp::Reverse(job.created_at)); // Newest first
         list
     }
 
