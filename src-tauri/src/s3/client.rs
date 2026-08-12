@@ -51,16 +51,16 @@ fn build_s3_config(sdk_config: &aws_config::SdkConfig, profile: &Profile) -> aws
 
 /// Build an S3 client for both production operations and connection tests so
 /// profile, endpoint, and compatibility behavior cannot drift between them.
-pub(crate) async fn build_s3_client(
+pub(crate) async fn load_sdk_config(
     profile: &Profile,
     override_region: Option<String>,
-) -> Result<Client> {
+) -> aws_config::SdkConfig {
     let region_str = override_region
         .or_else(|| profile.region.clone())
         .unwrap_or_else(|| "us-east-1".to_string());
     let region = Region::new(region_str);
 
-    let sdk_config = match &profile.credential_type {
+    match &profile.credential_type {
         CredentialType::Environment => {
             aws_config::defaults(aws_config::BehaviorVersion::latest())
                 .region(region)
@@ -109,9 +109,22 @@ pub(crate) async fn build_s3_client(
                 .load()
                 .await
         }
-    };
+    }
+}
 
-    Ok(Client::from_conf(build_s3_config(&sdk_config, profile)))
+pub(crate) fn client_from_sdk_config(
+    sdk_config: &aws_config::SdkConfig,
+    profile: &Profile,
+) -> Client {
+    Client::from_conf(build_s3_config(sdk_config, profile))
+}
+
+pub(crate) async fn build_s3_client(
+    profile: &Profile,
+    override_region: Option<String>,
+) -> Result<Client> {
+    let sdk_config = load_sdk_config(profile, override_region).await;
+    Ok(client_from_sdk_config(&sdk_config, profile))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

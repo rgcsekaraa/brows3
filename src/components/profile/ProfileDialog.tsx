@@ -78,7 +78,7 @@ type ProfileFormData = {
   endpointUrl: string;
 };
 
-type DiscoveredProfile = { name: string; region?: string };
+type DiscoveredProfile = { name: string; region?: string; is_sso: boolean };
 
 interface ProfileDialogProps {
   open: boolean;
@@ -108,6 +108,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [signingInSso, setSigningInSso] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [discoveredProfiles, setDiscoveredProfiles] = useState<DiscoveredProfile[]>([]);
@@ -299,6 +300,27 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       if (requestId === testRequestIdRef.current) {
         setTesting(false);
       }
+    }
+  };
+
+  const handleSsoLogin = async () => {
+    const profileName = formData.profileName.trim();
+    if (!profileName) {
+      setError('Choose an AWS SSO profile first.');
+      return;
+    }
+
+    setSigningInSso(true);
+    setError(null);
+    setTestResult(null);
+    try {
+      const message = await profileApi.loginSso(profileName);
+      toast.success('AWS SSO signed in', message);
+      await handleTestConnection();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSigningInSso(false);
     }
   };
   
@@ -613,7 +635,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
             sx={{ borderRadius: 2, fontWeight: 600 }}
           >
             <MenuItem value="Environment">System Environment Variables</MenuItem>
-            <MenuItem value="SharedConfig">Local AWS Config File (~/.aws)</MenuItem>
+            <MenuItem value="SharedConfig">AWS Profile / IAM Identity Center (SSO)</MenuItem>
             <MenuItem value="Manual">Manual Credentials (AK/SK)</MenuItem>
             <MenuItem value="CustomEndpoint">Custom S3 / Compatibility Mode</MenuItem>
           </Select>
@@ -648,6 +670,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         )}
         
         {formData.credentialType === 'SharedConfig' && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Autocomplete
             freeSolo
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, fontWeight: 600 } }}
@@ -661,6 +684,15 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                 }
             }}
             options={discoveredProfiles.map((p) => p.name)}
+            renderOption={(props, option) => {
+              const discovered = discoveredProfiles.find((profile) => profile.name === option);
+              return (
+                <Box component="li" {...props} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                  <span>{option}</span>
+                  {discovered?.is_sso && <Chip label="SSO" size="small" color="primary" />}
+                </Box>
+              );
+            }}
             renderInput={(params) => (
                 <TextField 
                     {...params} 
@@ -668,8 +700,28 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                     placeholder="default"
                     fullWidth
                 />
-            )}
+              )}
           />
+          {discoveredProfiles.find((profile) => profile.name === formData.profileName)?.is_sso && (
+            <Alert severity="info" sx={{ borderRadius: 2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 700, mb: 1 }}>
+                AWS IAM Identity Center profile
+              </Typography>
+              <Typography variant="caption" component="div" sx={{ mb: 1.5 }}>
+                Brows3 uses the AWS SDK credential chain and cached SSO session. Sign in with AWS CLI v2 before testing the connection.
+              </Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={handleSsoLogin}
+                disabled={signingInSso || testing}
+                startIcon={signingInSso ? <CircularProgress size={14} /> : undefined}
+              >
+                {signingInSso ? 'Waiting for browser sign-in…' : 'Sign in with AWS SSO'}
+              </Button>
+            </Alert>
+          )}
+          </Box>
         )}
         
         {(formData.credentialType === 'Manual' || formData.credentialType === 'CustomEndpoint') && (

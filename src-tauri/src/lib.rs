@@ -204,6 +204,7 @@ pub fn run() {
             profiles::get_active_profile,
             profiles::test_connection,
             profiles::discover_local_profiles,
+            profiles::login_sso,
             profiles::check_aws_environment,
             // Bucket commands
             buckets::list_buckets,
