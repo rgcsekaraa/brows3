@@ -11,6 +11,36 @@ const MAX_COMPLETE_LIST_REQUESTS: usize = 100;
 const MAX_SEARCH_SCANNED_OBJECTS: u64 = 100_000;
 const MAX_SEARCH_RESULTS: usize = 10_000;
 const MAX_SEARCH_REQUESTS: usize = 100;
+const DEFAULT_MAX_TEXT_PREVIEW_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_TEXT_PREVIEW_BYTES: u64 = 100 * 1024 * 1024;
+
+fn normalized_text_preview_limit(max_bytes: Option<u64>) -> u64 {
+    max_bytes
+        .unwrap_or(DEFAULT_MAX_TEXT_PREVIEW_BYTES)
+        .clamp(1, MAX_TEXT_PREVIEW_BYTES)
+}
+
+fn text_preview_size_error(actual_bytes: Option<u64>, max_bytes: u64) -> crate::error::AppError {
+    let limit_mb = max_bytes as f64 / 1024.0 / 1024.0;
+    let message = if let Some(actual_bytes) = actual_bytes {
+        format!(
+            "Object is too large to preview as text ({:.2} MB; configured limit {:.0} MB). Increase the text preview limit in Settings or download it.",
+            actual_bytes as f64 / 1024.0 / 1024.0,
+            limit_mb
+        )
+    } else {
+        format!(
+            "Object exceeds the configured text preview limit of {:.0} MB. Increase the limit in Settings or download it.",
+            limit_mb
+        )
+    };
+
+    crate::error::AppError::InvalidContent(message)
+}
+
+fn preview_chunk_fits(current_bytes: usize, chunk_bytes: usize, max_bytes: u64) -> bool {
+    (chunk_bytes as u64) <= max_bytes.saturating_sub(current_bytes as u64)
+}
 
 fn is_likely_binary_text_mismatch(bytes: &[u8]) -> bool {
     if bytes.is_empty() {
@@ -841,9 +871,11 @@ pub async fn get_object_content(
     bucket_name: String,
     bucket_region: Option<String>,
     key: String,
+    max_bytes: Option<u64>,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<String> {
+    let max_bytes = normalized_text_preview_limit(max_bytes);
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
         .get_active_profile()
@@ -917,19 +949,31 @@ pub async fn get_object_content(
         }
     };
 
-    let body = response
-        .body
-        .collect()
-        .await
-        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+    let content_length = response
+        .content_length()
+        .and_then(|length| u64::try_from(length).ok());
+    if content_length.is_some_and(|length| length > max_bytes) {
+        return Err(text_preview_size_error(content_length, max_bytes));
+    }
 
-    let bytes = body.into_bytes().to_vec();
-    let content = String::from_utf8(bytes.clone()).map_err(|_| {
-        crate::error::AppError::InvalidContent(
-            "This object is not readable as UTF-8 text. Download it to inspect locally."
-                .to_string(),
-        )
-    })?;
+    let initial_capacity = content_length
+        .unwrap_or(0)
+        .min(max_bytes)
+        .try_into()
+        .unwrap_or(0);
+    let mut bytes = Vec::with_capacity(initial_capacity);
+    let mut body = response.body;
+
+    while let Some(chunk) = body
+        .try_next()
+        .await
+        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?
+    {
+        if !preview_chunk_fits(bytes.len(), chunk.len(), max_bytes) {
+            return Err(text_preview_size_error(None, max_bytes));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
 
     if is_likely_binary_text_mismatch(&bytes) {
         return Err(crate::error::AppError::InvalidContent(
@@ -937,7 +981,12 @@ pub async fn get_object_content(
         ));
     }
 
-    Ok(content)
+    String::from_utf8(bytes).map_err(|_| {
+        crate::error::AppError::InvalidContent(
+            "This object is not readable as UTF-8 text. Download it to inspect locally."
+                .to_string(),
+        )
+    })
 }
 
 #[tauri::command]
@@ -1036,4 +1085,32 @@ pub async fn put_object_content(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::{
+        normalized_text_preview_limit, preview_chunk_fits, DEFAULT_MAX_TEXT_PREVIEW_BYTES,
+        MAX_TEXT_PREVIEW_BYTES,
+    };
+
+    #[test]
+    fn text_preview_limit_has_a_safe_default_and_upper_bound() {
+        assert_eq!(
+            normalized_text_preview_limit(None),
+            DEFAULT_MAX_TEXT_PREVIEW_BYTES
+        );
+        assert_eq!(normalized_text_preview_limit(Some(0)), 1);
+        assert_eq!(
+            normalized_text_preview_limit(Some(MAX_TEXT_PREVIEW_BYTES + 1)),
+            MAX_TEXT_PREVIEW_BYTES
+        );
+    }
+
+    #[test]
+    fn streamed_preview_never_crosses_the_configured_limit() {
+        assert!(preview_chunk_fits(6, 4, 10));
+        assert!(!preview_chunk_fits(6, 5, 10));
+        assert!(!preview_chunk_fits(usize::MAX, 1, 10));
+    }
 }

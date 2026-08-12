@@ -31,7 +31,11 @@ import {
   Info as InfoIcon,
   ContentCopy as CopyIcon,
 } from '@mui/icons-material';
-import { useSettingsStore } from '@/store/settingsStore';
+import {
+  MAX_TEXT_PREVIEW_SIZE_MB,
+  MIN_TEXT_PREVIEW_SIZE_MB,
+  useSettingsStore,
+} from '@/store/settingsStore';
 import { useAppStore } from '@/store/appStore';
 import { useMonitorStore } from '@/store/monitorStore';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
@@ -45,6 +49,7 @@ export default function SettingsPage() {
   const { 
     defaultRegion, setDefaultRegion, 
     maxConcurrentTransfers, setMaxConcurrentTransfers,
+    maxTextPreviewSizeMb, setMaxTextPreviewSizeMb,
     autoRefreshOnFocus, setAutoRefreshOnFocus
   } = useSettingsStore();
   
@@ -53,6 +58,7 @@ export default function SettingsPage() {
   const [logFileInfo, setLogFileInfo] = useState<LogFileInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [pendingTransferConcurrency, setPendingTransferConcurrency] = useState(maxConcurrentTransfers);
+  const [pendingPreviewLimit, setPendingPreviewLimit] = useState(maxTextPreviewSizeMb);
   
   useEffect(() => {
     if (!isTauri()) {
@@ -79,6 +85,10 @@ export default function SettingsPage() {
   useEffect(() => {
     setPendingTransferConcurrency(maxConcurrentTransfers);
   }, [maxConcurrentTransfers]);
+
+  useEffect(() => {
+    setPendingPreviewLimit(maxTextPreviewSizeMb);
+  }, [maxTextPreviewSizeMb]);
 
   const handleClearCache = () => {
     invalidateBucketCache();
@@ -209,6 +219,31 @@ export default function SettingsPage() {
                    }
                  }}
                />
+            </Box>
+          </ListItem>
+          <ListItem divider>
+            <ListItemText
+              primary="Text Preview Size Limit"
+              secondary={`Load text, HTML, and code objects up to ${pendingPreviewLimit} MB. Images, audio, video, and PDFs are streamed and do not use this memory limit.`}
+            />
+            <Box sx={{ width: 200, mr: 2 }}>
+              <Slider
+                value={pendingPreviewLimit}
+                min={MIN_TEXT_PREVIEW_SIZE_MB}
+                max={MAX_TEXT_PREVIEW_SIZE_MB}
+                step={1}
+                valueLabelDisplay="auto"
+                valueLabelFormat={(value) => `${value} MB`}
+                onChange={(_, value) => setPendingPreviewLimit(value as number)}
+                onChangeCommitted={(_, value) => {
+                  const nextValue = value as number;
+                  setPendingPreviewLimit(nextValue);
+                  if (nextValue !== maxTextPreviewSizeMb) {
+                    setMaxTextPreviewSizeMb(nextValue);
+                    toast.success('Preview limit updated', `Text previews can use up to ${nextValue} MB`);
+                  }
+                }}
+              />
             </Box>
           </ListItem>
           <ListItem>

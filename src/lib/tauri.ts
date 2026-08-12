@@ -254,8 +254,8 @@ export const objectApi = {
     return invoke<string>('get_presigned_url', { bucketName, bucketRegion, key, expiresIn });
   },
 
-  async getObjectContent(bucketName: string, bucketRegion: string | undefined, key: string): Promise<string> {
-    return invoke<string>('get_object_content', { bucketName, bucketRegion, key });
+  async getObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, maxBytes: number): Promise<string> {
+    return invoke<string>('get_object_content', { bucketName, bucketRegion, key, maxBytes });
   },
 
   async putObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, content: string): Promise<void> {

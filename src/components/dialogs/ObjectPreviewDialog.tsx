@@ -18,6 +18,7 @@ import Editor, { OnMount } from '@monaco-editor/react';
 import { toast } from '@/store/toastStore';
 import { BaseDialog } from '../common/BaseDialog';
 import { getEditorLanguage, getObjectExtension, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
+import { useSettingsStore } from '@/store/settingsStore';
 
 interface ObjectPreviewDialogProps {
   open: boolean;
@@ -41,6 +42,7 @@ export default function ObjectPreviewDialog({
   startInEditMode = false,
 }: ObjectPreviewDialogProps) {
   const theme = useTheme();
+  const maxTextPreviewSizeMb = useSettingsStore((state) => state.maxTextPreviewSizeMb);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [content, setContent] = useState<string>('');
@@ -62,6 +64,7 @@ export default function ObjectPreviewDialog({
   const ext = getObjectExtension(filename);
   const objectKind = getObjectKind(filename, contentType);
   const isImageFile = objectKind === 'image';
+  const isAudioFile = objectKind === 'audio';
   const isVideoFile = objectKind === 'video';
   const isPdfFile = objectKind === 'pdf';
   const isText = objectKind === 'text';
@@ -98,7 +101,7 @@ export default function ObjectPreviewDialog({
         pdfLoadingTimeoutRef.current = null;
       }
 
-      const MAX_PREVIEW_SIZE = 2 * 1024 * 1024; // 2MB
+      const maxPreviewBytes = maxTextPreviewSizeMb * 1024 * 1024;
 
       // Safety timeout to prevent infinite spinner
       loadTimeoutRef.current = setTimeout(() => {
@@ -107,13 +110,15 @@ export default function ObjectPreviewDialog({
           setIsLoading(false);
           setError("Loading timed out. Please try again.");
         }
-      }, 15000); 
+      }, 120000);
 
       try {
         let resolvedContentType: string | null = null;
+        let resolvedObjectSize = objectSize;
         try {
           const metadata = await objectApi.getObjectMetadata(bucketName, bucketRegion, objectKey);
           resolvedContentType = metadata.content_type;
+          resolvedObjectSize = metadata.size;
           if (!cancelled && requestId === loadRequestIdRef.current) {
             setContentType(metadata.content_type);
           }
@@ -122,12 +127,12 @@ export default function ObjectPreviewDialog({
         }
 
         const resolvedKind = getObjectKind(filename, resolvedContentType);
-        if (resolvedKind === 'text' && objectSize && objectSize > MAX_PREVIEW_SIZE) {
-          setError(`File is too large to preview (${(objectSize / 1024 / 1024).toFixed(2)} MB). Please download to view locally.`);
+        if (resolvedKind === 'text' && resolvedObjectSize && resolvedObjectSize > maxPreviewBytes) {
+          setError(`File is too large to preview (${(resolvedObjectSize / 1024 / 1024).toFixed(2)} MB). Increase the ${maxTextPreviewSizeMb} MB text preview limit in Settings or download it.`);
           return;
         }
 
-        if (resolvedKind === 'image' || resolvedKind === 'video' || resolvedKind === 'pdf') {
+        if (resolvedKind === 'image' || resolvedKind === 'audio' || resolvedKind === 'video' || resolvedKind === 'pdf') {
           // Get presigned URL for preview
           if (resolvedKind === 'image') setIsImageRendering(true);
           if (resolvedKind === 'pdf') {
@@ -144,7 +149,12 @@ export default function ObjectPreviewDialog({
           }
         } else if (resolvedKind === 'text') {
           // Get text content
-          const textContent = await objectApi.getObjectContent(bucketName, bucketRegion, objectKey);
+          const textContent = await objectApi.getObjectContent(
+            bucketName,
+            bucketRegion,
+            objectKey,
+            maxPreviewBytes
+          );
           
           // Even if empty, it's valid content
           if (!cancelled && requestId === loadRequestIdRef.current) {
@@ -157,7 +167,7 @@ export default function ObjectPreviewDialog({
       } catch (err) {
         console.error("Failed to load object content:", err);
         if (!cancelled && requestId === loadRequestIdRef.current) {
-          setError(err instanceof Error ? err.message : 'Failed to load content');
+          setError(err instanceof Error ? err.message : String(err));
         }
       } finally {
         if (loadTimeoutRef.current) {
@@ -184,7 +194,7 @@ export default function ObjectPreviewDialog({
         pdfLoadingTimeoutRef.current = null;
       }
     };
-  }, [open, objectKey, bucketName, bucketRegion, objectSize, startInEditMode, filename]);
+  }, [open, objectKey, bucketName, bucketRegion, objectSize, startInEditMode, filename, maxTextPreviewSizeMb]);
 
   const handleSave = async () => {
     if (!isEditing) return;
@@ -389,6 +399,15 @@ export default function ObjectPreviewDialog({
                  >
                     Your browser does not support the video tag.
                  </video>
+              </Box>
+            )}
+
+            {/* Audio Preview */}
+            {isAudioFile && presignedUrl && (
+              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 4 }}>
+                <audio controls src={presignedUrl} style={{ width: 'min(100%, 720px)' }}>
+                  Your browser does not support the audio tag.
+                </audio>
               </Box>
             )}
 

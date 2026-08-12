@@ -1,8 +1,8 @@
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'bmp', 'tiff']);
 const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'ogg', 'mov', 'mkv', 'avi']);
+const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'flac', 'aac', 'm4a', 'opus', 'oga']);
 const BINARY_EXTENSIONS = new Set([
   'zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar',
-  'mp3', 'wav', 'flac', 'aac', 'm4a', 'opus',
   'woff', 'woff2', 'ttf', 'otf', 'eot',
   'exe', 'dll', 'so', 'dylib', 'bin', 'iso',
   'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
@@ -33,7 +33,7 @@ const TEXT_CONTENT_TYPES = new Set([
   'application/x-empty',
 ]);
 
-export type ObjectKind = 'image' | 'video' | 'pdf' | 'text' | 'binary';
+export type ObjectKind = 'image' | 'audio' | 'video' | 'pdf' | 'text' | 'binary';
 
 export const getObjectName = (objectKey: string): string => objectKey.split('/').pop() || objectKey;
 
@@ -60,6 +60,7 @@ const kindFromContentType = (contentType?: string | null): ObjectKind | null => 
   const normalized = normalizeContentType(contentType);
   if (!normalized) return null;
   if (normalized.startsWith('image/')) return 'image';
+  if (normalized.startsWith('audio/')) return 'audio';
   if (normalized.startsWith('video/')) return 'video';
   if (normalized === 'application/pdf') return 'pdf';
   if (isTextContentType(normalized)) return 'text';
@@ -69,6 +70,7 @@ const kindFromContentType = (contentType?: string | null): ObjectKind | null => 
 const kindFromName = (name: string): ObjectKind => {
   const extension = getObjectExtension(name);
   if (IMAGE_EXTENSIONS.has(extension)) return 'image';
+  if (AUDIO_EXTENSIONS.has(extension)) return 'audio';
   if (VIDEO_EXTENSIONS.has(extension)) return 'video';
   if (extension === 'pdf') return 'pdf';
   if (BINARY_EXTENSIONS.has(extension)) return 'binary';
