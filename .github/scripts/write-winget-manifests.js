@@ -11,7 +11,9 @@ if (!releaseInfoPath || !outputDir) {
 
 const releaseInfo = JSON.parse(fs.readFileSync(releaseInfoPath, 'utf8'));
 const version = process.env.RELEASE_VERSION || String(releaseInfo.tag_name || '').replace(/^app-v/, '');
-const packageIdentifier = 'rgcsekaraa.Brows3';
+// This identifier is already published in microsoft/winget-pkgs. Changing it
+// would create a second package instead of updating existing installations.
+const packageIdentifier = 'Brows3Team.Brows3';
 const manifestVersion = '1.12.0';
 const releaseUrl = `https://github.com/rgcsekaraa/brows3/releases/tag/app-v${version}`;
 
@@ -20,34 +22,56 @@ if (!version) {
   process.exit(1);
 }
 
-const windowsInstaller =
-  (releaseInfo.assets || []).find((asset) => (
-    asset.name === `Brows3_${version}_x64_en-US.msi`
-  )) ||
-  (releaseInfo.assets || []).find((asset) => (
-    asset.name === `Brows3_${version}_x64-setup.exe`
-  ));
+const windowsInstallers = (releaseInfo.assets || []).filter((asset) => (
+  asset.name === `Brows3_${version}_x64_en-US.msi` ||
+  asset.name === `Brows3_${version}_x64-setup.exe`
+));
 
-if (!windowsInstaller) {
+if (windowsInstallers.length === 0) {
   console.error(`Missing Windows MSI or NSIS installer asset for ${version}.`);
   process.exit(1);
 }
 
-const isMsi = windowsInstaller.name.endsWith('.msi');
-const installerType = isMsi ? 'wix' : 'nullsoft';
-const installerSwitches = isMsi ? '' : `
-InstallerSwitches:
-  Silent: /S
-  SilentWithProgress: /S
-`;
+const installerEntries = windowsInstallers.map((asset) => {
+  const digest = String(asset.digest || '');
+  const sha256 = digest.startsWith('sha256:')
+    ? digest.slice('sha256:'.length).toUpperCase()
+    : '';
+  if (!/^[A-F0-9]{64}$/.test(sha256)) {
+    console.error(`Missing SHA256 digest for ${asset.name}.`);
+    process.exit(1);
+  }
 
-const digest = String(windowsInstaller.digest || '');
-const sha256 = digest.startsWith('sha256:') ? digest.slice('sha256:'.length).toUpperCase() : '';
+  if (asset.name.endsWith('.msi')) {
+    return `- Architecture: x64
+  InstallerType: wix
+  Scope: machine
+  InstallerUrl: ${asset.browser_download_url}
+  InstallerSha256: ${sha256}`;
+  }
 
-if (!/^[A-F0-9]{64}$/.test(sha256)) {
-  console.error(`Missing SHA256 digest for ${windowsInstaller.name}.`);
-  process.exit(1);
-}
+  return `- Architecture: x64
+  InstallerType: nullsoft
+  Scope: user
+  InstallerUrl: ${asset.browser_download_url}
+  InstallerSha256: ${sha256}
+  ProductCode: Brows3
+  InstallerSwitches:
+    Silent: /S
+    SilentWithProgress: /S
+  AppsAndFeaturesEntries:
+  - DisplayName: Brows3
+    Publisher: Brows3 Team
+    DisplayVersion: ${version}
+    ProductCode: Brows3
+  InstallationMetadata:
+    DefaultInstallLocation: '%LocalAppData%\\Brows3'`;
+});
+
+const releaseDate = String(releaseInfo.published_at || releaseInfo.created_at || '').slice(0, 10);
+const releaseDateLine = /^\d{4}-\d{2}-\d{2}$/.test(releaseDate)
+  ? `ReleaseDate: ${releaseDate}\n`
+  : '';
 
 fs.mkdirSync(outputDir, { recursive: true });
 
@@ -77,17 +101,12 @@ InstallerLocale: en-US
 Platform:
 - Windows.Desktop
 MinimumOSVersion: 10.0.17763.0
-InstallerType: ${installerType}
-Scope: machine
 UpgradeBehavior: install
 InstallModes:
 - interactive
 - silent
-${installerSwitches}
-Installers:
-- Architecture: x64
-  InstallerUrl: ${windowsInstaller.browser_download_url}
-  InstallerSha256: ${sha256}
+${releaseDateLine}Installers:
+${installerEntries.join('\n')}
 ManifestType: installer
 ManifestVersion: ${manifestVersion}
 `);

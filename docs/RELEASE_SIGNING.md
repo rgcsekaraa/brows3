@@ -92,10 +92,12 @@ Then:
 
 The release workflow now:
 
+- runs frontend linting, TypeScript validation, the production export, Rust formatting, Clippy, backend tests, and release-script tests before creating the GitHub release
 - exports `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, and `APPLE_SIGNING_IDENTITY` only when all three signing secrets are configured
 - writes `APPLE_API_PRIVATE_KEY` to a mode-`0600` temporary `.p8` file and exports `APPLE_API_KEY`, `APPLE_API_ISSUER`, and `APPLE_API_KEY_PATH` when the complete App Store Connect set is configured
 - otherwise exports the Apple ID notarization variables only when `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` are all configured
 - falls back to ad-hoc signing when Apple certificate secrets are absent and warns instead of partially exporting an incomplete secret set
+- builds the release as a draft, verifies every required MSI, NSIS, portable, macOS, Linux, updater-signature, and Winget-manifest asset, and only then publishes it
 - skips every release job when the head commit contains `[skip release]`; standard GitHub skip markers such as `[skip ci]` prevent the push workflow from being queued at all
 
 Use both `[skip ci]` and `[skip release]` on maintenance commits that must be pushed to `main` without publishing a release. The explicit release guard remains useful if GitHub's general workflow skip behavior changes or a commit is rerun manually.
@@ -109,3 +111,5 @@ If signing and notarization are configured correctly, macOS users should be able
 3. launch the app from `/Applications`
 
 without the "app is damaged" Gatekeeper error.
+
+The separate public Winget catalog submission is documented in [WINGET_RELEASE.md](WINGET_RELEASE.md).

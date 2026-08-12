@@ -18,8 +18,69 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: setup node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: install pnpm
+        uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 11.2.2
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - name: install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev
+
+      - name: install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: validate release scripts
+        run: node --test .github/scripts/*.test.js
+
+      - name: validate frontend
+        run: |
+          pnpm lint
+          pnpm exec tsc --noEmit
+          pnpm build
+
+      - name: validate Rust backend
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features --locked -- -D warnings
+          cargo test --manifest-path src-tauri/Cargo.toml --all-features --locked
+
+  validate-windows:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: validate Windows backend
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml --locked
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+
   prepare-release:
     if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip release]')
+    needs:
+      - validate
+      - validate-windows
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -56,11 +117,19 @@ jobs:
           node .github/scripts/extract-release-notes.js > "$NOTES_FILE"
 
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            IS_DRAFT=$(gh release view "$TAG_NAME" --json isDraft --jq '.isDraft')
+            if [ "$IS_DRAFT" != "true" ]; then
+              echo "::error::Refusing to overwrite already-published release $TAG_NAME."
+              exit 1
+            fi
+
             gh release edit "$TAG_NAME" \
               --title "Brows3 v$RELEASE_VERSION" \
               --notes-file "$NOTES_FILE"
           else
             gh release create "$TAG_NAME" \
+              --draft \
+              --target "$GITHUB_SHA" \
               --title "Brows3 v$RELEASE_VERSION" \
               --notes-file "$NOTES_FILE"
           fi
@@ -422,12 +491,11 @@ jobs:
           # Check if we have any platforms
           PLATFORM_COUNT=$(echo "$PLATFORMS" | jq 'keys | length')
           
-          if [ "$PLATFORM_COUNT" -eq "0" ]; then
-            echo "::error::No platforms could be added to update.json! Auto-updates will not work."
-            echo "This usually means TAURI_SIGNING_PRIVATE_KEY is not set in GitHub secrets."
+          if [ "$PLATFORM_COUNT" -ne "5" ]; then
+            echo "::error::Expected 5 signed updater platforms, but generated $PLATFORM_COUNT."
             exit 1
           else
-            echo "Successfully added $PLATFORM_COUNT platforms to update manifest"
+            echo "Successfully added all $PLATFORM_COUNT platforms to update manifest"
           fi
           
           # Build final update.json
@@ -460,6 +528,26 @@ jobs:
           echo "=================================="
 
           gh release upload "$TAG" dist/winget/*.yaml --clobber
+
+          # Re-fetch and validate the complete draft after the final assets have
+          # been uploaded. A failed check leaves the release unpublished.
+          for attempt in 1 2 3 4 5 6 7 8; do
+            gh api "repos/${{ github.repository }}/releases/tags/$TAG" > final-release-info.json
+            if node .github/scripts/validate-release-assets.js final-release-info.json "$VERSION"; then
+              break
+            fi
+
+            if [ "$attempt" -eq 8 ]; then
+              echo "::error::The draft release did not become complete and verifiable in time."
+              exit 1
+            fi
+
+            echo "Release asset metadata is still settling; retrying in 5 seconds (attempt $attempt/8)"
+            sleep 5
+          done
+
+          gh release edit "$TAG" --draft=false --latest
+          echo "Published fully validated release $TAG"
           
           # Commit and push
           git config user.name "github-actions[bot]"

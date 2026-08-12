@@ -51,6 +51,8 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 - **Bulk Operations**: Upload, download, and delete multiple files or recursive folders at once.
 - **S3-Compatible Delete Fallback**: Folder deletion falls back to single-object deletes when a provider rejects multi-object delete requests.
 - **S3-Compatible Upload Compatibility**: Custom S3 endpoints use conservative checksum behavior for better compatibility with providers such as Wasabi and STACKIT Object Storage.
+- **Large Multipart Uploads**: Files at or above 100 MiB use retryable, bounded-memory multipart transfers with adaptive part sizing, progress updates, and clean cancellation, including files beyond S3's 5 GiB single-PUT limit.
+- **Content-Type Control**: Uploads infer MIME types from object names, while an editable Content-Type field in Properties accepts common suggestions or a validated custom media type without discarding existing tags, metadata, encryption settings, or ACL grants.
 - **Mixed Content Support**: Seamlessly handle folders and files in a single drag-and-drop operation.
 - **Copy-to-Clipboard**: Quick copy of S3 Paths, Keys, and Object URLs.
 - **Presigned URL Sharing**: Generate temporary object links with configurable expiry directly from the bucket view.
@@ -59,7 +61,8 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 ### Rich Previews & Editing
 - **Built-in Editor**: Powered by **Monaco (VS Code's Engine)**. Edit text, JSON, and code files directly in S3.
 - **Direct Edit Action**: Quick "Edit" button in the file list and context menu for instant code/text modifications.
-- **Media Previews**: Preview **images**, **videos**, and **PDFs** using presigned object URLs.
+- **Configurable Text Preview Limit**: Choose a persisted 1–100 MB limit for text, HTML, and code previews. The Rust backend streams and enforces the same bound before text reaches the WebView.
+- **Media Previews**: Preview **images**, **audio**, **videos**, and **PDFs** through presigned object URLs without loading them into the text editor's memory allowance.
 - **Rendering Indicators**: Clear visual feedback for large image rendering states.
 
 ### Performance
@@ -75,19 +78,18 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 #### **Enterprise & Restricted Access**
 - **Direct Bucket Access**: Instantly navigate to specific buckets (e.g., `s3://my-secure-bucket`) even if you don't have `s3:ListBuckets` permission.
 - **Profile-Gated Access**: Create isolated profiles for different AWS accounts or environments.
-- **Persistent Secure Profiles**: Manual and S3-compatible profiles survive restarts. Secrets use the OS keychain when available; portable mode and native-keychain failures use a local `secrets.json` fallback (restricted to mode `0600` on Unix) so portable installs remain self-contained.
+- **AWS IAM Identity Center (SSO)**: Use configured AWS SSO profiles through the SDK credential chain, with profile discovery and an AWS CLI v2 browser sign-in action for refreshing cached sessions.
+- **Persistent Secure Profiles**: Manual and S3-compatible profiles survive restarts. macOS uses Keychain, Windows uses Credential Manager, and Linux uses freedesktop Secret Service. Portable mode and native-keychain failures use a plaintext local `secrets.json` fallback (restricted to mode `0600` on Unix) so portable installs remain self-contained.
 - **Cost Awareness**: UI indicators show when the bucket-discovery list came from the frontend cache.
 
-- **In-App PDF Preview**: View PDFs directly within the application through an embedded presigned preview.
 - **Automatic Region Discovery**: Profiles now automatically detect the correct AWS region from system configurations, enabling zero-config setup.
 - **Smart Tab Management**: Intelligent tab deduplication ensures you never have multiple tabs open for the same S3 path—automatically switching to existing tabs when searching.
 - **Deep Recursive Search**: Search recursively within specific folders with auto-region retry support, scanning at most 100,000 objects, issuing at most 100 S3 LIST requests, and returning at most 10,000 matches per search.
 - **System Monitor**: Real-time visibility into application performance. Track API request success/failure rates and view live logs for debugging.
-- **Profile-Gated Access**: Create isolated profiles for different AWS accounts or environments. Switch contexts instantly with zero friction.
 - **Enhanced Settings**:
   - Manage application data, clear cache, and check for updates manually.
   - One-click theme switching (Dark/Light/System).
-  - Configure default regions and concurrency limits.
+  - Configure default regions, transfer concurrency, and the text-preview memory limit.
 - **Auto-Updates**: Brows3 checks for updates and surfaces available signed releases from Settings/startup.
 - **Signed Release Pipeline**: Release automation validates updater signing and publishes updater metadata for desktop update flows.
 
@@ -95,7 +97,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 
 Brows3 leverages a tiered data strategy to achieve its performance:
 
-1. **Rust Core (The Muscle)**: Handles S3 networking, credential management, bounded deep search, sorted-view caching, and concurrent transfers.
+1. **Rust Core (The Muscle)**: Handles S3 networking, credential management, bounded deep search and previews, sorted-view caching, and multipart transfers.
 2. **Prefix-Aware S3 Pagination**: Folder views use S3 prefixes, delimiters, and continuation tokens instead of loading an entire bucket before browsing.
 3. **Paginated IPC Bridge**: Data is transferred between Rust and the React frontend over a high-speed, paginated IPC channel, preventing UI hangs during large data transfers.
 4. **SSG React (The UI)**: A Next.js-based frontend exported as a static site, providing the smallest possible memory footprint.
@@ -141,9 +143,13 @@ Brows3 is focused on fast bucket navigation, deep search, and large-list perform
 | `STACKIT Object Storage browser` | Works through Custom S3 mode using STACKIT's S3-compatible endpoint |
 | `fast S3 desktop client` | Core product focus is speed, caching, and deep recursive search |
 
+## AWS IAM Identity Center (SSO)
+
+Brows3 uses the AWS SDK credential chain for shared profiles, including IAM Identity Center profiles configured in `~/.aws/config`. Configure the profile with AWS CLI v2 (for example, `aws configure sso`), choose **AWS Profile / IAM Identity Center (SSO)** in Brows3, select the discovered profile, and use **Sign in with AWS SSO** when its cached session needs refreshing. Brows3 reads the resulting temporary credentials through the SDK and does not copy the SSO access token into its profile store. See the [AWS IAM Identity Center CLI guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html) for profile setup.
+
 ## S3-Compatible Provider Setup
 
-Brows3 keeps S3-compatible providers generic: use **Custom S3 / Compatibility Mode** and enter the provider endpoint, region, and access keys supplied by your object-storage account.
+Brows3 keeps S3-compatible providers generic: use **Custom S3 / Compatibility Mode** and enter the provider endpoint, region, and access keys supplied by your object-storage account. Shared AWS profiles with `endpoint_url` are also supported and use path-style bucket addressing for MinIO-style endpoints.
 
 ### STACKIT Object Storage
 
@@ -182,7 +188,13 @@ Brows3 is available for all major desktop platforms. Download the latest version
 
 Windows releases are configured to bundle the WebView2 runtime with the installer so fresh machines do not depend on a separate runtime download during installation.
 
-Winget manifests are generated from the signed Windows MSI release asset and attached to each GitHub release for package-manager submission. If the MSI asset is unavailable, the release workflow falls back to the NSIS installer manifest.
+The published Winget package is `Brows3Team.Brows3`:
+
+```powershell
+winget install --exact --id Brows3Team.Brows3
+```
+
+Each release attaches Winget manifests generated from the published MSI and NSIS assets. The public Winget catalog is updated through a validated pull request to `microsoft/winget-pkgs`; catalog indexing can lag behind the GitHub release briefly.
 
 ### Manual Build
 

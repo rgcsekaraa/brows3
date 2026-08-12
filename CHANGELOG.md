@@ -7,16 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.44] - 2026-08-12
+
+### Added
+- **Configurable Text Previews**: Added a persisted 1–100 MB text/HTML/code preview limit in Settings. The backend enforces the selected byte limit while streaming, even when object metadata is missing or incorrect. ([#21](https://github.com/rgcsekaraa/brows3/issues/21))
+- **Audio And Streamed Media Previews**: Added in-app audio playback alongside presigned image, video, and PDF previews; streamed media does not consume the text-preview memory allowance. ([#21](https://github.com/rgcsekaraa/brows3/issues/21))
+- **Content-Type Detection And Editing**: Uploads infer MIME types from object names, edited text objects retain their existing type, and Properties provides a validated free-form Content-Type field with common suggestions. Metadata-only changes preserve tags, user metadata, cache headers, encryption settings, object-lock fields, and ACL grants; objects above 5 GiB use multipart copy. ([#22](https://github.com/rgcsekaraa/brows3/issues/22))
+- **AWS IAM Identity Center Profiles**: Discovered SSO profiles are identified in the profile picker, use the AWS SDK's cached IAM Identity Center credentials, and provide an AWS CLI v2 browser sign-in action with actionable expired-session errors. ([#23](https://github.com/rgcsekaraa/brows3/issues/23))
+
 ### Fixed
+- **Readable Command Errors**: Tauri command failures now serialize as their human-readable messages instead of JavaScript displaying `[object Object]`. ([#18](https://github.com/rgcsekaraa/brows3/issues/18))
+- **Large Multipart Uploads**: Files at or above 100 MiB now use retryable, bounded-memory S3 multipart uploads with adaptive part sizing, per-part progress, clean cancellation/abort handling, and support for objects beyond the 5 GiB single-PUT limit. ([#25](https://github.com/rgcsekaraa/brows3/issues/25))
+- **Persistent Linux Secrets**: Linux now explicitly uses the freedesktop Secret Service backend (GNOME Keyring/KWallet) instead of the volatile kernel session keyring, migrates a still-live legacy keyutils secret when possible, and retains the documented local fallback when Secret Service is unavailable. ([#24](https://github.com/rgcsekaraa/brows3/issues/24))
+- **Shared-Profile Custom Endpoints**: AWS shared-config profiles that load `endpoint_url` now use path-style bucket addressing and compatibility checksum behavior, matching Custom Endpoint profiles on MinIO and similar providers. ([#26](https://github.com/rgcsekaraa/brows3/issues/26))
 - **Profile Connection Tests**: Test progress and results now remain visible until the form changes, and stale asynchronous responses cannot overwrite a newer test.
 - **Transfer Profile Isolation**: Queued transfers retain the profile that created them instead of using whichever account is active when a worker starts.
 - **Safe Folder Downloads**: Recursive download paths reject traversal, absolute, rooted, drive-prefixed, and null-containing object keys before joining them to the selected directory.
 - **Bounded Search And Sorting**: Deep search is capped at 100 S3 LIST requests, 100,000 scanned objects, and 10,000 matches, while complete non-default folder sorts are capped at 100 requests and 100,000 entries.
 - **Cache Accuracy**: Removed the unused full-bucket cache implementation, bounded the actual sorted-view cache, and invalidated it after object writes.
 - **Release Signing Workflow**: macOS builds now receive configured Apple signing and notarization secrets, while `[skip release]` suppresses release jobs for maintenance pushes.
+- **Winget Package Continuity**: Release manifests now update the established `Brows3Team.Brows3` package identifier and include both MSI and NSIS installers when available instead of generating a disconnected package identity.
 
 ### Changed
 - **Credential Documentation**: Documented the plaintext `secrets.json` fallback used by portable mode or when native keychain storage fails.
+- **Release Quality Gate**: Publishing now waits for frontend linting, TypeScript checks, production export, Rust formatting, Clippy, backend tests, release-script tests, native Windows validation, and a complete signed artifact audit; incomplete builds remain unpublished drafts.
 - **Project Cleanup**: Removed unused state, dependencies, starter assets, and historical build logs.
 
 ## [0.2.43] - 2026-06-25
