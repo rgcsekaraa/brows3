@@ -24,6 +24,96 @@ pub(crate) fn normalize_endpoint_url(url: &str) -> String {
     }
 }
 
+fn build_s3_config(sdk_config: &aws_config::SdkConfig, profile: &Profile) -> aws_sdk_s3::Config {
+    let mut builder = aws_sdk_s3::config::Builder::from(sdk_config);
+
+    if let CredentialType::CustomEndpoint { endpoint_url, .. } = &profile.credential_type {
+        builder = builder.endpoint_url(normalize_endpoint_url(endpoint_url));
+    }
+
+    // A global endpoint_url loaded from an environment variable or shared
+    // profile is a custom S3 endpoint just as much as one entered in the UI.
+    // Path-style addressing is required by common providers such as MinIO
+    // unless they have explicitly configured wildcard bucket DNS.
+    if matches!(
+        profile.credential_type,
+        CredentialType::CustomEndpoint { .. }
+    ) || sdk_config.endpoint_url().is_some()
+    {
+        builder = builder
+            .force_path_style(true)
+            .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
+            .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
+    }
+
+    builder.build()
+}
+
+/// Build an S3 client for both production operations and connection tests so
+/// profile, endpoint, and compatibility behavior cannot drift between them.
+pub(crate) async fn build_s3_client(
+    profile: &Profile,
+    override_region: Option<String>,
+) -> Result<Client> {
+    let region_str = override_region
+        .or_else(|| profile.region.clone())
+        .unwrap_or_else(|| "us-east-1".to_string());
+    let region = Region::new(region_str);
+
+    let sdk_config = match &profile.credential_type {
+        CredentialType::Environment => {
+            aws_config::defaults(aws_config::BehaviorVersion::latest())
+                .region(region)
+                .load()
+                .await
+        }
+        CredentialType::SharedConfig { profile_name } => {
+            aws_config::defaults(aws_config::BehaviorVersion::latest())
+                .region(region)
+                .profile_name(profile_name.as_deref().unwrap_or("default"))
+                .load()
+                .await
+        }
+        CredentialType::Manual {
+            access_key_id,
+            secret_access_key,
+        } => {
+            let creds = aws_credential_types::Credentials::new(
+                access_key_id,
+                secret_access_key,
+                None,
+                None,
+                "manual",
+            );
+            aws_config::defaults(aws_config::BehaviorVersion::latest())
+                .region(region)
+                .credentials_provider(creds)
+                .load()
+                .await
+        }
+        CredentialType::CustomEndpoint {
+            access_key_id,
+            secret_access_key,
+            ..
+        } => {
+            let creds = aws_credential_types::Credentials::new(
+                access_key_id,
+                secret_access_key,
+                None,
+                None,
+                "custom_endpoint",
+            );
+            aws_config::defaults(aws_config::BehaviorVersion::latest())
+                .region(region)
+                .credentials_provider(creds)
+                .load()
+                .await
+        }
+    };
+
+    Ok(Client::from_conf(build_s3_config(&sdk_config, profile)))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3Object {
     pub key: String,
@@ -89,76 +179,7 @@ impl S3ClientManager {
         profile: &Profile,
         override_region: Option<String>,
     ) -> Result<Client> {
-        let region_str = override_region
-            .or_else(|| profile.region.clone())
-            .unwrap_or_else(|| "us-east-1".to_string());
-
-        let region = Region::new(region_str);
-
-        let sdk_config = match &profile.credential_type {
-            CredentialType::Environment => {
-                aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .region(region)
-                    .load()
-                    .await
-            }
-            CredentialType::SharedConfig { profile_name } => {
-                aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .region(region)
-                    .profile_name(profile_name.as_deref().unwrap_or("default"))
-                    .load()
-                    .await
-            }
-            CredentialType::Manual {
-                access_key_id,
-                secret_access_key,
-            } => {
-                let creds = aws_credential_types::Credentials::new(
-                    access_key_id,
-                    secret_access_key,
-                    None,
-                    None,
-                    "manual",
-                );
-                aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .region(region)
-                    .credentials_provider(creds)
-                    .load()
-                    .await
-            }
-            CredentialType::CustomEndpoint {
-                access_key_id,
-                secret_access_key,
-                ..
-            } => {
-                let creds = aws_credential_types::Credentials::new(
-                    access_key_id,
-                    secret_access_key,
-                    None,
-                    None,
-                    "custom_endpoint",
-                );
-                aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .region(region)
-                    .credentials_provider(creds)
-                    .load()
-                    .await
-            }
-        };
-
-        // Build S3 client with custom endpoint if specified
-        let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&sdk_config);
-
-        if let CredentialType::CustomEndpoint { endpoint_url, .. } = &profile.credential_type {
-            let normalized_url = normalize_endpoint_url(endpoint_url);
-            s3_config_builder = s3_config_builder
-                .endpoint_url(&normalized_url)
-                .force_path_style(true)
-                .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
-                .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
-        }
-
-        Ok(Client::from_conf(s3_config_builder.build()))
+        build_s3_client(profile, override_region).await
     }
 
     /// Clear cached clients, sorted folder results, and discovered regions.
@@ -394,8 +415,13 @@ pub fn format_size(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_endpoint_url, FolderContent, S3ClientManager, S3Object, MAX_SORTED_CACHE_ENTRIES,
+        build_s3_config, normalize_endpoint_url, FolderContent, S3ClientManager, S3Object,
+        MAX_SORTED_CACHE_ENTRIES,
     };
+    use crate::credentials::{CredentialType, Profile};
+    use aws_config::{Region, SdkConfig};
+    use aws_sdk_s3::presigning::PresigningConfig;
+    use std::time::Duration;
 
     #[test]
     fn normalize_endpoint_url_preserves_existing_scheme() {
@@ -422,6 +448,50 @@ mod tests {
         assert_eq!(
             normalize_endpoint_url("  us-east-1.linodeobjects.com  "),
             "https://us-east-1.linodeobjects.com"
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_config_endpoint_uses_path_style_addressing() {
+        let sdk_config = SdkConfig::builder()
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .endpoint_url("http://localhost:9100")
+            .credentials_provider(
+                aws_credential_types::provider::SharedCredentialsProvider::new(
+                    aws_credential_types::Credentials::new(
+                        "access-key",
+                        "secret-key",
+                        None,
+                        None,
+                        "test",
+                    ),
+                ),
+            )
+            .build();
+        let profile = Profile::new(
+            "MinIO shared profile".to_string(),
+            CredentialType::SharedConfig {
+                profile_name: Some("minio-local".to_string()),
+            },
+            Some("us-east-1".to_string()),
+        );
+        let client = aws_sdk_s3::Client::from_conf(build_s3_config(&sdk_config, &profile));
+
+        let request = client
+            .get_object()
+            .bucket("test-bucket")
+            .key("folder/file.txt")
+            .presigned(PresigningConfig::expires_in(Duration::from_secs(60)).unwrap())
+            .await
+            .unwrap();
+
+        assert!(
+            request
+                .uri()
+                .starts_with("http://localhost:9100/test-bucket/folder/file.txt?"),
+            "unexpected presigned URI: {}",
+            request.uri()
         );
     }
 

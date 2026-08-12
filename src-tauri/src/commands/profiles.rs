@@ -80,10 +80,7 @@ pub async fn test_connection(
     mut profile: Profile,
     state: State<'_, ProfileState>,
 ) -> Result<TestConnectionResult, String> {
-    use aws_config::Region;
-    use aws_sdk_s3::config::{RequestChecksumCalculation, ResponseChecksumValidation};
     use aws_sdk_s3::error::ProvideErrorMetadata;
-    use aws_sdk_s3::Client;
 
     // Hydrate profile secrets from keychain if they are empty
     {
@@ -103,80 +100,9 @@ pub async fn test_connection(
         }
     }
 
-    let region = Region::new(
-        profile
-            .region
-            .clone()
-            .unwrap_or_else(|| "us-east-1".to_string()),
-    );
-
-    let config = match &profile.credential_type {
-        crate::credentials::CredentialType::Environment => {
-            aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(region)
-                .load()
-                .await
-        }
-        crate::credentials::CredentialType::SharedConfig { profile_name } => {
-            aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(region)
-                .profile_name(profile_name.as_deref().unwrap_or("default"))
-                .load()
-                .await
-        }
-        crate::credentials::CredentialType::Manual {
-            access_key_id,
-            secret_access_key,
-        } => {
-            let creds = aws_credential_types::Credentials::new(
-                access_key_id,
-                secret_access_key,
-                None,
-                None,
-                "manual",
-            );
-            aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(region)
-                .credentials_provider(creds)
-                .load()
-                .await
-        }
-        crate::credentials::CredentialType::CustomEndpoint {
-            endpoint_url: _,
-            access_key_id,
-            secret_access_key,
-        } => {
-            let creds = aws_credential_types::Credentials::new(
-                access_key_id,
-                secret_access_key,
-                None,
-                None,
-                "custom_endpoint",
-            );
-            aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(region)
-                .credentials_provider(creds)
-                .load()
-                .await
-        }
-    };
-
-    // Build S3 client
-    let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&config);
-
-    // Apply custom endpoint if specified
-    if let crate::credentials::CredentialType::CustomEndpoint { endpoint_url, .. } =
-        &profile.credential_type
-    {
-        let normalized_url = crate::s3::client::normalize_endpoint_url(endpoint_url);
-        s3_config_builder = s3_config_builder
-            .endpoint_url(&normalized_url)
-            .force_path_style(true)
-            .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
-            .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
-    }
-
-    let client = Client::from_conf(s3_config_builder.build());
+    let client = crate::s3::client::build_s3_client(&profile, None)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Test connection by listing buckets
     match client.list_buckets().send().await {
