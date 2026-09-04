@@ -3,6 +3,7 @@ use crate::credentials::{Profile, ProfileManager};
 use crate::s3::{
     plan_multipart_upload, MultipartUploadGuard, S3ClientManager, MULTIPART_UPLOAD_THRESHOLD,
 };
+use aws_sdk_s3::error::DisplayErrorContext;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
@@ -10,10 +11,38 @@ use aws_smithy_types::byte_stream::Length;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Notify, RwLock};
+
+/// Per-request timeout floor. Even a request for a tiny object should not
+/// hang indefinitely when the connection stalls (bad proxy, TLS negotiation
+/// that never completes, a firewall that silently drops packets instead of
+/// resetting the connection). Without an explicit timeout the AWS SDK's HTTP
+/// client relies on OS-level TCP timeouts, which can take several minutes
+/// and give the user no indication anything is wrong in the meantime.
+const MIN_TRANSFER_TIMEOUT: Duration = Duration::from_secs(60);
+/// Per-request timeout ceiling, so a single stalled request cannot block a
+/// job forever even for a very large part.
+const MAX_TRANSFER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+/// Conservative assumed worst-case throughput used to size a request's
+/// timeout from its byte count, so slow-but-progressing transfers are not
+/// mistaken for a stalled connection.
+const MIN_ASSUMED_THROUGHPUT_BYTES_PER_SEC: u64 = 100 * 1024;
+/// Fixed timeout for requests whose duration doesn't scale with the object
+/// being transferred (metadata-only calls, and time-to-first-byte for a
+/// download).
+const METADATA_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Size a per-request timeout so it comfortably covers a slow real transfer
+/// while still failing a genuinely stalled connection well before the
+/// several-minute OS-level TCP timeout.
+fn transfer_timeout_for(size_bytes: u64) -> Duration {
+    let scaled_secs = size_bytes / MIN_ASSUMED_THROUGHPUT_BYTES_PER_SEC.max(1);
+    Duration::from_secs(scaled_secs).clamp(MIN_TRANSFER_TIMEOUT, MAX_TRANSFER_TIMEOUT)
+}
 
 // Define a safe shared state for the manager
 pub struct TransferManager {
@@ -349,6 +378,7 @@ impl TransferManager {
                                     Some(TransferStatus::Cancelled) | None
                                 );
                                 if !was_cancelled {
+                                    log::error!("Transfer job {} failed: {}", id_inner, e);
                                     manager_inner
                                         .update_job_status(
                                             &id_inner,
@@ -447,20 +477,34 @@ impl TransferManager {
             let body = ByteStream::from_path(&job.local_path)
                 .await
                 .map_err(|error| crate::error::AppError::IoError(error.to_string()))?;
-            client
+            let timeout = transfer_timeout_for(file_size);
+            let send = client
                 .put_object()
                 .bucket(&job.bucket)
                 .key(&job.key)
                 .content_type(content_type)
                 .body(body)
-                .send()
-                .await
-                .map_err(|error| {
-                    crate::error::AppError::S3Error(format!(
-                        "Single-part upload failed for s3://{}/{}: {error}",
-                        job.bucket, job.key
-                    ))
-                })?;
+                .send();
+            match tokio::time::timeout(timeout, send).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    return Err(crate::error::AppError::S3Error(format!(
+                        "Single-part upload failed for s3://{}/{}: {}",
+                        job.bucket,
+                        job.key,
+                        DisplayErrorContext(&error)
+                    )));
+                }
+                Err(_) => {
+                    return Err(crate::error::AppError::S3Error(format!(
+                        "Single-part upload timed out after {}s for s3://{}/{} with no response from S3 \
+                         (check the endpoint, region, network/proxy, and TLS configuration)",
+                        timeout.as_secs(),
+                        job.bucket,
+                        job.key
+                    )));
+                }
+            }
             self.update_job_progress(&job.id, file_size).await;
             return Ok(());
         }
@@ -478,19 +522,32 @@ impl TransferManager {
     ) -> crate::error::Result<()> {
         self.ensure_multipart_job_active(&job.id).await?;
         let plan = plan_multipart_upload(file_size)?;
-        let created = client
+        let create_send = client
             .create_multipart_upload()
             .bucket(&job.bucket)
             .key(&job.key)
             .content_type(content_type)
-            .send()
-            .await
-            .map_err(|error| {
-                crate::error::AppError::S3Error(format!(
-                    "Could not start multipart upload for s3://{}/{}: {error}",
-                    job.bucket, job.key
-                ))
-            })?;
+            .send();
+        let created = match tokio::time::timeout(METADATA_REQUEST_TIMEOUT, create_send).await {
+            Ok(Ok(output)) => output,
+            Ok(Err(error)) => {
+                return Err(crate::error::AppError::S3Error(format!(
+                    "Could not start multipart upload for s3://{}/{}: {}",
+                    job.bucket,
+                    job.key,
+                    DisplayErrorContext(&error)
+                )));
+            }
+            Err(_) => {
+                return Err(crate::error::AppError::S3Error(format!(
+                    "Starting multipart upload timed out after {}s for s3://{}/{} with no response from S3 \
+                     (check the endpoint, region, network/proxy, and TLS configuration)",
+                    METADATA_REQUEST_TIMEOUT.as_secs(),
+                    job.bucket,
+                    job.key
+                )));
+            }
+        };
         let upload_id = created.upload_id().ok_or_else(|| {
             crate::error::AppError::S3Error(format!(
                 "S3 did not return an upload ID for s3://{}/{}",
@@ -521,7 +578,8 @@ impl TransferManager {
                         ))
                     })?;
 
-                let output = client
+                let part_timeout = transfer_timeout_for(part.length);
+                let part_send = client
                     .upload_part()
                     .bucket(&job.bucket)
                     .key(&job.key)
@@ -529,17 +587,31 @@ impl TransferManager {
                     .part_number(part.number)
                     .content_length(part.length as i64)
                     .body(body)
-                    .send()
-                    .await
-                    .map_err(|error| {
-                        crate::error::AppError::S3Error(format!(
-                            "Multipart upload failed at part {} of {} for s3://{}/{}: {error}",
+                    .send();
+                let output = match tokio::time::timeout(part_timeout, part_send).await {
+                    Ok(Ok(output)) => output,
+                    Ok(Err(error)) => {
+                        return Err(crate::error::AppError::S3Error(format!(
+                            "Multipart upload failed at part {} of {} for s3://{}/{}: {}",
+                            part.number,
+                            plan.parts.len(),
+                            job.bucket,
+                            job.key,
+                            DisplayErrorContext(&error)
+                        )));
+                    }
+                    Err(_) => {
+                        return Err(crate::error::AppError::S3Error(format!(
+                            "Multipart upload timed out after {}s at part {} of {} for s3://{}/{} with no \
+                             response from S3 (check the endpoint, region, network/proxy, and TLS configuration)",
+                            part_timeout.as_secs(),
                             part.number,
                             plan.parts.len(),
                             job.bucket,
                             job.key
-                        ))
-                    })?;
+                        )));
+                    }
+                };
                 self.ensure_multipart_job_active(&job.id).await?;
                 let e_tag = output.e_tag().ok_or_else(|| {
                     crate::error::AppError::S3Error(format!(
@@ -562,20 +634,33 @@ impl TransferManager {
             let completed_upload = CompletedMultipartUpload::builder()
                 .set_parts(Some(completed_parts))
                 .build();
-            client
+            let complete_send = client
                 .complete_multipart_upload()
                 .bucket(&job.bucket)
                 .key(&job.key)
                 .upload_id(guard.upload_id())
                 .multipart_upload(completed_upload)
-                .send()
-                .await
-                .map_err(|error| {
-                    crate::error::AppError::S3Error(format!(
-                        "Could not complete multipart upload for s3://{}/{}: {error}",
-                        job.bucket, job.key
-                    ))
-                })?;
+                .send();
+            match tokio::time::timeout(METADATA_REQUEST_TIMEOUT, complete_send).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    return Err(crate::error::AppError::S3Error(format!(
+                        "Could not complete multipart upload for s3://{}/{}: {}",
+                        job.bucket,
+                        job.key,
+                        DisplayErrorContext(&error)
+                    )));
+                }
+                Err(_) => {
+                    return Err(crate::error::AppError::S3Error(format!(
+                        "Completing multipart upload timed out after {}s for s3://{}/{} with no response from S3 \
+                         (check the endpoint, region, network/proxy, and TLS configuration)",
+                        METADATA_REQUEST_TIMEOUT.as_secs(),
+                        job.bucket,
+                        job.key
+                    )));
+                }
+            }
 
             Ok(())
         }
@@ -675,19 +760,27 @@ impl TransferManager {
                 }
             }
             TransferType::Download => {
-                let result = client
-                    .get_object()
-                    .bucket(&job.bucket)
-                    .key(&job.key)
-                    .send()
-                    .await;
+                let result = tokio::time::timeout(
+                    METADATA_REQUEST_TIMEOUT,
+                    client.get_object().bucket(&job.bucket).key(&job.key).send(),
+                )
+                .await;
 
                 let mut output = match result {
-                    Ok(output) => output,
-                    Err(err) => {
+                    Ok(Ok(output)) => output,
+                    Err(_) => {
+                        return Err(crate::error::AppError::S3Error(format!(
+                            "Download timed out after {}s for s3://{}/{} with no response from S3 \
+                             (check the endpoint, region, network/proxy, and TLS configuration)",
+                            METADATA_REQUEST_TIMEOUT.as_secs(),
+                            job.bucket,
+                            job.key
+                        )));
+                    }
+                    Ok(Err(err)) => {
                         log::warn!(
                             "download transfer failed, attempting region discovery: {}",
-                            err
+                            DisplayErrorContext(&err)
                         );
 
                         if let Some(new_region) = detect_region.await? {
@@ -698,20 +791,35 @@ impl TransferManager {
                                     .clone()
                             };
 
-                            retry_client
-                                .get_object()
-                                .bucket(&job.bucket)
-                                .key(&job.key)
-                                .send()
-                                .await
-                                .map_err(|e| {
-                                    crate::error::AppError::S3Error(format!(
-                                        "Retry download failed: {}",
-                                        e
-                                    ))
+                            tokio::time::timeout(
+                                METADATA_REQUEST_TIMEOUT,
+                                retry_client
+                                    .get_object()
+                                    .bucket(&job.bucket)
+                                    .key(&job.key)
+                                    .send(),
+                            )
+                            .await
+                            .map_err(|_| {
+                                crate::error::AppError::S3Error(format!(
+                                    "Retry download timed out after {}s for s3://{}/{} with no response \
+                                     from S3 (check the endpoint, region, network/proxy, and TLS configuration)",
+                                    METADATA_REQUEST_TIMEOUT.as_secs(),
+                                    job.bucket,
+                                    job.key
+                                ))
+                            })?
+                            .map_err(|e| {
+                                crate::error::AppError::S3Error(format!(
+                                    "Retry download failed: {}",
+                                    DisplayErrorContext(&e)
+                                ))
                                 })?
                         } else {
-                            return Err(crate::error::AppError::S3Error(err.to_string()));
+                            return Err(crate::error::AppError::S3Error(format!(
+                                "{}",
+                                DisplayErrorContext(&err)
+                            )));
                         }
                     }
                 };
