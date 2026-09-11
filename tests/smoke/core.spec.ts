@@ -158,3 +158,58 @@ for (const transferType of ['Upload', 'Download'] as const) {
     await expect(page.getByRole('main').getByText('AccessDenied: This key cannot write objects', { exact: true })).toBeVisible();
   });
 }
+
+test('buckets can be created and deleted with explicit confirmation', async ({ page, backend }) => {
+  await page.goto('/?view=discovery');
+  await page.getByRole('button', { name: 'Create bucket', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Bucket name', exact: true }).fill('new-bucket');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page.getByRole('table', { name: 'buckets table' }).getByText('new-bucket', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add new-bucket to Favorites', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Manage new-bucket', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Delete bucket', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Delete bucket' });
+  await expect(dialog.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled();
+  await dialog.getByRole('textbox', { name: 'Type the bucket name to confirm' }).fill('new-bucket');
+  backend.deleteBucketError = 'BucketNotEmpty: Remove objects and versions first';
+  await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(dialog.getByRole('alert').filter({ hasText: 'BucketNotEmpty' })).toBeVisible();
+  expect(backend.buckets).toContain('new-bucket');
+  backend.deleteBucketError = '';
+  await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Manage new-bucket', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add new-bucket to Favorites', exact: true })).toHaveCount(0);
+});
+
+test('bucket policies can be edited while failed saves retain the draft', async ({ page, backend }) => {
+  backend.bucketPolicy = '{"Statement":[]}';
+  await page.goto('/?view=discovery');
+  await page.getByRole('button', { name: 'Manage demo-bucket', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Edit bucket policy', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Bucket policy' });
+  await expect(dialog.getByRole('textbox', { name: 'Policy JSON' })).toHaveValue(backend.bucketPolicy);
+  await dialog.getByRole('textbox', { name: 'Policy JSON' }).fill('{"Version":"2012-10-17","Statement":[]}');
+  await dialog.getByRole('textbox', { name: 'Type the bucket name to confirm' }).fill('demo-bucket');
+  backend.bucketPolicy = '{}';
+  await dialog.getByRole('button', { name: 'Save policy' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('policy or profile changed');
+  await expect(dialog.getByRole('textbox', { name: 'Policy JSON' })).toHaveValue('{"Version":"2012-10-17","Statement":[]}');
+  backend.bucketPolicy = '{"Statement":[]}';
+  await dialog.getByRole('button', { name: 'Save policy' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(backend.bucketPolicy).toBe('{"Version":"2012-10-17","Statement":[]}');
+});
+
+test('bucket drafts are cleared when reopened under another profile', async ({ page, backend }) => {
+  await page.goto('/?view=discovery');
+  await page.getByRole('button', { name: 'Create bucket', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Bucket name', exact: true }).fill('unsaved-bucket');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('combobox').filter({ hasText: 'Development' }).click();
+  await page.getByRole('option', { name: /Production/ }).click();
+  await page.getByRole('button', { name: 'List All Buckets', exact: true }).click();
+  await page.getByRole('button', { name: 'Create bucket', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Bucket name', exact: true })).toHaveValue('');
+  expect(backend.calls.filter(call => call.command === 'create_bucket')).toHaveLength(0);
+});

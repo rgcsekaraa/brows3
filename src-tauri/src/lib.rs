@@ -4,7 +4,9 @@ pub mod error;
 pub mod s3;
 pub mod transfer;
 
-use commands::{buckets, objects, operations, profiles, transfer as transfer_cmd};
+use commands::{
+    bucket_management, buckets, objects, operations, profiles, transfer as transfer_cmd,
+};
 use s3::S3ClientManager;
 use serde::Serialize;
 use std::sync::Arc;
@@ -279,6 +281,10 @@ pub fn run() {
             profiles::login_sso,
             profiles::check_aws_environment,
             // Bucket commands
+            bucket_management::create_bucket,
+            bucket_management::delete_bucket,
+            bucket_management::get_bucket_policy,
+            bucket_management::put_bucket_policy,
             buckets::list_buckets,
             buckets::list_buckets_with_regions,
             buckets::get_bucket_region,

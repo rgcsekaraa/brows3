@@ -59,3 +59,15 @@ test('disabled discovery does not make requests until explicitly enabled', async
   view.rerender({ enabled: true });
   await waitFor(() => expect(view.result.current.buckets).toHaveLength(1));
 });
+
+test('bucket creation invalidation refreshes every discovery view once', async () => {
+  const { invalidateCache } = await import('@/lib/tauri');
+  const first = renderHook(() => useBuckets());
+  const second = renderHook(() => useBuckets());
+  await waitFor(() => expect(first.result.current.buckets[0]?.name).toBe('first'));
+  vi.mocked(bucketApi.listBucketsWithRegions).mockResolvedValueOnce([bucket('created')]);
+  act(() => invalidateCache('buckets'));
+  await waitFor(() => expect(first.result.current.buckets[0]?.name).toBe('created'));
+  expect(second.result.current.buckets[0]?.name).toBe('created');
+  expect(bucketApi.listBucketsWithRegions).toHaveBeenCalledTimes(2);
+});

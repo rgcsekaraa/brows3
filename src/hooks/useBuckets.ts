@@ -55,6 +55,11 @@ export function invalidateBucketCache(profileId?: string) {
   }
 }
 
+subscribeCacheInvalidation(scope => {
+  invalidateBucketCache();
+  if (scope === 'buckets') bucketFetchPromises.clear();
+});
+
 export function useBuckets(options: { enabled?: boolean } = { enabled: true }): UseBucketsResult {
   const enabled = options.enabled ?? true;
   const [buckets, setBuckets] = useState<BucketWithRegion[]>([]);
@@ -64,14 +69,6 @@ export function useBuckets(options: { enabled?: boolean } = { enabled: true }): 
   const { activeProfileId } = useProfileStore();
   const mountedRef = useRef(true);
   const requestIdRef = useRef(0);
-
-  // Connect the cache invalidator so write operations trigger a refresh
-  useEffect(() => {
-    return subscribeCacheInvalidation(() => {
-      invalidateBucketCache();
-      setCacheTimestamp(null); // Reset UI cache state
-    });
-  }, []);
 
   const fetchBuckets = useCallback(async (skipCache = false) => {
     if (!activeProfileId) {
@@ -135,6 +132,14 @@ export function useBuckets(options: { enabled?: boolean } = { enabled: true }): 
       }
     }
   }, [activeProfileId]);
+
+  useEffect(() => subscribeCacheInvalidation(scope => {
+    setCacheTimestamp(null);
+    if (scope === 'buckets') {
+      requestIdRef.current += 1;
+      if (enabled) void fetchBuckets(true);
+    }
+  }), [enabled, fetchBuckets]);
 
   const refresh = useCallback(async () => {
     // Clear cache and force refresh

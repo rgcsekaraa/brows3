@@ -12,6 +12,9 @@ export class DesktopBackend {
   ];
   activeProfile = 'a';
   emptyListingPages = 0;
+  buckets = ['demo-bucket'];
+  bucketPolicy: string | null = null;
+  deleteBucketError = '';
   calls: { command: string; args: Args }[] = [];
   unexpected: string[] = [];
   transfers: TransferJob[] = [];
@@ -36,7 +39,22 @@ export class DesktopBackend {
       case 'plugin:clipboard-manager|write_text': return null;
       case 'plugin:updater|check': return null;
       case 'list_buckets_with_regions':
-      case 'list_buckets': return [{ name: 'demo-bucket', region: 'us-east-1', creation_date: null, object_count: null, total_size: null, total_size_formatted: null }];
+      case 'list_buckets': return this.buckets.map(name => ({ name, region: 'us-east-1', creation_date: null, object_count: null, total_size: null, total_size_formatted: null }));
+      case 'create_bucket':
+        if (args.expectedProfileId !== this.activeProfile) throw new Error('The active profile changed.');
+        this.buckets.push(String(args.bucketName));
+        return null;
+      case 'delete_bucket':
+        if (args.expectedProfileId !== this.activeProfile) throw new Error('The active profile changed.');
+        if (args.confirmation !== args.bucketName) throw new Error('Bucket confirmation does not match.');
+        if (this.deleteBucketError) throw new Error(this.deleteBucketError);
+        this.buckets = this.buckets.filter(name => name !== args.bucketName);
+        return null;
+      case 'get_bucket_policy': return this.bucketPolicy;
+      case 'put_bucket_policy':
+        if (args.expectedProfileId !== this.activeProfile || args.expectedPolicy !== this.bucketPolicy) throw new Error('The policy or profile changed.');
+        this.bucketPolicy = args.policy as string | null;
+        return null;
       case 'get_bucket_region': return 'us-east-1';
       case 'list_objects': {
         if (this.emptyListingPages > 0) {

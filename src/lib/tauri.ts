@@ -47,18 +47,19 @@ const invoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T
 };
 
 // Cache invalidation helper - hooks can subscribe to write-driven invalidation
-const cacheInvalidators = new Set<() => void>();
+type CacheScope = 'objects' | 'buckets';
+const cacheInvalidators = new Set<(scope: CacheScope) => void>();
 
-export const subscribeCacheInvalidation = (fn: () => void) => {
+export const subscribeCacheInvalidation = (fn: (scope: CacheScope) => void) => {
   cacheInvalidators.add(fn);
   return () => {
     cacheInvalidators.delete(fn);
   };
 };
 
-export const invalidateCache = () => {
+export const invalidateCache = (scope: CacheScope = 'objects') => {
   for (const fn of cacheInvalidators) {
-    fn();
+    fn(scope);
   }
 };
 
@@ -184,6 +185,24 @@ export interface BucketWithRegion {
 
 // Bucket API wrapper functions
 export const bucketApi = {
+  async createBucket(bucketName: string, region: string, expectedProfileId: string): Promise<void> {
+    await invoke<void>('create_bucket', { bucketName, region, expectedProfileId });
+    invalidateCache('buckets');
+  },
+
+  async deleteBucket(bucketName: string, bucketRegion: string, confirmation: string, expectedProfileId: string): Promise<void> {
+    await invoke<void>('delete_bucket', { bucketName, bucketRegion, confirmation, expectedProfileId });
+    invalidateCache('buckets');
+  },
+
+  async getBucketPolicy(bucketName: string, bucketRegion: string, expectedProfileId: string): Promise<string | null> {
+    return invoke<string | null>('get_bucket_policy', { bucketName, bucketRegion, expectedProfileId });
+  },
+
+  async putBucketPolicy(bucketName: string, bucketRegion: string, policy: string | null, expectedPolicy: string | null, expectedProfileId: string): Promise<void> {
+    await invoke<void>('put_bucket_policy', { bucketName, bucketRegion, policy, expectedPolicy, expectedProfileId });
+  },
+
   async listBuckets(): Promise<BucketInfo[]> {
     return invoke<BucketInfo[]>('list_buckets');
   },

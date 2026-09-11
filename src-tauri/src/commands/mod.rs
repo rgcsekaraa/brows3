@@ -1,3 +1,4 @@
+pub mod bucket_management;
 pub mod buckets;
 pub mod objects;
 pub mod operations;
