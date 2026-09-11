@@ -190,6 +190,9 @@ export function useObjects(
        setContinuationToken(result.next_continuation_token || null);
        setHasMore(!!result.next_continuation_token);
     } catch (err) {
+       if (currentViewKey === viewKeyRef.current && currentFetchId === fetchIdRef.current) {
+         setError(err instanceof Error ? err.message : String(err));
+       }
        console.error('Load more error:', err);
     } finally {
        setIsLoadingMore(false);

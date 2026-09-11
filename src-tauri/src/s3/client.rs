@@ -137,6 +137,7 @@ pub struct S3Object {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FolderContent {
+    pub generation: String,
     pub objects: Vec<S3Object>,
     pub common_prefixes: Vec<String>,
 }
@@ -527,6 +528,7 @@ mod tests {
                         storage_class: None,
                     }],
                     common_prefixes: Vec::new(),
+                    generation: index.to_string(),
                 },
             );
         }

@@ -98,19 +98,34 @@ fn paginate_folder_content(
     bucket_region: Option<String>,
     continuation_token: Option<String>,
     max_keys: Option<i32>,
-) -> ListObjectsResult {
-    let offset = continuation_token
-        .and_then(|t| t.parse::<usize>().ok())
-        .unwrap_or(0);
+) -> Result<ListObjectsResult> {
+    let expired = || {
+        crate::error::AppError::ConfigError(
+            "This listing has changed. Refresh the folder to continue.".to_string(),
+        )
+    };
+    let offset = match continuation_token {
+        Some(token) => {
+            let (generation, offset) = token.split_once(':').ok_or_else(expired)?;
+            if generation != content.generation {
+                return Err(expired());
+            }
+            offset.parse::<usize>().map_err(|_| expired())?
+        }
+        None => 0,
+    };
+    if offset > content.objects.len() {
+        return Err(expired());
+    }
     let max = max_keys.unwrap_or(1000).max(1) as usize;
-    let end = (offset + max).min(content.objects.len());
+    let end = offset.saturating_add(max).min(content.objects.len());
     let next_token = if end < content.objects.len() {
-        Some(end.to_string())
+        Some(format!("{}:{end}", content.generation))
     } else {
         None
     };
 
-    ListObjectsResult {
+    Ok(ListObjectsResult {
         objects: content.objects[offset..end].to_vec(),
         common_prefixes: if offset == 0 {
             content.common_prefixes.clone()
@@ -121,7 +136,7 @@ fn paginate_folder_content(
         is_truncated: next_token.is_some(),
         prefix,
         bucket_region,
-    }
+    })
 }
 
 async fn list_complete_folder_content(
@@ -211,6 +226,7 @@ async fn list_complete_folder_content(
     }
 
     Ok(FolderContent {
+        generation: uuid::Uuid::new_v4().to_string(),
         objects,
         common_prefixes,
     })
@@ -293,16 +309,22 @@ pub async fn list_objects(
                     field,
                     &sort_direction,
                 ) {
-                    return Ok(paginate_folder_content(
+                    return paginate_folder_content(
                         content,
                         prefix_str,
                         cached_bucket_region,
                         continuation_token,
                         max_keys,
-                    ));
+                    );
                 }
             }
         }
+    }
+
+    if uses_complete_sort && continuation_token.is_some() {
+        return Err(crate::error::AppError::ConfigError(
+            "This listing has expired. Refresh the folder to continue.".to_string(),
+        ));
     }
 
     // If bypassing cache, we should invalidate the existing cache for this bucket
@@ -393,13 +415,13 @@ pub async fn list_objects(
             );
         }
 
-        return Ok(paginate_folder_content(
+        return paginate_folder_content(
             &content,
             prefix_str,
             resolved_bucket_region.or(requested_bucket_region),
             continuation_token,
             max_keys,
-        ));
+        );
     }
 
     // 3. Perform network IO outside of locks, including retry logic
@@ -1119,5 +1141,67 @@ mod preview_tests {
         assert!(preview_chunk_fits(6, 4, 10));
         assert!(!preview_chunk_fits(6, 5, 10));
         assert!(!preview_chunk_fits(usize::MAX, 1, 10));
+    }
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::*;
+
+    fn content(count: usize) -> FolderContent {
+        FolderContent {
+            generation: "snapshot".to_string(),
+            objects: (0..count)
+                .map(|index| S3Object {
+                    key: index.to_string(),
+                    size: 0,
+                    last_modified: None,
+                    storage_class: None,
+                })
+                .collect(),
+            common_prefixes: vec!["folder/".to_string()],
+        }
+    }
+
+    #[test]
+    fn sorted_pages_preserve_objects_and_only_return_folders_once() {
+        let content = content(3);
+        let first = paginate_folder_content(&content, String::new(), None, None, Some(2)).unwrap();
+        assert_eq!(first.objects.len(), 2);
+        assert_eq!(first.common_prefixes.len(), 1);
+        let last = paginate_folder_content(
+            &content,
+            String::new(),
+            None,
+            first.next_continuation_token,
+            Some(2),
+        )
+        .unwrap();
+        assert_eq!(last.objects[0].key, "2");
+        assert!(last.common_prefixes.is_empty());
+        assert!(!last.is_truncated);
+    }
+
+    #[test]
+    fn stale_and_malformed_sorted_cursors_return_errors() {
+        for token in [
+            "1000",
+            "old:1",
+            "snapshot:no",
+            "snapshot:1000",
+            "snapshot:18446744073709551615",
+        ] {
+            assert!(paginate_folder_content(
+                &content(999),
+                String::new(),
+                None,
+                Some(token.to_string()),
+                None
+            )
+            .is_err());
+        }
+        let empty = paginate_folder_content(&content(0), String::new(), None, None, None).unwrap();
+        assert!(empty.objects.is_empty());
+        assert!(!empty.is_truncated);
     }
 }
