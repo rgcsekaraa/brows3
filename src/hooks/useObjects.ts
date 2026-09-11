@@ -49,13 +49,13 @@ export function useObjects(
     if (!bucketName || !activeProfileId) return null;
     
     const currentFetchId = ++fetchIdRef.current;
-    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}:${sortField}:${sortDirection}`;
+    const currentViewKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix, sortField, sortDirection]);
     const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
     fetchInProgress.current = true;
     setIsLoading(true);
     setError(null);
 
-    const key = `${bucketName}/${prefix}:${sortField}:${sortDirection}`;
+    const key = currentViewKey;
     if (key !== lastDataKeyRef.current) {
         setData(null);
         lastDataKeyRef.current = key;
@@ -103,13 +103,13 @@ export function useObjects(
 
   useEffect(() => {
     let cancelled = false;
-    const currentKey = `${activeProfileId}:${bucketName}:${prefix}:${sortField}:${sortDirection}`;
+    const currentKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix, sortField, sortDirection]);
     
+    viewKeyRef.current = currentKey;
+
     if (loadedViewKeyRef.current === currentKey) {
       return;
     }
-
-    viewKeyRef.current = currentKey;
 
     setData(null);
     setIsLoading(true);
@@ -130,7 +130,7 @@ export function useObjects(
         viewKeyRef.current = '';
       }
     };
-  }, [bucketName, prefix, activeProfileId, sortField, sortDirection, fetchItems]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection, fetchItems]);
 
   useEffect(() => {
     return subscribeCacheInvalidation(() => {
@@ -167,7 +167,7 @@ export function useObjects(
   const loadMore = useCallback(async () => {
     if (!bucketName || !activeProfileId || !continuationToken || isLoadingMore || fetchInProgress.current) return;
     
-    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}:${sortField}:${sortDirection}`;
+    const currentViewKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix, sortField, sortDirection]);
     const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
     const currentFetchId = fetchIdRef.current;
     const requestToken = continuationToken;
