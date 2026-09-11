@@ -53,8 +53,9 @@ jobs:
 
       - name: validate frontend
         run: |
-          pnpm lint
-          pnpm exec tsc --noEmit
+          pnpm test:frontend
+          pnpm lint --max-warnings 0
+          pnpm typecheck
           pnpm build
 
       - name: validate Rust backend

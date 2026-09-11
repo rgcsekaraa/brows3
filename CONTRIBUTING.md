@@ -16,7 +16,7 @@ Brows3 is a **Tauri v2** application with a **Next.js** frontend and a **Rust** 
 
 ### Prerequisites
 
-- **Node.js** (v20 or later) and **pnpm**
+- **Node.js** 22 and **pnpm** 11.2.2
 - **Rust** (stable toolchain)
 - **AWS CLI** (configured with local profiles)
 
@@ -43,6 +43,19 @@ Brows3 is a **Tauri v2** application with a **Next.js** frontend and a **Rust** 
 - `/src` — Next.js frontend (React with MUI).
 - `/src-tauri` — Rust backend, including core logic, the S3 client, and IPC handlers.
 - `/src-tauri/src/s3` — AWS S3 clients, region discovery, and sorted-folder caching.
+
+## Tests
+
+See [Testing](docs/TESTING.md) for the unit, browser smoke, native and optional S3 integration suites.
+
+```bash
+pnpm test
+pnpm typecheck
+pnpm lint --max-warnings 0
+pnpm test:rust
+pnpm exec playwright install chromium webkit
+pnpm test:smoke
+```
 
 ## Contribution Workflow
 
