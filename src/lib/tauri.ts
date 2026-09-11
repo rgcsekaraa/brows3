@@ -255,13 +255,16 @@ export const objectApi = {
     return invoke<string>('get_presigned_url', { bucketName, bucketRegion, key, expiresIn });
   },
 
-  async getObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, maxBytes: number): Promise<string> {
-    return invoke<string>('get_object_content', { bucketName, bucketRegion, key, maxBytes });
+  async getObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, maxBytes: number): Promise<{ content: string; e_tag: string | null; profile_id: string }> {
+    return invoke<{ content: string; e_tag: string | null; profile_id: string }>('get_object_content', { bucketName, bucketRegion, key, maxBytes });
   },
 
-  async putObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, content: string, contentType?: string | null): Promise<void> {
-    await invoke<void>('put_object_content', { bucketName, bucketRegion, key, content, contentType });
-    invalidateCache();
+  async putObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, content: string, expectedEtag: string, expectedProfileId: string): Promise<string | null> {
+    try {
+      return await invoke<string | null>('put_object_content', { bucketName, bucketRegion, key, content, expectedEtag, expectedProfileId });
+    } finally {
+      invalidateCache();
+    }
   },
 
   async getObjectMetadata(bucketName: string, bucketRegion: string | undefined, key: string): Promise<ObjectMetadata> {

@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use tauri::State;
 
-fn validate_operation_profile(expected: Option<&str>, actual: &str) -> Result<()> {
+pub(super) fn validate_operation_profile(expected: Option<&str>, actual: &str) -> Result<()> {
     if expected.is_some_and(|id| id != actual) {
         return Err(crate::error::AppError::ConfigError(
             "The active profile changed. Copy or select the items again.".to_string(),
@@ -1391,6 +1391,141 @@ async fn move_object_with_profile(
     }
 }
 
+pub(super) async fn save_object_text(
+    client: &Client,
+    bucket: &str,
+    key: &str,
+    content: String,
+    expected_etag: &str,
+) -> Result<Option<String>> {
+    let conflict = || {
+        crate::error::AppError::S3Error(
+        "This object has changed since it was opened. Copy your edits, then reopen it before saving.".into()
+    )
+    };
+    if expected_etag.is_empty() {
+        return Err(conflict());
+    }
+    let head = client
+        .head_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .map_err(|error| crate::error::AppError::S3Error(error.to_string()))?;
+    if head.e_tag() != Some(expected_etag) {
+        return Err(conflict());
+    }
+    if head.sse_customer_algorithm().is_some() {
+        return Err(crate::error::AppError::ConfigError(
+            "This object requires a customer encryption key and cannot be edited safely.".into(),
+        ));
+    }
+    let acl = match client
+        .get_object_acl()
+        .bucket(bucket)
+        .key(key)
+        .set_version_id(head.version_id.clone())
+        .send()
+        .await
+    {
+        Ok(output) => Some(copy_acl_headers(&output)?),
+        Err(error)
+            if matches!(
+                classify_acl_error(&error.to_string()),
+                Some(("unsupported", _))
+            ) =>
+        {
+            None
+        }
+        Err(error) => {
+            return Err(crate::error::AppError::S3Error(format!(
+                "Cannot save because the current permissions could not be preserved: {error}"
+            )))
+        }
+    };
+    let tags = match client
+        .get_object_tagging()
+        .bucket(bucket)
+        .key(key)
+        .set_version_id(head.version_id.clone())
+        .send()
+        .await
+    {
+        Ok(output) => encode_object_tags(output.tag_set()),
+        Err(error)
+            if matches!(
+                classify_acl_error(&error.to_string()),
+                Some(("unsupported", _))
+            ) =>
+        {
+            None
+        }
+        Err(error) => {
+            return Err(crate::error::AppError::S3Error(format!(
+                "Cannot save because the current tags could not be preserved: {error}"
+            )))
+        }
+    };
+    let bytes = content.into_bytes();
+    let build_request = |acl: Option<&CopyAclHeaders>| {
+        let mut request = client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .if_match(expected_etag)
+            .body(aws_sdk_s3::primitives::ByteStream::from(bytes.clone()))
+            .set_content_type(head.content_type.clone())
+            .set_cache_control(head.cache_control.clone())
+            .set_content_disposition(head.content_disposition.clone())
+            .set_content_encoding(head.content_encoding.clone())
+            .set_content_language(head.content_language.clone())
+            .set_metadata(head.metadata.clone())
+            .set_website_redirect_location(head.website_redirect_location.clone())
+            .set_storage_class(head.storage_class.clone())
+            .set_server_side_encryption(head.server_side_encryption.clone())
+            .set_ssekms_key_id(head.ssekms_key_id.clone())
+            .set_bucket_key_enabled(head.bucket_key_enabled)
+            .set_object_lock_mode(head.object_lock_mode.clone())
+            .set_object_lock_retain_until_date(head.object_lock_retain_until_date)
+            .set_object_lock_legal_hold_status(head.object_lock_legal_hold_status.clone())
+            .set_tagging(tags.clone());
+        #[allow(deprecated)]
+        {
+            request = request.set_expires(head.expires);
+        }
+        if let Some(acl) = acl {
+            request = request
+                .set_grant_full_control(CopyAclHeaders::joined(&acl.full_control))
+                .set_grant_read(CopyAclHeaders::joined(&acl.read))
+                .set_grant_read_acp(CopyAclHeaders::joined(&acl.read_acp))
+                .set_grant_write_acp(CopyAclHeaders::joined(&acl.write_acp));
+        }
+        request
+    };
+    let mut result = build_request(acl.as_ref()).send().await;
+    if let Err(error) = &result {
+        if acl.is_some()
+            && matches!(
+                classify_acl_error(&error.to_string()),
+                Some(("unsupported", _))
+            )
+        {
+            result = build_request(None).send().await;
+        }
+    }
+    result.map(|output| output.e_tag).map_err(|error| {
+        if error
+            .raw_response()
+            .is_some_and(|response| matches!(response.status().as_u16(), 409 | 412))
+        {
+            conflict()
+        } else {
+            crate::error::AppError::S3Error(format!("Save failed: {error}"))
+        }
+    })
+}
+
 #[tauri::command]
 pub async fn set_object_content_type(
     bucket_name: String,
@@ -2262,5 +2397,99 @@ mod move_profile_tests {
             other.id
         );
         std::fs::remove_dir_all(directory).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod text_save_tests {
+    use super::save_object_text;
+    use crate::commands::test_s3::{response, scripted_client};
+
+    fn head(etag: &str) -> String {
+        response(200, &format!("ETag: {etag}\r\nContent-Type: text/plain\r\nCache-Control: max-age=60\r\nx-amz-meta-owner: brows3\r\nx-amz-version-id: v1\r\n"), "")
+    }
+
+    fn acl() -> String {
+        response(200, "", "<AccessControlPolicy><Owner><ID>owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>owner</ID></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>")
+    }
+
+    fn tags() -> String {
+        response(200, "", "<Tagging><TagSet><Tag><Key>team name</Key><Value>web+docs</Value></Tag></TagSet></Tagging>")
+    }
+
+    #[tokio::test]
+    async fn save_preserves_attributes_and_returns_the_written_etag() {
+        let (client, server) = scripted_client(vec![
+            head("\"old\""),
+            acl(),
+            tags(),
+            response(200, "ETag: \"new\"\r\n", ""),
+        ])
+        .await;
+        assert_eq!(
+            save_object_text(&client, "bucket", "file.txt", "edited".into(), "\"old\"")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("\"new\"")
+        );
+        let requests = server.await.unwrap();
+        assert!(requests[1].contains("versionId=v1"));
+        assert!(requests[2].contains("versionId=v1"));
+        let put = requests[3].to_ascii_lowercase();
+        assert!(put.starts_with("put /bucket/file.txt"));
+        for header in [
+            "if-match: \"old\"",
+            "content-type: text/plain",
+            "cache-control: max-age=60",
+            "x-amz-meta-owner: brows3",
+            "x-amz-grant-full-control: id=\"owner\"",
+            "x-amz-tagging: team%20name=web%2bdocs",
+        ] {
+            assert!(put.contains(header), "Missing {header}: {put}");
+        }
+        assert!(put.contains("edited"));
+    }
+
+    #[tokio::test]
+    async fn changed_objects_are_rejected_before_writing() {
+        let (client, server) = scripted_client(vec![head("\"changed\"")]).await;
+        let error = save_object_text(&client, "bucket", "file.txt", "edited".into(), "\"old\"")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("changed since it was opened"));
+        assert_eq!(server.await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_concurrent_write_is_reported_as_a_conflict() {
+        let (client, server) = scripted_client(vec![
+            head("\"old\""),
+            acl(),
+            tags(),
+            response(412, "", "<Error><Code>PreconditionFailed</Code></Error>"),
+        ])
+        .await;
+        let error = save_object_text(&client, "bucket", "file.txt", "edited".into(), "\"old\"")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("changed since it was opened"));
+        assert_eq!(server.await.unwrap().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn unreadable_permissions_prevent_a_destructive_save() {
+        let (client, server) = scripted_client(vec![
+            head("\"old\""),
+            response(403, "", "<Error><Code>AccessDenied</Code></Error>"),
+        ])
+        .await;
+        let error = save_object_text(&client, "bucket", "file.txt", "edited".into(), "\"old\"")
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("permissions could not be preserved"));
+        assert_eq!(server.await.unwrap().len(), 2);
     }
 }

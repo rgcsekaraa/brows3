@@ -888,6 +888,13 @@ pub async fn get_presigned_url(
     }
 }
 
+#[derive(Serialize)]
+pub struct ObjectText {
+    content: String,
+    e_tag: Option<String>,
+    profile_id: String,
+}
+
 #[tauri::command]
 pub async fn get_object_content(
     bucket_name: String,
@@ -896,7 +903,7 @@ pub async fn get_object_content(
     max_bytes: Option<u64>,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
-) -> Result<String> {
+) -> Result<ObjectText> {
     let max_bytes = normalized_text_preview_limit(max_bytes);
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
@@ -984,6 +991,7 @@ pub async fn get_object_content(
         .try_into()
         .unwrap_or(0);
     let mut bytes = Vec::with_capacity(initial_capacity);
+    let e_tag = response.e_tag.clone();
     let mut body = response.body;
 
     while let Some(chunk) = body
@@ -1003,32 +1011,38 @@ pub async fn get_object_content(
         ));
     }
 
-    String::from_utf8(bytes).map_err(|_| {
+    let content = String::from_utf8(bytes).map_err(|_| {
         crate::error::AppError::InvalidContent(
             "This object is not readable as UTF-8 text. Download it to inspect locally."
                 .to_string(),
         )
+    })?;
+    Ok(ObjectText {
+        content,
+        e_tag,
+        profile_id: active_profile.id,
     })
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn put_object_content(
     bucket_name: String,
     bucket_region: Option<String>,
     key: String,
     content: String,
-    content_type: Option<String>,
+    expected_etag: String,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
-) -> Result<()> {
-    use aws_sdk_s3::primitives::ByteStream;
-
+) -> Result<Option<String>> {
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
         .get_active_profile()
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     let bucket_region = {
         let s3_manager = s3_state.read().await;
@@ -1048,72 +1062,16 @@ pub async fn put_object_content(
         }
     };
 
-    let content_type = match content_type {
-        Some(value) => crate::s3::validate_content_type(&value)?,
-        None => crate::s3::infer_content_type(&key),
-    };
-    let body_bytes = content.into_bytes();
-    let body = ByteStream::from(body_bytes.clone());
-
-    let result = client
-        .put_object()
-        .bucket(&bucket_name)
-        .key(&key)
-        .content_type(&content_type)
-        .body(body)
-        .send()
-        .await;
-
-    match result {
-        Ok(_) => {}
-        Err(err) => {
-            log::warn!(
-                "put_object_content failed, attempting region discovery: {}",
-                err
-            );
-            let detected_region = {
-                let retry_client = {
-                    let mut s3_manager = s3_state.write().await;
-                    s3_manager.get_client(&active_profile).await?.clone()
-                };
-                crate::s3::get_bucket_region(&retry_client, &bucket_name)
-                    .await
-                    .ok()
-            };
-
-            if let Some(new_region) = detected_region {
-                let new_client = {
-                    let mut s3_manager = s3_state.write().await;
-                    s3_manager.set_bucket_region(&bucket_name, new_region.clone());
-                    s3_manager
-                        .get_client_for_region(&active_profile, &new_region)
-                        .await?
-                        .clone()
-                };
-                let retry_body = ByteStream::from(body_bytes);
-                new_client
-                    .put_object()
-                    .bucket(&bucket_name)
-                    .key(&key)
-                    .content_type(&content_type)
-                    .body(retry_body)
-                    .send()
-                    .await
-                    .map_err(|e| {
-                        crate::error::AppError::S3Error(format!("Retry put content failed: {}", e))
-                    })?;
-            } else {
-                return Err(crate::error::AppError::S3Error(err.to_string()));
-            }
-        }
-    }
+    let result =
+        super::operations::save_object_text(&client, &bucket_name, &key, content, &expected_etag)
+            .await;
 
     {
         let mut s3_manager = s3_state.write().await;
         s3_manager.remove_bucket_cache(&active_profile.id, &bucket_name);
     }
 
-    Ok(())
+    result
 }
 
 #[cfg(test)]
