@@ -826,6 +826,113 @@ mod tests {
         assert_eq!(std::fs::read(path).unwrap(), b"done");
     }
 
+    fn test_job(status: TransferStatus) -> TransferJob {
+        let mut job = TransferJob::new(
+            TransferType::Download,
+            "profile-a".into(),
+            "bucket".into(),
+            None,
+            "file.txt".into(),
+            PathBuf::from("file.txt"),
+            10,
+        );
+        job.status = status;
+        job
+    }
+
+    #[tokio::test]
+    async fn cancelling_pending_work_keeps_history_and_removes_it_from_the_queue() {
+        let manager = TransferManager::new();
+        let job = test_job(TransferStatus::Pending);
+        manager.add_job(job.clone()).await;
+        assert!(manager.cancel_job(&job.id).await);
+        assert_eq!(
+            manager.get_job(&job.id).await.unwrap().status,
+            TransferStatus::Cancelled
+        );
+        assert!(!manager.queue.lock().await.contains(&job.id));
+        assert!(!manager.cancel_job(&job.id).await);
+        assert!(!manager.cancel_job("missing").await);
+    }
+
+    #[tokio::test]
+    async fn cancelling_active_downloads_aborts_the_task_and_releases_capacity() {
+        let manager = TransferManager::new();
+        let job = test_job(TransferStatus::InProgress);
+        manager.add_job(job.clone()).await;
+        let slot = manager.acquire_slot().await;
+        let task = tokio::spawn(async move {
+            let _slot = slot;
+            std::future::pending::<()>().await;
+        });
+        manager
+            .abort_handles
+            .write()
+            .await
+            .insert(job.id.clone(), task.abort_handle());
+        assert!(manager.cancel_job(&job.id).await);
+        assert!(tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap_err()
+            .is_cancelled());
+        assert_eq!(
+            manager
+                .active_count
+                .load(std::sync::atomic::Ordering::Acquire),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn clearing_history_retains_pending_and_active_transfers() {
+        let manager = TransferManager::new();
+        let pending = test_job(TransferStatus::Pending);
+        let active = test_job(TransferStatus::InProgress);
+        for job in [
+            pending.clone(),
+            active.clone(),
+            test_job(TransferStatus::Completed),
+            test_job(TransferStatus::Failed("offline".into())),
+            test_job(TransferStatus::Cancelled),
+        ] {
+            manager.add_job(job).await;
+        }
+        assert_eq!(manager.clear_completed().await, 3);
+        let jobs = manager.list_jobs().await;
+        assert_eq!(jobs.len(), 2);
+        assert!(jobs.iter().any(|job| job.id == pending.id));
+        assert!(jobs.iter().any(|job| job.id == active.id));
+        assert_eq!(manager.clear_completed().await, 0);
+    }
+
+    #[tokio::test]
+    async fn retry_refuses_active_and_completed_work() {
+        let manager = TransferManager::new();
+        for status in [
+            TransferStatus::Pending,
+            TransferStatus::InProgress,
+            TransferStatus::Completed,
+        ] {
+            let job = test_job(status);
+            manager.add_job(job.clone()).await;
+            assert!(manager.retry_job(&job.id).await.is_none());
+        }
+        assert!(manager.retry_job("missing").await.is_none());
+        assert_eq!(manager.list_jobs().await.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn removing_pending_work_removes_both_its_queue_entry_and_history() {
+        let manager = TransferManager::new();
+        let job = test_job(TransferStatus::Pending);
+        manager.add_job(job.clone()).await;
+        assert!(manager.remove_job(&job.id).await);
+        assert!(manager.get_job(&job.id).await.is_none());
+        assert!(!manager.queue.lock().await.contains(&job.id));
+        assert!(!manager.remove_job(&job.id).await);
+    }
+
     #[tokio::test]
     async fn transfer_slots_follow_concurrency_changes_without_stalling() {
         let manager = TransferManager::new();

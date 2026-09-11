@@ -2379,6 +2379,23 @@ mod operation_profile_tests {
     use super::validate_operation_profile;
 
     #[test]
+    fn recursive_targets_cannot_point_inside_the_source_folder() {
+        for destination in ["folder", "folder/", "folder/nested", "folder/nested/"] {
+            assert!(
+                super::validate_folder_target("bucket", "folder/", "bucket", destination).is_err()
+            );
+        }
+        for (bucket, key) in [
+            ("other", "folder/nested/"),
+            ("bucket", "folder-copy/"),
+            ("bucket", "sibling/"),
+        ] {
+            assert!(super::validate_folder_target("bucket", "folder/", bucket, key).is_ok());
+        }
+        assert!(super::validate_folder_target("bucket", "file", "bucket", "file-copy").is_ok());
+    }
+
+    #[test]
     fn rejects_operations_from_a_different_profile() {
         assert!(validate_operation_profile(Some("profile-a"), "profile-b").is_err());
         assert!(validate_operation_profile(Some("profile-a"), "profile-a").is_ok());
