@@ -247,6 +247,30 @@ async fn multipart_copy_content_type(
     head: &aws_sdk_s3::operation::head_object::HeadObjectOutput,
     acl_headers: Option<&CopyAclHeaders>,
 ) -> Result<()> {
+    multipart_copy_object(
+        (client, bucket_name, key),
+        (client, bucket_name, key),
+        content_type,
+        head,
+        acl_headers,
+    )
+    .await
+}
+
+async fn multipart_copy_object(
+    source: (&Client, &str, &str),
+    destination: (&Client, &str, &str),
+    content_type: &str,
+    head: &aws_sdk_s3::operation::head_object::HeadObjectOutput,
+    acl_headers: Option<&CopyAclHeaders>,
+) -> Result<()> {
+    let (source_client, source_bucket, source_key) = source;
+    let (client, bucket_name, key) = destination;
+    if head.e_tag().is_none() {
+        return Err(crate::error::AppError::S3Error(
+            "Cannot safely copy an object without an ETag".into(),
+        ));
+    }
     let object_size = head
         .content_length()
         .and_then(|value| u64::try_from(value).ok())
@@ -255,11 +279,11 @@ async fn multipart_copy_content_type(
                 "S3 returned an invalid size for s3://{bucket_name}/{key}"
             ))
         })?;
-    let copy_source = copy_source(bucket_name, key, head.version_id());
-    let tag_output = match client
+    let copy_source = copy_source(source_bucket, source_key, head.version_id());
+    let tag_output = match source_client
         .get_object_tagging()
-        .bucket(bucket_name)
-        .key(key)
+        .bucket(source_bucket)
+        .key(source_key)
         .set_version_id(head.version_id.clone())
         .send()
         .await
@@ -271,7 +295,7 @@ async fn multipart_copy_content_type(
                 None
             } else {
                 return Err(crate::error::AppError::S3Error(format!(
-                    "Cannot safely update Content-Type because the object's tags could not be read and preserved: {error_string}"
+                    "Cannot safely copy the object because the object's tags could not be read and preserved: {error_string}"
                 )));
             }
         }
@@ -327,19 +351,19 @@ async fn multipart_copy_content_type(
             {
                 build_create_request(None).send().await.map_err(|retry_error| {
                     crate::error::AppError::S3Error(format!(
-                        "Could not start multipart Content-Type copy after retrying without ACL headers: {retry_error}"
+                        "Could not start multipart object copy after retrying without ACL headers: {retry_error}"
                     ))
                 })?
             } else {
                 return Err(crate::error::AppError::S3Error(format!(
-                    "Could not start multipart Content-Type copy: {error_string}"
+                    "Could not start multipart object copy: {error_string}"
                 )));
             }
         }
     };
     let upload_id = created.upload_id().ok_or_else(|| {
         crate::error::AppError::S3Error(format!(
-            "S3 did not return an upload ID while updating Content-Type for s3://{bucket_name}/{key}"
+            "S3 did not return an upload ID while copying the object for s3://{bucket_name}/{key}"
         ))
     })?;
     let mut guard = crate::s3::MultipartUploadGuard::new(
@@ -366,7 +390,7 @@ async fn multipart_copy_content_type(
                 .await
                 .map_err(|error| {
                     crate::error::AppError::S3Error(format!(
-                        "Multipart Content-Type copy failed at part {} of {} for s3://{bucket_name}/{key}: {error}",
+                        "Multipart object copy failed at part {} of {} for s3://{bucket_name}/{key}: {error}",
                         part.number,
                         plan.parts.len()
                     ))
@@ -402,7 +426,7 @@ async fn multipart_copy_content_type(
             .await
             .map_err(|error| {
                 crate::error::AppError::S3Error(format!(
-                    "Could not complete multipart Content-Type copy for s3://{bucket_name}/{key}: {error}"
+                    "Could not complete multipart object copy for s3://{bucket_name}/{key}: {error}"
                 ))
             })?;
 
@@ -904,6 +928,7 @@ async fn copy_object_with_profile(
             // Perform the copy using internal helper (non-recursive single file copy)
             copy_single_object(
                 &source_bucket,
+                source_region.clone(),
                 key,
                 &destination_bucket,
                 destination_region.clone(),
@@ -941,6 +966,7 @@ async fn copy_object_with_profile(
         // Single file copy
         copy_single_object(
             &source_bucket,
+            source_region.clone(),
             &source_key,
             &destination_bucket,
             destination_region,
@@ -955,8 +981,10 @@ async fn copy_object_with_profile(
 }
 
 /// Internal helper for copying a single object (non-recursive)
+#[allow(clippy::too_many_arguments)]
 async fn copy_single_object(
     source_bucket: &str,
+    source_region: Option<String>,
     source_key: &str,
     destination_bucket: &str,
     destination_region: Option<String>,
@@ -984,18 +1012,31 @@ async fn copy_single_object(
         }
     };
 
-    // Copy source must be URL encoded
-    let key_encoded = urlencoding::encode(source_key).into_owned();
-    let final_source = format!("{}/{}", source_bucket, key_encoded);
-
-    client
-        .copy_object()
-        .bucket(destination_bucket)
-        .key(destination_key)
-        .copy_source(final_source)
+    let source_client = {
+        let mut manager = s3_state.write().await;
+        let region = manager.get_bucket_region(source_bucket).or(source_region);
+        if let Some(region) = region {
+            manager
+                .get_client_for_region(active_profile, &region)
+                .await?
+                .clone()
+        } else {
+            manager.get_client(active_profile).await?.clone()
+        }
+    };
+    let head = source_client
+        .head_object()
+        .bucket(source_bucket)
+        .key(source_key)
         .send()
         .await
-        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+        .map_err(|error| crate::error::AppError::S3Error(error.to_string()))?;
+    copy_object_from_head(
+        (&source_client, source_bucket, source_key),
+        (&client, destination_bucket, destination_key),
+        &head,
+    )
+    .await?;
 
     {
         let mut s3_manager = s3_state.write().await;
@@ -1003,6 +1044,41 @@ async fn copy_single_object(
     }
 
     Ok(())
+}
+
+async fn copy_object_from_head(
+    source: (&Client, &str, &str),
+    destination: (&Client, &str, &str),
+    head: &aws_sdk_s3::operation::head_object::HeadObjectOutput,
+) -> Result<()> {
+    let size = head
+        .content_length()
+        .and_then(|value| u64::try_from(value).ok())
+        .ok_or_else(|| {
+            crate::error::AppError::S3Error("S3 did not return a valid object size".into())
+        })?;
+    if size > 5 * 1024 * 1024 * 1024 {
+        multipart_copy_object(
+            source,
+            destination,
+            head.content_type().unwrap_or("application/octet-stream"),
+            head,
+            None,
+        )
+        .await
+    } else {
+        destination
+            .0
+            .copy_object()
+            .bucket(destination.1)
+            .key(destination.2)
+            .copy_source(copy_source(source.1, source.2, head.version_id()))
+            .set_copy_source_if_match(head.e_tag.clone())
+            .send()
+            .await
+            .map_err(|error| crate::error::AppError::S3Error(error.to_string()))?;
+        Ok(())
+    }
 }
 
 fn build_delete_request(chunk: &[String]) -> Result<Delete> {
@@ -1324,6 +1400,7 @@ async fn move_object_with_profile(
             if key == &source_key {
                 copy_single_object(
                     &source_bucket,
+                    source_region.clone(),
                     key,
                     &destination_bucket,
                     destination_region.clone(),
@@ -1338,6 +1415,7 @@ async fn move_object_with_profile(
 
                 copy_single_object(
                     &source_bucket,
+                    source_region.clone(),
                     key,
                     &destination_bucket,
                     destination_region.clone(),
@@ -2333,7 +2411,7 @@ mod move_profile_tests {
         let other_id = other.id.clone();
         let server = tokio::spawn(async move {
             let mut requests = Vec::new();
-            for index in 0..2 {
+            for index in 0..3 {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 let mut request = Vec::new();
                 let mut byte = [0];
@@ -2342,7 +2420,7 @@ mod move_profile_tests {
                     request.push(byte[0]);
                 }
                 requests.push(String::from_utf8(request).unwrap());
-                let body = if index == 0 {
+                let body = if index == 1 {
                     server_profiles
                         .write()
                         .await
@@ -2380,8 +2458,9 @@ mod move_profile_tests {
         .unwrap()
         .unwrap();
         let requests = server.await.unwrap();
-        assert!(requests[0].starts_with("PUT /bucket/dest.txt"));
-        assert!(requests[1].starts_with("DELETE /bucket/source.txt"));
+        assert!(requests[0].starts_with("HEAD /bucket/source.txt"));
+        assert!(requests[1].starts_with("PUT /bucket/dest.txt"));
+        assert!(requests[2].starts_with("DELETE /bucket/source.txt"));
         assert!(requests
             .iter()
             .all(|request| request.contains("Credential=TEST-A/")));
@@ -2491,5 +2570,124 @@ mod text_save_tests {
             .to_string()
             .contains("permissions could not be preserved"));
         assert_eq!(server.await.unwrap().len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod large_copy_tests {
+    use super::copy_object_from_head;
+    use crate::commands::test_s3::{response, scripted_client};
+    use aws_sdk_s3::operation::head_object::HeadObjectOutput;
+
+    const LARGE_SIZE: u64 = 5 * 1024 * 1024 * 1024 + 1;
+
+    fn head(size: u64) -> HeadObjectOutput {
+        HeadObjectOutput::builder()
+            .content_length(size as i64)
+            .e_tag("\"source\"")
+            .version_id("v1")
+            .content_type("text/plain")
+            .cache_control("max-age=60")
+            .metadata("owner", "brows3")
+            .build()
+    }
+
+    fn start_responses() -> Vec<String> {
+        vec![
+            response(200, "", "<Tagging><TagSet><Tag><Key>team</Key><Value>docs</Value></Tag></TagSet></Tagging>"),
+            response(200, "", "<InitiateMultipartUploadResult><UploadId>upload</UploadId></InitiateMultipartUploadResult>"),
+        ]
+    }
+
+    #[tokio::test]
+    async fn large_copy_uses_contiguous_parts_and_preserves_metadata() {
+        let plan = crate::s3::plan_multipart_upload(LARGE_SIZE).unwrap();
+        let mut responses = start_responses();
+        responses.extend(plan.parts.iter().map(|_| {
+            response(
+                200,
+                "",
+                "<CopyPartResult><ETag>&quot;part&quot;</ETag></CopyPartResult>",
+            )
+        }));
+        responses.push(response(200, "", "<CompleteMultipartUploadResult><ETag>&quot;complete&quot;</ETag></CompleteMultipartUploadResult>"));
+        let (client, server) = scripted_client(responses).await;
+        copy_object_from_head(
+            (&client, "source", "original.txt"),
+            (&client, "destination", "renamed.txt"),
+            &head(LARGE_SIZE),
+        )
+        .await
+        .unwrap();
+        let requests = server.await.unwrap();
+        assert!(requests[0].starts_with("GET /source/original.txt?tagging"));
+        assert!(requests[0].contains("versionId=v1"));
+        assert!(requests[1].starts_with("POST /destination/renamed.txt?uploads"));
+        for header in [
+            "content-type: text/plain",
+            "cache-control: max-age=60",
+            "x-amz-meta-owner: brows3",
+            "x-amz-tagging: team=docs",
+        ] {
+            assert!(requests[1].contains(header));
+        }
+        for (request, part) in requests[2..requests.len() - 1].iter().zip(plan.parts) {
+            assert!(request.starts_with("PUT /destination/renamed.txt?"));
+            assert!(request.contains("x-amz-copy-source: source/original.txt?versionId=v1"));
+            assert!(request.contains("x-amz-copy-source-if-match: \"source\""));
+            assert!(request.contains(&format!(
+                "x-amz-copy-source-range: bytes={}-{}",
+                part.offset,
+                part.offset + part.length - 1
+            )));
+        }
+        assert!(requests
+            .last()
+            .unwrap()
+            .starts_with("POST /destination/renamed.txt?uploadId=upload"));
+    }
+
+    #[tokio::test]
+    async fn failed_large_copy_aborts_without_completing_or_deleting_the_source() {
+        let mut responses = start_responses();
+        responses.push(response(
+            412,
+            "",
+            "<Error><Code>PreconditionFailed</Code></Error>",
+        ));
+        responses.push(response(204, "", ""));
+        let (client, server) = scripted_client(responses).await;
+        assert!(copy_object_from_head(
+            (&client, "source", "original.txt"),
+            (&client, "destination", "renamed.txt"),
+            &head(LARGE_SIZE)
+        )
+        .await
+        .is_err());
+        let requests = server.await.unwrap();
+        assert_eq!(requests.len(), 4);
+        assert!(requests[3].starts_with("DELETE /destination/renamed.txt?"));
+        assert!(requests[3].contains("uploadId=upload"));
+    }
+
+    #[tokio::test]
+    async fn objects_at_the_single_copy_limit_keep_using_copy_object() {
+        let (client, server) = scripted_client(vec![response(
+            200,
+            "",
+            "<CopyObjectResult><ETag>&quot;copy&quot;</ETag></CopyObjectResult>",
+        )])
+        .await;
+        copy_object_from_head(
+            (&client, "source", "original.txt"),
+            (&client, "destination", "renamed.txt"),
+            &head(LARGE_SIZE - 1),
+        )
+        .await
+        .unwrap();
+        let requests = server.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].starts_with("PUT /destination/renamed.txt"));
+        assert!(requests[0].contains("x-amz-copy-source: source/original.txt?versionId=v1"));
     }
 }
