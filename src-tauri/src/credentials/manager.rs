@@ -202,30 +202,9 @@ impl ProfileManager {
 
     fn save(&self) -> Result<()> {
         let profiles_path = self.config_dir.join(PROFILES_FILE);
-        let temp_path = profiles_path.with_extension("tmp");
-
         log::info!("Saving profiles atomically to {:?}", profiles_path);
-
-        // 1. Write to temp file
         let content = serde_json::to_string_pretty(&self.data)?;
-        std::fs::write(&temp_path, content)?;
-
-        #[cfg(unix)]
-        {
-            // On Unix, rename replaces the destination atomically.
-            std::fs::rename(&temp_path, &profiles_path)?;
-        }
-
-        #[cfg(windows)]
-        {
-            // Windows rename does not replace an existing destination file.
-            if profiles_path.exists() {
-                std::fs::remove_file(&profiles_path)?;
-            }
-            std::fs::rename(&temp_path, &profiles_path)?;
-        }
-
-        Ok(())
+        super::write_private_file(&profiles_path, content.as_bytes())
     }
 
     pub async fn list_profiles(&self) -> Result<Vec<Profile>> {

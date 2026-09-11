@@ -10,6 +10,21 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tokio::sync::RwLock;
 
+pub(crate) fn write_private_file(path: &std::path::Path, content: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .ok_or_else(|| crate::error::AppError::IoError("Missing storage directory".to_string()))?;
+    std::fs::create_dir_all(parent)?;
+    let mut replacement = tempfile::NamedTempFile::new_in(parent)?;
+    replacement.write_all(content)?;
+    replacement.as_file().sync_all()?;
+    replacement
+        .persist(path)
+        .map_err(|error| crate::error::AppError::IoError(error.error.to_string()))?;
+    Ok(())
+}
+
 fn portable_data_dir() -> Option<PathBuf> {
     let env_portable = std::env::var("BROWS3_PORTABLE")
         .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
