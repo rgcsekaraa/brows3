@@ -37,25 +37,29 @@ export function useObjects(
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [cacheRevision, setCacheRevision] = useState(0);
   
   const fetchIdRef = useRef(0);
   const lastDataKeyRef = useRef<string>('');
   const viewKeyRef = useRef<string>('');
   const loadedViewKeyRef = useRef<string>('');
   const fetchInProgress = useRef(false);
+  const loadMoreRequest = useRef<object | null>(null);
 
   // Core fetch function
   const fetchItems = useCallback(async (bypassCache = false) => {
     if (!bucketName || !activeProfileId) return null;
     
     const currentFetchId = ++fetchIdRef.current;
-    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}:${sortField}:${sortDirection}`;
+    loadMoreRequest.current = null;
+    setIsLoadingMore(false);
+    const currentViewKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix, sortField, sortDirection]);
     const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
     fetchInProgress.current = true;
     setIsLoading(true);
     setError(null);
 
-    const key = `${bucketName}/${prefix}:${sortField}:${sortDirection}`;
+    const key = currentViewKey;
     if (key !== lastDataKeyRef.current) {
         setData(null);
         lastDataKeyRef.current = key;
@@ -103,13 +107,13 @@ export function useObjects(
 
   useEffect(() => {
     let cancelled = false;
-    const currentKey = `${activeProfileId}:${bucketName}:${prefix}:${sortField}:${sortDirection}`;
+    const currentKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix, sortField, sortDirection]);
     
+    viewKeyRef.current = currentKey;
+
     if (loadedViewKeyRef.current === currentKey) {
       return;
     }
-
-    viewKeyRef.current = currentKey;
 
     setData(null);
     setIsLoading(true);
@@ -130,15 +134,18 @@ export function useObjects(
         viewKeyRef.current = '';
       }
     };
-  }, [bucketName, prefix, activeProfileId, sortField, sortDirection, fetchItems]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection, fetchItems, cacheRevision]);
 
   useEffect(() => {
     return subscribeCacheInvalidation(() => {
+      fetchIdRef.current += 1;
+      fetchInProgress.current = false;
       loadedViewKeyRef.current = '';
       lastDataKeyRef.current = '';
       setData(null);
       setContinuationToken(null);
       setHasMore(false);
+      setCacheRevision(revision => revision + 1);
     });
   }, []);
 
@@ -165,13 +172,16 @@ export function useObjects(
   }, [bucketName, activeProfileId, fetchItems, autoRefreshOnFocus]);
 
   const loadMore = useCallback(async () => {
-    if (!bucketName || !activeProfileId || !continuationToken || isLoadingMore || fetchInProgress.current) return;
+    if (!bucketName || !activeProfileId || !continuationToken || loadMoreRequest.current || fetchInProgress.current) return;
     
-    const currentViewKey = `${activeProfileId}:${bucketName}:${prefix}:${sortField}:${sortDirection}`;
+    const currentViewKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix, sortField, sortDirection]);
     const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
     const currentFetchId = fetchIdRef.current;
     const requestToken = continuationToken;
+    const request = {};
+    loadMoreRequest.current = request;
     setIsLoadingMore(true);
+    setError(null);
     try {
        const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', requestToken, false, sortField, sortDirection);
        if (currentViewKey !== viewKeyRef.current || currentFetchId !== fetchIdRef.current) {
@@ -190,11 +200,17 @@ export function useObjects(
        setContinuationToken(result.next_continuation_token || null);
        setHasMore(!!result.next_continuation_token);
     } catch (err) {
+       if (currentViewKey === viewKeyRef.current && currentFetchId === fetchIdRef.current) {
+         setError(err instanceof Error ? err.message : String(err));
+       }
        console.error('Load more error:', err);
     } finally {
-       setIsLoadingMore(false);
+       if (loadMoreRequest.current === request) {
+         loadMoreRequest.current = null;
+         setIsLoadingMore(false);
+       }
     }
-  }, [bucketName, bucketRegion, prefix, activeProfileId, continuationToken, isLoadingMore, sortField, sortDirection]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, continuationToken, sortField, sortDirection]);
 
   const refresh = useCallback(async () => {
     if (!bucketName || !activeProfileId) return;

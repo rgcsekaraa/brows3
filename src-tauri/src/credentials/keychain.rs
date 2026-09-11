@@ -63,21 +63,8 @@ impl KeychainStorage {
     }
 
     fn write_fallback_secrets(&self, data: &SecretsData) -> Result<()> {
-        if let Some(parent) = self.fallback_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
         let content = serde_json::to_string_pretty(data)?;
-        fs::write(&self.fallback_path, content)?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let permissions = fs::Permissions::from_mode(0o600);
-            let _ = fs::set_permissions(&self.fallback_path, permissions);
-        }
-
-        Ok(())
+        super::write_private_file(&self.fallback_path, content.as_bytes())
     }
 
     fn store_fallback(&self, key: &str, secret: &str) -> Result<()> {
@@ -165,8 +152,7 @@ impl KeychainStorage {
     /// Delete a secret from the OS keychain
     pub fn delete(&self, key: &str) -> Result<()> {
         if self.force_fallback {
-            let _ = self.delete_fallback(key);
-            return Ok(());
+            return self.delete_fallback(key);
         }
 
         let entry = self.get_entry(key)?;
@@ -181,8 +167,7 @@ impl KeychainStorage {
         if let Ok(legacy_entry) = self.get_legacy_linux_entry(key) {
             let _ = legacy_entry.delete_credential();
         }
-        let _ = self.delete_fallback(key);
-        Ok(())
+        self.delete_fallback(key)
     }
 
     /// Check if a secret exists in the keychain
@@ -194,6 +179,47 @@ impl KeychainStorage {
 #[cfg(test)]
 mod tests {
     use super::KeychainStorage;
+
+    #[test]
+    fn fallback_replacement_keeps_other_secrets_and_reports_corrupt_storage() {
+        let directory = tempfile::tempdir().unwrap();
+        let storage = KeychainStorage::new("test", directory.path(), true);
+        storage.store("first", "first-secret").unwrap();
+        storage.store("second", "second-secret").unwrap();
+        assert_eq!(storage.get("first").unwrap(), "first-secret");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&storage.fallback_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+        std::fs::write(&storage.fallback_path, "{invalid").unwrap();
+        assert!(storage.delete("first").is_err());
+        assert_eq!(
+            std::fs::read_to_string(&storage.fallback_path).unwrap(),
+            "{invalid"
+        );
+    }
+
+    #[test]
+    fn failed_private_file_replacement_preserves_the_destination() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("existing");
+        std::fs::create_dir(&destination).unwrap();
+        std::fs::write(destination.join("keep"), "original").unwrap();
+        assert!(crate::credentials::write_private_file(&destination, b"replacement").is_err());
+        assert_eq!(
+            std::fs::read_to_string(destination.join("keep")).unwrap(),
+            "original"
+        );
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
 
     #[test]
     fn forced_fallback_stores_reads_and_deletes_secret() {

@@ -12,9 +12,11 @@ import {
   Skeleton,
   Tooltip,
   Button,
+  IconButton,
 } from '@mui/material';
 import {
   Star as StarIcon,
+  StarBorder as StarBorderIcon,
   CloudUpload as UploadIcon,
   CloudDownload as DownloadIcon,
   Settings as SettingsIcon,
@@ -29,6 +31,7 @@ import { useState } from 'react';
 import { useProfileStore } from '@/store/profileStore';
 import { useBuckets } from '@/hooks/useBuckets';
 import { useAppStore } from '@/store/appStore';
+import { useHistoryStore } from '@/store/historyStore';
 
 const navItems = [
   { label: 'Home', icon: <HomeIcon />, path: '/' },
@@ -49,6 +52,7 @@ export default function Sidebar() {
   const { activeProfileId, profiles } = useProfileStore();
   const { buckets, isLoading, fetchBuckets } = useBuckets({ enabled: !!activeProfileId });
   const { addTab } = useAppStore();
+  const { addFavorite, removeFavorite, isFavorite } = useHistoryStore();
 
   // Check if any profiles exist - this gates most UI
   const hasProfiles = profiles.length > 0;
@@ -60,6 +64,22 @@ export default function Sidebar() {
     const path = `/bucket?name=${bucketName}&region=${region}`;
     addTab({ title: bucketName, path, icon: 'bucket' });
     router.push(path);
+  };
+
+  const handleBucketFavorite = (bucketName: string, region: string) => {
+    if (!activeProfileId) return;
+    if (isFavorite('', bucketName, activeProfileId)) {
+      removeFavorite('', bucketName, activeProfileId);
+      return;
+    }
+    addFavorite({
+      key: '',
+      name: bucketName,
+      bucket: bucketName,
+      region,
+      profileId: activeProfileId,
+      isFolder: true,
+    });
   };
 
   const handleNavClick = (item: typeof navItems[0]) => {
@@ -167,7 +187,7 @@ export default function Sidebar() {
                   <ListItemButton 
                       onClick={() => handleBucketClick(bucket.name, bucket.region || 'us-east-1')}
                       selected={pathname === '/bucket' && activeBucketName === bucket.name}
-                      sx={{ mx: 1, my: 0.2 }}
+                      sx={{ mx: 1, my: 0.2, minWidth: 0, flex: 1 }}
                   >
                     <ListItemIcon sx={{ minWidth: 32 }}>
                       <StorageIcon fontSize="small" sx={{ color: 'primary.main', opacity: 0.8 }} />
@@ -182,6 +202,23 @@ export default function Sidebar() {
                       }} 
                     />
                   </ListItemButton>
+                  <Tooltip title={isFavorite('', bucket.name, activeProfileId) ? 'Remove from Favorites' : 'Add bucket root to Favorites'}>
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      aria-pressed={isFavorite('', bucket.name, activeProfileId)}
+                      aria-label={isFavorite('', bucket.name, activeProfileId) ? `Remove ${bucket.name} from Favorites` : `Add ${bucket.name} to Favorites`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleBucketFavorite(bucket.name, bucket.region || 'us-east-1');
+                      }}
+                      sx={{ mr: 0.5 }}
+                    >
+                      {isFavorite('', bucket.name, activeProfileId)
+                        ? <StarIcon fontSize="small" color="warning" />
+                        : <StarBorderIcon fontSize="small" />}
+                    </IconButton>
+                  </Tooltip>
                 </ListItem>
               ))
             ) : (

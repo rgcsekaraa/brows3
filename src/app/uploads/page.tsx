@@ -69,7 +69,7 @@ const formatDuration = (ms: number): string => {
 };
 
 // Get status info
-const getStatusInfo = (status: TransferJob['status']): { label: string; color: StatusColor; icon?: React.ReactElement } => {
+const getStatusInfo = (status: TransferJob['status']): { label: string; color: StatusColor; icon?: React.ReactElement; detail?: string } => {
   if (status === 'Completed') {
     return { label: 'Completed', color: 'success', icon: <CheckCircleIcon fontSize="small" /> };
   }
@@ -80,7 +80,7 @@ const getStatusInfo = (status: TransferJob['status']): { label: string; color: S
     return { label: 'Pending', color: 'default', icon: <ScheduleIcon fontSize="small" /> };
   }
   if (typeof status === 'object' && 'Failed' in status) {
-    return { label: 'Failed', color: 'error', icon: <ErrorIcon fontSize="small" /> };
+    return { label: 'Failed', color: 'error', icon: <ErrorIcon fontSize="small" />, detail: status.Failed };
   }
   if (status === 'Cancelled') {
     return { label: 'Cancelled', color: 'default', icon: <CancelIcon fontSize="small" /> };
@@ -298,14 +298,16 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
     return (
         <TableRow sx={{ '&:last-child td, &:last-child th': { border: 0 }, bgcolor: isNested ? 'action.hover' : 'inherit' }}>
             <TableCell component="th" scope="row">
-                 <Chip 
-                    icon={status.icon}
-                    label={status.label}
-                    size="small"
-                    color={status.color}
-                    variant="outlined"
-                    sx={{ borderRadius: 1, height: 24 }}
-                />
+                 <Tooltip title={status.detail || ''}>
+                     <Chip
+                        icon={status.icon}
+                        label={status.label}
+                        size="small"
+                        color={status.color}
+                        variant="outlined"
+                        sx={{ borderRadius: 1, height: 24 }}
+                    />
+                 </Tooltip>
             </TableCell>
             <TableCell sx={{ pl: isNested ? 10 : 2 }}>
                 <Box sx={{ overflow: 'hidden' }}>
@@ -313,6 +315,7 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                         <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>{job.key.split('/').pop()}</Typography>
                     </Tooltip>
                     {!isNested && <Typography variant="caption" color="text.secondary" noWrap display="block">{job.bucket}</Typography>}
+                    {status.detail && <Typography variant="caption" color="error" display="block" sx={{ overflowWrap: 'anywhere', maxWidth: 360 }}>{status.detail}</Typography>}
                 </Box>
             </TableCell>
             <TableCell>{formatBytes(displayBytes)}</TableCell>

@@ -51,6 +51,7 @@ export default function ObjectPreviewDialog({
   const [presignedUrl, setPresignedUrl] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(startInEditMode);
   const [isSaving, setIsSaving] = useState(false);
+  const [textIdentity, setTextIdentity] = useState<{ etag: string | null; profileId: string } | null>(null);
   const [isImageRendering, setIsImageRendering] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
@@ -85,6 +86,7 @@ export default function ObjectPreviewDialog({
       setIsLoading(true);
       setError(null);
       setContent('');
+      setTextIdentity(null);
       setEditedContent('');
       setContentType(null);
       setPresignedUrl(null);
@@ -158,8 +160,9 @@ export default function ObjectPreviewDialog({
           
           // Even if empty, it's valid content
           if (!cancelled && requestId === loadRequestIdRef.current) {
-            setContent(textContent || '');
-            setEditedContent(textContent || '');
+            setContent(textContent.content);
+            setEditedContent(textContent.content);
+            setTextIdentity({ etag: textContent.e_tag, profileId: textContent.profile_id });
           }
         } else {
           setError('This object is not previewable in the app. Please download it to inspect locally.');
@@ -197,13 +200,16 @@ export default function ObjectPreviewDialog({
   }, [open, objectKey, bucketName, bucketRegion, objectSize, startInEditMode, filename, maxTextPreviewSizeMb]);
 
   const handleSave = async () => {
-    if (!isEditing) return;
+    if (!isEditing || isSaving || !textIdentity?.etag) return;
+    const requestId = loadRequestIdRef.current;
 
     setIsSaving(true);
     setError(null);
 
     try {
-      await objectApi.putObjectContent(bucketName, bucketRegion, objectKey, editedContent, contentType);
+      const etag = await objectApi.putObjectContent(bucketName, bucketRegion, objectKey, editedContent, textIdentity.etag, textIdentity.profileId);
+      if (requestId !== loadRequestIdRef.current) return;
+      setTextIdentity({ ...textIdentity, etag });
       setContent(editedContent);
       // Reset version tracking - current state is now the new baseline
       if (editorRef.current) {
@@ -217,7 +223,9 @@ export default function ObjectPreviewDialog({
       toast.success('File Saved', `${filename} saved successfully`);
       onSave?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
+      if (requestId === loadRequestIdRef.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setIsSaving(false);
     }
@@ -320,6 +328,7 @@ export default function ObjectPreviewDialog({
               ) : (
                 <>
                   <Button 
+                    disabled={isSaving}
                     onClick={() => { setIsEditing(false); setEditedContent(content); }} 
                     sx={{ color: theme.palette.text.secondary, fontWeight: 600 }}
                   >
@@ -329,7 +338,7 @@ export default function ObjectPreviewDialog({
                     startIcon={<SaveIcon />} 
                     onClick={handleSave} 
                     variant="contained" 
-                    disabled={isSaving || !hasChanges}
+                    disabled={isSaving || !hasChanges || !textIdentity?.etag}
                     sx={{
                       // Visual feedback: dim when no changes
                       opacity: !hasChanges ? 0.6 : 1,
@@ -358,7 +367,11 @@ export default function ObjectPreviewDialog({
           </Box>
         )}
 
-        {!isLoading && !error && (
+        {!isLoading && isText && textIdentity && !textIdentity.etag && (
+          <Alert severity="warning">This provider did not return an ETag. Download or copy the text to edit it safely.</Alert>
+        )}
+
+        {!isLoading && (!error || textIdentity) && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Image Preview */}
             {isImageFile && presignedUrl && (
@@ -440,7 +453,7 @@ export default function ObjectPreviewDialog({
                     defaultLanguage={getEditorLanguage(filename, contentType)}
                     value={isEditing ? editedContent : content}
                     options={{ 
-                        readOnly: !isEditing, 
+                        readOnly: !isEditing || isSaving,
                         minimap: { enabled: true },
                         scrollBeyondLastLine: false,
                         fontSize: 14,

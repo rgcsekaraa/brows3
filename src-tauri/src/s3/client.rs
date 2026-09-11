@@ -42,9 +42,10 @@ fn build_s3_config(sdk_config: &aws_config::SdkConfig, profile: &Profile) -> aws
     {
         builder = builder
             .force_path_style(true)
-            .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
             .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
     }
+
+    builder = builder.request_checksum_calculation(RequestChecksumCalculation::WhenRequired);
 
     builder.build()
 }
@@ -137,6 +138,7 @@ pub struct S3Object {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FolderContent {
+    pub generation: String,
     pub objects: Vec<S3Object>,
     pub common_prefixes: Vec<String>,
 }
@@ -509,6 +511,27 @@ mod tests {
     }
 
     #[test]
+    fn aws_upload_compatibility_preserves_download_checksum_validation() {
+        let config = SdkConfig::builder()
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .response_checksum_validation(
+                aws_sdk_s3::config::ResponseChecksumValidation::WhenSupported,
+            )
+            .build();
+        let profile = Profile::new("AWS".into(), CredentialType::Environment, None);
+        let result = build_s3_config(&config, &profile);
+        assert_eq!(
+            result.request_checksum_calculation(),
+            Some(&aws_sdk_s3::config::RequestChecksumCalculation::WhenRequired)
+        );
+        assert_eq!(
+            result.response_checksum_validation(),
+            Some(&aws_sdk_s3::config::ResponseChecksumValidation::WhenSupported)
+        );
+    }
+
+    #[test]
     fn sorted_folder_cache_evicts_the_oldest_entry_at_its_limit() {
         let mut manager = S3ClientManager::new();
 
@@ -527,6 +550,7 @@ mod tests {
                         storage_class: None,
                     }],
                     common_prefixes: Vec::new(),
+                    generation: index.to_string(),
                 },
             );
         }

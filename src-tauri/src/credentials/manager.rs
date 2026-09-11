@@ -90,7 +90,24 @@ impl ProfileManager {
                     d
                 }
                 Err(e) => {
-                    log::error!("Failed to parse profiles.json: {}. Starting fresh.", e);
+                    use std::io::Write;
+                    let backup_path =
+                        config_dir.join(format!("profiles.invalid-{}.json", Uuid::new_v4()));
+                    let mut options = std::fs::OpenOptions::new();
+                    options.write(true).create_new(true);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::OpenOptionsExt;
+                        options.mode(0o600);
+                    }
+                    let mut backup = options.open(&backup_path)?;
+                    backup.write_all(content.as_bytes())?;
+                    backup.sync_all()?;
+                    log::error!(
+                        "Failed to parse profiles.json: {}. Original saved to {:?}.",
+                        e,
+                        backup_path
+                    );
                     ProfilesData::default()
                 }
             }
@@ -109,11 +126,9 @@ impl ProfileManager {
     }
 
     fn load_profiles_data(content: &str) -> std::result::Result<ProfilesData, serde_json::Error> {
-        if let Ok(data) = serde_json::from_str::<ProfilesData>(content) {
-            return Ok(Self::normalize_profiles_data(data));
-        }
-
-        if let Ok(profiles) = serde_json::from_str::<Vec<Profile>>(content) {
+        let value: serde_json::Value = serde_json::from_str(content)?;
+        if value.is_array() {
+            let profiles: Vec<Profile> = serde_json::from_value(value)?;
             return Ok(Self::normalize_profiles_data(ProfilesData {
                 profiles: profiles
                     .into_iter()
@@ -123,14 +138,17 @@ impl ProfileManager {
             }));
         }
 
-        if let Ok(profiles) = serde_json::from_str::<HashMap<String, Profile>>(content) {
-            return Ok(Self::normalize_profiles_data(ProfilesData {
-                profiles,
-                active_profile_id: None,
-            }));
+        if value.get("profiles").is_some() || value.get("active_profile_id").is_some() {
+            if let Ok(data) = serde_json::from_value::<ProfilesData>(value.clone()) {
+                return Ok(Self::normalize_profiles_data(data));
+            }
         }
 
-        serde_json::from_str::<ProfilesData>(content).map(Self::normalize_profiles_data)
+        let profiles = serde_json::from_value::<HashMap<String, Profile>>(value)?;
+        Ok(Self::normalize_profiles_data(ProfilesData {
+            profiles,
+            active_profile_id: None,
+        }))
     }
 
     fn normalize_profiles_data(mut data: ProfilesData) -> ProfilesData {
@@ -184,30 +202,9 @@ impl ProfileManager {
 
     fn save(&self) -> Result<()> {
         let profiles_path = self.config_dir.join(PROFILES_FILE);
-        let temp_path = profiles_path.with_extension("tmp");
-
         log::info!("Saving profiles atomically to {:?}", profiles_path);
-
-        // 1. Write to temp file
         let content = serde_json::to_string_pretty(&self.data)?;
-        std::fs::write(&temp_path, content)?;
-
-        #[cfg(unix)]
-        {
-            // On Unix, rename replaces the destination atomically.
-            std::fs::rename(&temp_path, &profiles_path)?;
-        }
-
-        #[cfg(windows)]
-        {
-            // Windows rename does not replace an existing destination file.
-            if profiles_path.exists() {
-                std::fs::remove_file(&profiles_path)?;
-            }
-            std::fs::rename(&temp_path, &profiles_path)?;
-        }
-
-        Ok(())
+        super::write_private_file(&profiles_path, content.as_bytes())
     }
 
     pub async fn list_profiles(&self) -> Result<Vec<Profile>> {
@@ -469,6 +466,44 @@ mod tests {
             std::env::temp_dir().join(format!("brows3-test-{}-{}", name, uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp config dir should be created");
         dir
+    }
+
+    #[test]
+    fn legacy_profile_maps_keep_their_entries_and_ids() {
+        let json = r#"{"legacy-id":{"name":"Legacy","credential_type":{"type":"Environment"},"region":"us-east-1","is_default":true}}"#;
+        let data = ProfileManager::load_profiles_data(json).unwrap();
+        assert_eq!(data.profiles.len(), 1);
+        assert_eq!(data.profiles["legacy-id"].id, "legacy-id");
+        assert_eq!(data.active_profile_id.as_deref(), Some("legacy-id"));
+        assert!(ProfileManager::load_profiles_data(r#"{"unexpected":42}"#).is_err());
+    }
+
+    #[tokio::test]
+    async fn malformed_profiles_are_backed_up_before_new_profiles_are_saved() {
+        let directory = temp_config_dir("invalid-profile-backup");
+        let original = "{incomplete";
+        std::fs::write(directory.join(super::PROFILES_FILE), original).unwrap();
+        let mut manager = ProfileManager::new(directory.clone(), true).unwrap();
+        manager
+            .add_profile(Profile::new(
+                "New".into(),
+                CredentialType::Environment,
+                None,
+            ))
+            .await
+            .unwrap();
+        let backup = std::fs::read_dir(&directory)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("profiles.invalid-")
+            })
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(backup.path()).unwrap(), original);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

@@ -8,8 +8,10 @@ import {
   Toolbar,
   Typography,
   Tooltip,
+  useMediaQuery,
 } from '@mui/material';
 import {
+  Menu as MenuIcon,
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
   SettingsBrightness as AutoModeIcon,
@@ -20,7 +22,8 @@ import PathBar from '../navigation/PathBar';
 import { useProfileStore } from '@/store/profileStore';
 
 export default function TopBar() {
-  const { themeMode, setThemeMode } = useAppStore();
+  const { themeMode, setThemeMode, sidebarOpen, toggleSidebar } = useAppStore();
+  const isMobile = useMediaQuery('(max-width:900px)');
   const { activeProfileId } = useProfileStore();
   
   const handleThemeToggle = () => {
@@ -46,6 +49,18 @@ export default function TopBar() {
             px: { xs: 1, sm: 2 },
         }}
     >
+      {isMobile && (
+        <IconButton
+          aria-label="Toggle navigation"
+          aria-controls="sidebar-navigation"
+          aria-expanded={sidebarOpen}
+          onClick={toggleSidebar}
+          size="small"
+          sx={{ mr: 1 }}
+        >
+          <MenuIcon />
+        </IconButton>
+      )}
       {/* Brand */}
       <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 0, mr: 2 }}>
         <Image src="/logo.png" alt="Brows3" width={28} height={28} style={{ marginRight: 8, borderRadius: 4 }} />

@@ -76,7 +76,7 @@ const formatTimeAgo = (timestamp: number): string => {
 };
 
 // Get status info
-const getStatusInfo = (status: TransferJob['status']): { label: string; color: StatusColor; icon?: React.ReactElement } => {
+const getStatusInfo = (status: TransferJob['status']): { label: string; color: StatusColor; icon?: React.ReactElement; detail?: string } => {
   if (status === 'Completed') {
     return { label: 'Completed', color: 'success', icon: <CheckCircleIcon fontSize="small" /> };
   }
@@ -87,7 +87,7 @@ const getStatusInfo = (status: TransferJob['status']): { label: string; color: S
     return { label: 'Pending', color: 'default', icon: <ScheduleIcon fontSize="small" /> };
   }
   if (typeof status === 'object' && 'Failed' in status) {
-    return { label: 'Failed', color: 'error', icon: <ErrorIcon fontSize="small" /> };
+    return { label: 'Failed', color: 'error', icon: <ErrorIcon fontSize="small" />, detail: status.Failed };
   }
   if (status === 'Cancelled') {
     return { label: 'Cancelled', color: 'default', icon: <CancelIcon fontSize="small" /> };
@@ -326,6 +326,7 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                         </Typography>
                     </Tooltip>
                     {!isNested && <Typography variant="caption" color="text.secondary" noWrap display="block">{job.bucket}</Typography>}
+                    {status.detail && <Typography variant="caption" color="error" display="block" sx={{ overflowWrap: 'anywhere', maxWidth: 360 }}>{status.detail}</Typography>}
                 </Box>
             </TableCell>
 

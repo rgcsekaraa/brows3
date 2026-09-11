@@ -1,4 +1,5 @@
 import { useMonitorStore } from '@/store/monitorStore';
+import { useProfileStore } from '@/store/profileStore';
 
 // Check if running in Tauri environment
 export const isTauri = (): boolean => {
@@ -46,18 +47,19 @@ const invoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T
 };
 
 // Cache invalidation helper - hooks can subscribe to write-driven invalidation
-const cacheInvalidators = new Set<() => void>();
+type CacheScope = 'objects' | 'buckets';
+const cacheInvalidators = new Set<(scope: CacheScope) => void>();
 
-export const subscribeCacheInvalidation = (fn: () => void) => {
+export const subscribeCacheInvalidation = (fn: (scope: CacheScope) => void) => {
   cacheInvalidators.add(fn);
   return () => {
     cacheInvalidators.delete(fn);
   };
 };
 
-export const invalidateCache = () => {
+export const invalidateCache = (scope: CacheScope = 'objects') => {
   for (const fn of cacheInvalidators) {
-    fn();
+    fn(scope);
   }
 };
 
@@ -183,6 +185,24 @@ export interface BucketWithRegion {
 
 // Bucket API wrapper functions
 export const bucketApi = {
+  async createBucket(bucketName: string, region: string, expectedProfileId: string): Promise<void> {
+    await invoke<void>('create_bucket', { bucketName, region, expectedProfileId });
+    invalidateCache('buckets');
+  },
+
+  async deleteBucket(bucketName: string, bucketRegion: string, confirmation: string, expectedProfileId: string): Promise<void> {
+    await invoke<void>('delete_bucket', { bucketName, bucketRegion, confirmation, expectedProfileId });
+    invalidateCache('buckets');
+  },
+
+  async getBucketPolicy(bucketName: string, bucketRegion: string, expectedProfileId: string): Promise<string | null> {
+    return invoke<string | null>('get_bucket_policy', { bucketName, bucketRegion, expectedProfileId });
+  },
+
+  async putBucketPolicy(bucketName: string, bucketRegion: string, policy: string | null, expectedPolicy: string | null, expectedProfileId: string): Promise<void> {
+    await invoke<void>('put_bucket_policy', { bucketName, bucketRegion, policy, expectedPolicy, expectedProfileId });
+  },
+
   async listBuckets(): Promise<BucketInfo[]> {
     return invoke<BucketInfo[]>('list_buckets');
   },
@@ -254,13 +274,16 @@ export const objectApi = {
     return invoke<string>('get_presigned_url', { bucketName, bucketRegion, key, expiresIn });
   },
 
-  async getObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, maxBytes: number): Promise<string> {
-    return invoke<string>('get_object_content', { bucketName, bucketRegion, key, maxBytes });
+  async getObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, maxBytes: number): Promise<{ content: string; e_tag: string | null; profile_id: string }> {
+    return invoke<{ content: string; e_tag: string | null; profile_id: string }>('get_object_content', { bucketName, bucketRegion, key, maxBytes });
   },
 
-  async putObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, content: string, contentType?: string | null): Promise<void> {
-    await invoke<void>('put_object_content', { bucketName, bucketRegion, key, content, contentType });
-    invalidateCache();
+  async putObjectContent(bucketName: string, bucketRegion: string | undefined, key: string, content: string, expectedEtag: string, expectedProfileId: string): Promise<string | null> {
+    try {
+      return await invoke<string | null>('put_object_content', { bucketName, bucketRegion, key, content, expectedEtag, expectedProfileId });
+    } finally {
+      invalidateCache();
+    }
   },
 
   async getObjectMetadata(bucketName: string, bucketRegion: string | undefined, key: string): Promise<ObjectMetadata> {
@@ -283,19 +306,28 @@ export const operationsApi = {
     invalidateCache(); // Auto-refresh after delete
   },
 
-  async copyObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string): Promise<void> {
-    await invoke<void>('copy_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey });
+  async copyObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<void> {
+    if (!expectedProfileId || expectedProfileId !== useProfileStore.getState().activeProfileId) {
+      throw new Error('The active profile changed. Copy or select the items again.');
+    }
+    await invoke<void>('copy_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey, expectedProfileId });
     invalidateCache(); // Auto-refresh after copy
   },
 
-  async moveObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string): Promise<void> {
-    await invoke<void>('move_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey });
+  async moveObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<void> {
+    if (!expectedProfileId || expectedProfileId !== useProfileStore.getState().activeProfileId) {
+      throw new Error('The active profile changed. Copy or select the items again.');
+    }
+    await invoke<void>('move_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey, expectedProfileId });
     invalidateCache(); // Auto-refresh after move
   },
 
   async deleteObjects(bucketName: string, bucketRegion: string | undefined, keys: string[]): Promise<void> {
-    await invoke<void>('delete_objects', { bucketName, bucketRegion, keys });
-    invalidateCache(); // Auto-refresh after bulk delete
+    try {
+      await invoke<void>('delete_objects', { bucketName, bucketRegion, keys });
+    } finally {
+      invalidateCache();
+    }
   },
 
   async getObjectMetadata(bucketName: string, bucketRegion: string | undefined, key: string): Promise<ObjectMetadata> {
@@ -398,8 +430,8 @@ export const transferApi = {
     return invoke<string>('queue_upload', { bucketName, bucketRegion, key, localPath, totalBytes });
   },
 
-  async queueDownload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number): Promise<string> {
-    return invoke<string>('queue_download', { bucketName, bucketRegion, key, localPath, totalBytes });
+  async queueDownload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number, overwrite = false): Promise<string> {
+    return invoke<string>('queue_download', { bucketName, bucketRegion, key, localPath, totalBytes, overwrite });
   },
 
   async queueFolderUpload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string): Promise<number> {

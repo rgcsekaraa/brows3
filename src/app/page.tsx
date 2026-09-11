@@ -21,6 +21,8 @@ import {
   Button,
   Container,
   CircularProgress,
+  Menu,
+  MenuItem,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -28,13 +30,15 @@ import {
   Storage as StorageIcon,
   Refresh as RefreshIcon,
   FolderOpen as FolderOpenIcon,
-  ChevronRight as ChevronRightIcon,
+  MoreVert as MoreVertIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 import { useProfileStore } from '@/store/profileStore';
 import { useBuckets } from '@/hooks/useBuckets';
 import { useHistoryStore } from '@/store/historyStore';
 import { useAppStore } from '@/store/appStore';
 import { toast } from '@/store/toastStore';
+import BucketManagementDialog, { type BucketAction } from '@/components/dialogs/BucketManagementDialog';
 
 function HomeContent() {
   const router = useRouter();
@@ -53,7 +57,15 @@ function HomeContent() {
   
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
 
-  // ... rest of the component logic ...
+  const [bucketAction, setBucketAction] = useState<BucketAction | null>(null);
+  const [bucketMenu, setBucketMenu] = useState<{ anchor: HTMLElement; name: string; region: string; profileId: string } | null>(null);
+
+  useEffect(() => useProfileStore.subscribe((state, previous) => {
+    if (state.activeProfileId !== previous.activeProfileId) {
+      setBucketAction(null);
+      setBucketMenu(null);
+    }
+  }), []);
   
 
   const filteredBuckets = useMemo(() => {
@@ -236,7 +248,7 @@ function HomeContent() {
             <TableCell sx={{ fontWeight: 600 }} width={140}>Region</TableCell>
             <TableCell sx={{ fontWeight: 600 }} width={180}>Created</TableCell>
             <TableCell sx={{ fontWeight: 600 }} align="right" width={120}>Total Size</TableCell>
-            <TableCell width={60}></TableCell>
+            <TableCell width={60}>Actions</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -278,7 +290,10 @@ function HomeContent() {
                   {bucket.total_size_formatted || '—'}
               </TableCell>
               <TableCell align="right">
-                  <ChevronRightIcon color="action" fontSize="small" />
+                  <IconButton size="small" aria-label={`Manage ${bucket.name}`} onClick={event => {
+                    event.stopPropagation();
+                    if (activeProfileId) setBucketMenu({ anchor: event.currentTarget, name: bucket.name, region: bucket.region, profileId: activeProfileId });
+                  }}><MoreVertIcon fontSize="small" /></IconButton>
               </TableCell>
             </TableRow>
           ))}
@@ -401,9 +416,21 @@ function HomeContent() {
   
   return (
     <Box sx={{ p: 1, mt: 1 }}>
+      {bucketAction && bucketAction.profileId === activeProfileId && <BucketManagementDialog key={`${bucketAction.mode}-${bucketAction.bucket || ''}-${bucketAction.profileId}`} action={bucketAction} onClose={() => setBucketAction(null)} />}
+      <Menu anchorEl={bucketMenu?.anchor} open={!!bucketMenu && bucketMenu.profileId === activeProfileId} onClose={() => setBucketMenu(null)}>
+        <MenuItem onClick={() => {
+          if (bucketMenu) setBucketAction({ mode: 'policy', bucket: bucketMenu.name, region: bucketMenu.region, profileId: bucketMenu.profileId });
+          setBucketMenu(null);
+        }}>Edit bucket policy</MenuItem>
+        <MenuItem onClick={() => {
+          if (bucketMenu) setBucketAction({ mode: 'delete', bucket: bucketMenu.name, region: bucketMenu.region, profileId: bucketMenu.profileId });
+          setBucketMenu(null);
+        }} sx={{ color: 'error.main' }}>Delete bucket</MenuItem>
+      </Menu>
+
       {showBuckets ? (
         <>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <IconButton onClick={() => router.push('/')} sx={{ bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}>
                     <FolderOpenIcon />
@@ -418,7 +445,8 @@ function HomeContent() {
               </Box>
             </Box>
             
-            <Box sx={{ display: 'flex', gap: 2 }}>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <Button startIcon={<AddIcon />} variant="contained" onClick={() => activeProfileId && setBucketAction({ mode: 'create', profileId: activeProfileId, region: activeProfile.region || 'us-east-1' })}>Create bucket</Button>
               <TextField
                 placeholder="Search buckets..."
                 size="small"

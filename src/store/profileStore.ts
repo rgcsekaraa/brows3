@@ -1,7 +1,8 @@
 'use client';
 
 import { create } from 'zustand';
-import { Profile } from '@/lib/tauri';
+import type { Profile } from '@/lib/tauri';
+import { useClipboardStore } from './clipboardStore';
 
 interface ProfileState {
   profiles: Profile[];
@@ -27,7 +28,11 @@ export const useProfileStore = create<ProfileState>()((set) => ({
   
   setProfiles: (profiles) => set({ profiles }),
   
-  setActiveProfileId: (id) => set({ activeProfileId: id }),
+  setActiveProfileId: (id) => {
+    const clipboard = useClipboardStore.getState();
+    if (clipboard.items.some(item => item.profileId !== id)) clipboard.clear();
+    set({ activeProfileId: id });
+  },
   
   addProfile: (profile) => set((state) => ({ 
     profiles: [...state.profiles, profile] 

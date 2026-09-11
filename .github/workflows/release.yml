@@ -53,8 +53,9 @@ jobs:
 
       - name: validate frontend
         run: |
-          pnpm lint
-          pnpm exec tsc --noEmit
+          pnpm test:frontend
+          pnpm lint --max-warnings 0
+          pnpm typecheck
           pnpm build
 
       - name: validate Rust backend
@@ -191,7 +192,7 @@ jobs:
         if: startsWith(matrix.platform, 'ubuntu-')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf xvfb
           sudo apt-get install -y libwebkit2gtk-4.1-dev
 
       - name: Prepare Linux AppImage GTK plugin
@@ -334,6 +335,16 @@ jobs:
           cp src-tauri/target/release/brows3.exe "$PORTABLE_DIR/Brows3.exe"
           touch "$PORTABLE_DIR/brows3.portable"
           7z a "src-tauri/target/release/bundle/portable/Brows3_${RELEASE_VERSION}_x64-portable.zip" "$PORTABLE_DIR"/*
+
+      - name: Check macOS and Linux packages
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash .github/scripts/smoke-packages.sh
+
+      - name: Check Windows installers and portable startup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .github/scripts/smoke-windows-packages.ps1
 
       - name: Upload release assets
         shell: bash

@@ -18,6 +18,7 @@ import {
   Star as StarIcon,
   StarBorder as StarBorderIcon,
   Folder as FolderIcon,
+  Storage as BucketIcon,
   InsertDriveFile as FileIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
@@ -46,7 +47,7 @@ export default function FavoritesPage() {
   const handleItemClick = (item: FavoriteItem) => {
     if (item.isFolder) {
       const path = buildBucketPath(item, item.key);
-      addTab({ title: item.name, path, icon: 'folder' });
+      addTab({ title: item.name, path, icon: item.key ? 'folder' : 'bucket' });
       router.push(path);
     } else {
       // Navigate to parent folder
@@ -67,7 +68,7 @@ export default function FavoritesPage() {
               Favorites
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Your starred files and folders
+              Your starred buckets, files and folders
             </Typography>
           </Box>
         </Box>
@@ -91,7 +92,7 @@ export default function FavoritesPage() {
             No favorites yet
           </Typography>
           <Typography variant="body2" color="text.disabled">
-            Star files and folders to add them here
+            Star buckets, files and folders to add them here
           </Typography>
         </Paper>
       ) : (
@@ -105,6 +106,7 @@ export default function FavoritesPage() {
                   <Tooltip title="Remove from favorites">
                     <IconButton 
                       size="small"
+                      aria-label={`Remove ${item.name} from favorites`}
                       onClick={(e) => {
                         e.stopPropagation();
                         removeFavorite(item.key, item.bucket, activeProfileId || undefined);
@@ -117,7 +119,9 @@ export default function FavoritesPage() {
               >
                 <ListItemButton onClick={() => handleItemClick(item)}>
                   <ListItemIcon sx={{ minWidth: 40 }}>
-                    {item.isFolder ? (
+                    {item.isFolder && !item.key ? (
+                      <BucketIcon color="primary" />
+                    ) : item.isFolder ? (
                       <FolderIcon sx={{ color: '#FFB74D' }} />
                     ) : (
                       <FileIcon color="action" />

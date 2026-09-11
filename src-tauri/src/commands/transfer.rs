@@ -2,6 +2,7 @@ use crate::commands::profiles::ProfileState;
 use crate::credentials::Profile;
 use crate::error::Result;
 use crate::s3::S3State;
+use crate::transfer::download::DownloadDestination;
 use crate::transfer::{TransferJob, TransferManager, TransferType};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -70,21 +71,51 @@ fn safe_relative_download_path(key: &str) -> Result<PathBuf> {
         ))
     };
 
-    if key.is_empty() || key.starts_with('/') || key.starts_with('\\') {
+    if key.is_empty() || key.starts_with('/') || key.contains('\\') {
         return Err(invalid_path());
     }
 
     let mut relative_path = PathBuf::new();
-    for segment in key.split(['/', '\\']) {
+    for segment in key.split('/') {
         match segment {
-            "" | "." => continue,
-            ".." => return Err(invalid_path()),
+            "" | "." | ".." => return Err(invalid_path()),
             _ => {
                 let bytes = segment.as_bytes();
                 let is_windows_drive =
                     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
                 if is_windows_drive || segment.contains('\0') {
                     return Err(invalid_path());
+                }
+                #[cfg(windows)]
+                {
+                    let stem = segment.split('.').next().unwrap_or("").to_ascii_uppercase();
+                    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+                        || ["COM", "LPT"].iter().any(|prefix| {
+                            stem.strip_prefix(prefix).is_some_and(|suffix| {
+                                matches!(
+                                    suffix,
+                                    "1" | "2"
+                                        | "3"
+                                        | "4"
+                                        | "5"
+                                        | "6"
+                                        | "7"
+                                        | "8"
+                                        | "9"
+                                        | "¹"
+                                        | "²"
+                                        | "³"
+                                )
+                            })
+                        });
+                    if reserved
+                        || segment.ends_with(['.', ' '])
+                        || segment
+                            .chars()
+                            .any(|c| c.is_control() || "<>:\"|?*".contains(c))
+                    {
+                        return Err(invalid_path());
+                    }
                 }
                 relative_path.push(segment);
             }
@@ -168,6 +199,7 @@ pub async fn queue_download(
     key: String,
     local_path: String,
     total_bytes: u64,
+    overwrite: Option<bool>,
     app_handle: AppHandle,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
@@ -177,7 +209,8 @@ pub async fn queue_download(
     validate_path(&path)?;
     let profile_id = require_active_profile(profile_state.inner()).await?.id;
 
-    let job = TransferJob::new(
+    let destination = DownloadDestination::from_path(&path, overwrite.unwrap_or(false))?;
+    let mut job = TransferJob::new(
         TransferType::Download,
         profile_id,
         bucket_name,
@@ -187,6 +220,7 @@ pub async fn queue_download(
         total_bytes,
     );
 
+    job.download_destination = Some(Arc::new(destination));
     let job_id = job.id.clone();
 
     // Add to manager
@@ -368,11 +402,16 @@ pub async fn queue_folder_download(
 
     let group_id = uuid::Uuid::new_v4().to_string();
     let group_name = format!("s3://{}/{}", bucket_name, prefix);
-    let root_path = PathBuf::from(&local_path); // This is the destination folder
+    let root_path = PathBuf::from(&local_path);
+    let selected_root = root_path.parent().ok_or_else(|| {
+        crate::error::AppError::IoError("Choose a download directory".to_string())
+    })?;
+    let download_root = DownloadDestination::open_root(selected_root)?;
 
     // Validate every object key before adding any jobs, so a malicious key cannot
     // leave a partially queued folder download behind.
     let mut jobs_data = Vec::with_capacity(objects.len());
+    let mut destinations = std::collections::HashSet::new();
     for (key, size) in objects {
         let relative_key = key.strip_prefix(&prefix).unwrap_or(&key);
         if relative_key.is_empty() {
@@ -382,6 +421,12 @@ pub async fn queue_folder_download(
         let relative_path = safe_relative_download_path(relative_key)?;
         let file_path = root_path.join(relative_path);
         validate_path(&file_path)?;
+        if !destinations.insert(file_path.clone()) {
+            return Err(crate::error::AppError::IoError(format!(
+                "Multiple objects would download to {}",
+                file_path.display()
+            )));
+        }
         jobs_data.push((key, size, file_path));
     }
 
@@ -390,7 +435,12 @@ pub async fn queue_folder_download(
     transfer_state.set_app_handle(app_handle.clone()).await;
 
     for (key, size, file_path) in jobs_data {
-        let job = TransferJob::new(
+        let relative_path = file_path
+            .strip_prefix(selected_root)
+            .map_err(|error| crate::error::AppError::IoError(error.to_string()))?
+            .to_path_buf();
+        let destination = DownloadDestination::new(download_root.clone(), relative_path, false)?;
+        let mut job = TransferJob::new(
             TransferType::Download,
             profile.id.clone(),
             bucket_name.clone(),
@@ -400,6 +450,7 @@ pub async fn queue_folder_download(
             size,
         )
         .with_group(group_id.clone(), group_name.clone());
+        job.download_destination = Some(Arc::new(destination));
 
         transfer_state.add_job(job).await;
     }
@@ -451,6 +502,14 @@ pub async fn retry_transfer(
 #[cfg(test)]
 mod tests {
     use super::safe_relative_download_path;
+
+    #[test]
+    fn folder_download_rejects_keys_that_would_be_normalized() {
+        for key in ["a//b.txt", "a/./b.txt", "a\\b.txt", "a/"] {
+            assert!(safe_relative_download_path(key).is_err(), "{key}");
+        }
+        assert!(safe_relative_download_path("a/b.txt").is_ok());
+    }
     use std::path::PathBuf;
 
     #[test]

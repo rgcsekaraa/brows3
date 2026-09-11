@@ -28,7 +28,7 @@ export function useClipboardShortcuts() {
       const activeElement = document.activeElement;
       if (
         activeElement &&
-        (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) &&
+        ((activeElement instanceof HTMLInputElement && activeElement.type !== 'checkbox') || activeElement instanceof HTMLTextAreaElement) &&
         !activeElement.disabled &&
         !activeElement.readOnly
       ) {

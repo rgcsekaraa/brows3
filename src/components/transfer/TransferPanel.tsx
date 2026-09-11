@@ -9,6 +9,7 @@ import {
   LinearProgress,
   Badge,
   Paper,
+  Tooltip,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -125,32 +126,46 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
                ) : (
                  filteredJobs.slice(0, 8).map((job) => {
                    const isError = typeof job.status === 'object' && 'Failed' in job.status;
+                   const errorMessage = isError && typeof job.status === 'object' ? job.status.Failed : '';
                    const progress =
                      job.status === 'Completed'
                        ? 100
                        : job.total_bytes > 0
                          ? (job.processed_bytes / job.total_bytes) * 100
                          : 0;
-                   
+
                    return (
                      <div key={job.id}>
                        <ListItem sx={{ py: 0.5, px: 1.5 }}>
                           <Box sx={{ width: '100%' }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.25 }}>
-                              <Typography variant="caption" noWrap sx={{ maxWidth: 200, display: 'flex', alignItems: 'center', gap: 0.5 }} title={job.key}>
-                                {getStatusIcon(job.status)}
-                                {job.transfer_type === 'Upload' ? '↑' : '↓'} {job.key.split('/').pop()}
-                              </Typography>
+                              <Tooltip title={isError ? errorMessage : job.key}>
+                                <Typography variant="caption" noWrap sx={{ maxWidth: 200, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  {getStatusIcon(job.status)}
+                                  {job.transfer_type === 'Upload' ? '↑' : '↓'} {job.key.split('/').pop()}
+                                </Typography>
+                              </Tooltip>
                               <Typography variant="caption" color="text.secondary">
                                 {Math.round(progress)}%
                               </Typography>
                             </Box>
-                            <LinearProgress 
-                              variant="determinate" 
-                              value={progress} 
+                            <LinearProgress
+                              variant="determinate"
+                              value={progress}
                               color={isError ? 'error' : job.status === 'Completed' ? 'success' : 'primary'}
                               sx={{ height: 2, borderRadius: 1 }}
                             />
+                            {isError && (
+                              <Typography
+                                variant="caption"
+                                color="error"
+                                noWrap
+                                sx={{ display: 'block', mt: 0.25 }}
+                                title={errorMessage}
+                              >
+                                {errorMessage}
+                              </Typography>
+                            )}
                           </Box>
                        </ListItem>
                      </div>
