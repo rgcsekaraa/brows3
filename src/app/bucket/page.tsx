@@ -829,7 +829,8 @@ function BucketContent() {
               bucketRegion,
               target.key,
               savePath,
-              selectedFileSize || 0
+              selectedFileSize || 0,
+              true
           );
           displaySuccess('Download queued', '/downloads');
         }
@@ -1207,7 +1208,7 @@ function BucketContent() {
           const filename = key.split('/').pop() || 'download';
           const savePath = await save({ defaultPath: filename, title: 'Save file as' });
           if (savePath && bucketName) {
-            const jobId = await transferApi.queueDownload(bucketName, bucketRegion, key, savePath, objectSize);
+            const jobId = await transferApi.queueDownload(bucketName, bucketRegion, key, savePath, objectSize, true);
             // Add to transfer store so it shows in the panel
             addJob({
               id: jobId,

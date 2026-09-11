@@ -10,8 +10,6 @@ use aws_sdk_s3::Client;
 use std::collections::HashSet;
 use std::path::Path;
 use tauri::State;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
 
 fn validate_operation_profile(expected: Option<&str>, actual: &str) -> Result<()> {
     if expected.is_some_and(|id| id != actual) {
@@ -666,18 +664,9 @@ pub async fn get_object(
         }
     };
 
-    if let Some(parent) = Path::new(&local_path).parent() {
-        if !parent.as_os_str().is_empty() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
-        }
-    }
-
-    // Create local file
-    let mut file = File::create(&local_path)
-        .await
-        .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
+    let destination =
+        crate::transfer::download::DownloadDestination::from_path(Path::new(&local_path), false)?;
+    let mut download = destination.begin()?;
 
     // Stream to file
     while let Some(bytes) = output
@@ -686,11 +675,14 @@ pub async fn get_object(
         .await
         .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?
     {
-        file.write_all(&bytes)
+        download
+            .write_all(&bytes)
             .await
             .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
     }
 
+    download.finish_writing().await?;
+    download.commit()?;
     Ok(())
 }
 

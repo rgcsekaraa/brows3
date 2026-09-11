@@ -405,8 +405,8 @@ export const transferApi = {
     return invoke<string>('queue_upload', { bucketName, bucketRegion, key, localPath, totalBytes });
   },
 
-  async queueDownload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number): Promise<string> {
-    return invoke<string>('queue_download', { bucketName, bucketRegion, key, localPath, totalBytes });
+  async queueDownload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number, overwrite = false): Promise<string> {
+    return invoke<string>('queue_download', { bucketName, bucketRegion, key, localPath, totalBytes, overwrite });
   },
 
   async queueFolderUpload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string): Promise<number> {

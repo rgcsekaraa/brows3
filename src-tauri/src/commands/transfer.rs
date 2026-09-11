@@ -2,6 +2,7 @@ use crate::commands::profiles::ProfileState;
 use crate::credentials::Profile;
 use crate::error::Result;
 use crate::s3::S3State;
+use crate::transfer::download::DownloadDestination;
 use crate::transfer::{TransferJob, TransferManager, TransferType};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -198,6 +199,7 @@ pub async fn queue_download(
     key: String,
     local_path: String,
     total_bytes: u64,
+    overwrite: Option<bool>,
     app_handle: AppHandle,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
@@ -207,7 +209,8 @@ pub async fn queue_download(
     validate_path(&path)?;
     let profile_id = require_active_profile(profile_state.inner()).await?.id;
 
-    let job = TransferJob::new(
+    let destination = DownloadDestination::from_path(&path, overwrite.unwrap_or(false))?;
+    let mut job = TransferJob::new(
         TransferType::Download,
         profile_id,
         bucket_name,
@@ -217,6 +220,7 @@ pub async fn queue_download(
         total_bytes,
     );
 
+    job.download_destination = Some(Arc::new(destination));
     let job_id = job.id.clone();
 
     // Add to manager
@@ -398,7 +402,11 @@ pub async fn queue_folder_download(
 
     let group_id = uuid::Uuid::new_v4().to_string();
     let group_name = format!("s3://{}/{}", bucket_name, prefix);
-    let root_path = PathBuf::from(&local_path); // This is the destination folder
+    let root_path = PathBuf::from(&local_path);
+    let selected_root = root_path.parent().ok_or_else(|| {
+        crate::error::AppError::IoError("Choose a download directory".to_string())
+    })?;
+    let download_root = DownloadDestination::open_root(selected_root)?;
 
     // Validate every object key before adding any jobs, so a malicious key cannot
     // leave a partially queued folder download behind.
@@ -427,7 +435,12 @@ pub async fn queue_folder_download(
     transfer_state.set_app_handle(app_handle.clone()).await;
 
     for (key, size, file_path) in jobs_data {
-        let job = TransferJob::new(
+        let relative_path = file_path
+            .strip_prefix(selected_root)
+            .map_err(|error| crate::error::AppError::IoError(error.to_string()))?
+            .to_path_buf();
+        let destination = DownloadDestination::new(download_root.clone(), relative_path, false)?;
+        let mut job = TransferJob::new(
             TransferType::Download,
             profile.id.clone(),
             bucket_name.clone(),
@@ -437,6 +450,7 @@ pub async fn queue_folder_download(
             size,
         )
         .with_group(group_id.clone(), group_name.clone());
+        job.download_destination = Some(Arc::new(destination));
 
         transfer_state.add_job(job).await;
     }

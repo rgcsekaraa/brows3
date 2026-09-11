@@ -59,10 +59,18 @@ futures = "0.3"
 mime = "0.3"
 mime_guess = "2"
 tauri-plugin-clipboard-manager = "2.3.2"
+cap-std = "4.0.3"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified
 custom-protocol = ["tauri/custom-protocol"]
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+rustix = { version = "1.1", features = ["fs"] }
+
+[target.'cfg(windows)'.dependencies]
+tempfile = "3.24"
+winx = "0.36.4"
 
 [profile.release]
 panic = "abort"

@@ -11,8 +11,6 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Notify, RwLock};
 
 // Define a safe shared state for the manager
@@ -716,15 +714,12 @@ impl TransferManager {
                     }
                 };
 
-                if let Some(parent) = std::path::Path::new(&job.local_path).parent() {
-                    tokio::fs::create_dir_all(parent)
-                        .await
-                        .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
-                }
-
-                let mut file = File::create(&job.local_path)
-                    .await
-                    .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
+                let destination = job.download_destination.as_ref().ok_or_else(|| {
+                    crate::error::AppError::IoError(
+                        "Missing download destination. Queue the download again.".to_string(),
+                    )
+                })?;
+                let mut download = destination.begin()?;
 
                 let mut downloaded: u64 = 0;
                 let mut last_update = std::time::Instant::now();
@@ -735,7 +730,8 @@ impl TransferManager {
                     .await
                     .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?
                 {
-                    file.write_all(&bytes)
+                    download
+                        .write_all(&bytes)
                         .await
                         .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
 
@@ -751,6 +747,19 @@ impl TransferManager {
                 if job.total_bytes == 0 {
                     self.update_job_total_size(&job.id, downloaded).await;
                 }
+                download.finish_writing().await?;
+                let mut jobs = self.jobs.write().await;
+                let current = jobs.get_mut(&job.id).ok_or_else(|| {
+                    crate::error::AppError::IoError("Download was removed".to_string())
+                })?;
+                if current.status != TransferStatus::InProgress {
+                    return Err(crate::error::AppError::IoError(
+                        "Download was cancelled".to_string(),
+                    ));
+                }
+                download.commit()?;
+                current.status = TransferStatus::Completed;
+                current.finished_at = Some(chrono::Utc::now().timestamp_millis());
             }
         }
 
