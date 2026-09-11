@@ -40,11 +40,12 @@ fn build_s3_config(sdk_config: &aws_config::SdkConfig, profile: &Profile) -> aws
         CredentialType::CustomEndpoint { .. }
     ) || sdk_config.endpoint_url().is_some()
     {
-        builder = builder
-            .force_path_style(true)
-            .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
-            .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
+        builder = builder.force_path_style(true);
     }
+
+    builder = builder
+        .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
+        .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
 
     builder.build()
 }
