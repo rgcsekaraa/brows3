@@ -47,6 +47,8 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 ## Feature Deep Dive
 
 ### File Management
+- **Bucket Management**: Create buckets, edit bucket policies and delete empty buckets from All Buckets. Policy changes and deletion require typing the bucket name. Availability depends on the provider and your credentials.
+- **Bucket Favorites**: Star a bucket from the sidebar or bucket header to open its root from Favorites. Favorites stay with their profile.
 - **Breadcrumb Navigation**: Path-based navigation for rapid traversal of complex hierarchies.
 - **Bulk Operations**: Upload, download, and delete multiple files or recursive folders at once.
 - **S3-Compatible Delete Fallback**: Folder deletion falls back to single-object deletes when a provider rejects multi-object delete requests.
