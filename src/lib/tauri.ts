@@ -1,4 +1,5 @@
 import { useMonitorStore } from '@/store/monitorStore';
+import { useProfileStore } from '@/store/profileStore';
 
 // Check if running in Tauri environment
 export const isTauri = (): boolean => {
@@ -283,13 +284,19 @@ export const operationsApi = {
     invalidateCache(); // Auto-refresh after delete
   },
 
-  async copyObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string): Promise<void> {
-    await invoke<void>('copy_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey });
+  async copyObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<void> {
+    if (!expectedProfileId || expectedProfileId !== useProfileStore.getState().activeProfileId) {
+      throw new Error('The active profile changed. Copy or select the items again.');
+    }
+    await invoke<void>('copy_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey, expectedProfileId });
     invalidateCache(); // Auto-refresh after copy
   },
 
-  async moveObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string): Promise<void> {
-    await invoke<void>('move_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey });
+  async moveObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<void> {
+    if (!expectedProfileId || expectedProfileId !== useProfileStore.getState().activeProfileId) {
+      throw new Error('The active profile changed. Copy or select the items again.');
+    }
+    await invoke<void>('move_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey, expectedProfileId });
     invalidateCache(); // Auto-refresh after move
   },
 

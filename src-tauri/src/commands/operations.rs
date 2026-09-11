@@ -13,6 +13,15 @@ use tauri::State;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
+fn validate_operation_profile(expected: Option<&str>, actual: &str) -> Result<()> {
+    if expected.is_some_and(|id| id != actual) {
+        return Err(crate::error::AppError::ConfigError(
+            "The active profile changed. Copy or select the items again.".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 async fn detect_and_cache_bucket_region(
     active_profile: &crate::credentials::Profile,
     bucket_name: &str,
@@ -755,6 +764,7 @@ pub async fn copy_object(
     destination_bucket: String,
     destination_region: Option<String>,
     destination_key: String,
+    expected_profile_id: Option<String>,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
@@ -774,6 +784,7 @@ pub async fn copy_object(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    validate_operation_profile(expected_profile_id.as_deref(), &active_profile.id)?;
 
     // Check if this is a folder copy (key ends with /)
     if source_key.ends_with('/') {
@@ -1144,6 +1155,7 @@ pub async fn move_object(
     destination_bucket: String,
     destination_region: Option<String>,
     destination_key: String,
+    expected_profile_id: Option<String>,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
@@ -1166,6 +1178,7 @@ pub async fn move_object(
             .await?
             .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
         drop(profile_manager);
+        validate_operation_profile(expected_profile_id.as_deref(), &active_profile.id)?;
 
         // Get client for listing source bucket
         let source_region_resolved = {
@@ -1284,6 +1297,7 @@ pub async fn move_object(
             destination_bucket.clone(),
             destination_region.clone(),
             destination_key.clone(),
+            expected_profile_id,
             profile_state.clone(),
             s3_state.clone(),
         )
@@ -2051,5 +2065,17 @@ mod tests {
         tokio::fs::remove_file(path)
             .await
             .expect("sparse test file should be deleted");
+    }
+}
+
+#[cfg(test)]
+mod operation_profile_tests {
+    use super::validate_operation_profile;
+
+    #[test]
+    fn rejects_operations_from_a_different_profile() {
+        assert!(validate_operation_profile(Some("profile-a"), "profile-b").is_err());
+        assert!(validate_operation_profile(Some("profile-a"), "profile-a").is_ok());
+        assert!(validate_operation_profile(None, "profile-a").is_ok());
     }
 }

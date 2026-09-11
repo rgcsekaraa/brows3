@@ -440,6 +440,7 @@ function BucketContent() {
      const keys = selectedKeysRef.current;
      if (keys.size === 0) return;
      const items = Array.from(keys).map(key => ({
+       profileId: activeProfileId || '',
        bucket: bucketName || '',
        region: bucketRegion,
        key,
@@ -448,12 +449,13 @@ function BucketContent() {
      copy(items);
      clearSelection();
      displaySuccess(`Copied ${items.length} items`);
-  }, [bucketName, bucketRegion, copy, clearSelection, displaySuccess]);
+  }, [activeProfileId, bucketName, bucketRegion, copy, clearSelection, displaySuccess]);
 
   const handleCut = useCallback(() => {
     const keys = selectedKeysRef.current;
     if (keys.size === 0) return;
     const items = Array.from(keys).map(key => ({
+      profileId: activeProfileId || '',
       bucket: bucketName || '',
       region: bucketRegion,
       key,
@@ -462,10 +464,15 @@ function BucketContent() {
     cut(items);
     clearSelection();
     displaySuccess(`Cut ${items.length} items to clipboard`);
-  }, [bucketName, bucketRegion, cut, clearSelection, displaySuccess]);
+  }, [activeProfileId, bucketName, bucketRegion, cut, clearSelection, displaySuccess]);
 
   const handlePaste = async () => {
     if (!bucketName || clipboardItems.length === 0) return;
+    if (!activeProfileId || clipboardItems.some(item => item.profileId !== activeProfileId)) {
+      clearClipboard();
+      displayError('The clipboard belongs to another profile. Copy the items again.');
+      return;
+    }
     let successCount = 0;
 
     // Process paste operations in parallel batches for better performance
@@ -488,9 +495,9 @@ function BucketContent() {
           }
 
           if (clipboardMode === 'copy') {
-            await operationsApi.copyObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey);
+            await operationsApi.copyObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey, item.profileId);
           } else {
-            await operationsApi.moveObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey);
+            await operationsApi.moveObject(item.bucket, item.region, item.key, bucketName, bucketRegion, destKey, item.profileId);
           }
           successCount++;
         }));

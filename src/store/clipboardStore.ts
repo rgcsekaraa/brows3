@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { browserStorage } from './browserStorage';
 
 export interface ClipboardItem {
+  profileId: string;
   bucket: string;
   region: string;
   key: string;
@@ -28,6 +29,8 @@ export const useClipboardStore = create<ClipboardState>()(
     }),
     {
       name: 'brows3-clipboard',
+      version: 1,
+      migrate: () => ({ items: [], mode: 'copy' as const }),
       storage: browserStorage,
     }
   )
