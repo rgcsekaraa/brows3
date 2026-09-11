@@ -60,3 +60,51 @@ test('invalidation prevents an outstanding request from restoring stale data', a
   await act(async () => old.resolve(listing('old')));
   expect(view.result.current.data?.objects[0].key).toBe('updated');
 });
+
+test('pagination appends objects, merges folders and stops at the final page', async () => {
+  vi.mocked(objectApi.listObjects)
+    .mockResolvedValueOnce({ ...listing('first'), common_prefixes: ['folder/'], next_continuation_token: 'cursor', is_truncated: true })
+    .mockResolvedValueOnce({ ...listing('second'), common_prefixes: ['folder/', 'other/'] });
+  const view = renderHook(() => useObjects('bucket', 'us-east-1'));
+  await waitFor(() => expect(view.result.current.hasMore).toBe(true));
+  await act(async () => view.result.current.loadMore());
+  expect(view.result.current.data?.objects.map(object => object.key)).toEqual(['first', 'second']);
+  expect(view.result.current.data?.common_prefixes).toEqual(['folder/', 'other/']);
+  expect(view.result.current.hasMore).toBe(false);
+  await act(async () => view.result.current.loadMore());
+  expect(objectApi.listObjects).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(objectApi.listObjects).mock.calls[1][4]).toBe('cursor');
+});
+
+test('expired pagination reports an error while keeping the loaded page', async () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    vi.mocked(objectApi.listObjects)
+      .mockResolvedValueOnce({ ...listing('first'), next_continuation_token: 'expired', is_truncated: true })
+      .mockRejectedValueOnce(new Error('Listing expired. Refresh the folder.'));
+    const view = renderHook(() => useObjects('bucket', 'us-east-1'));
+    await waitFor(() => expect(view.result.current.hasMore).toBe(true));
+    await act(async () => view.result.current.loadMore());
+    expect(view.result.current.error).toBe('Listing expired. Refresh the folder.');
+    expect(view.result.current.data?.objects[0].key).toBe('first');
+    expect(view.result.current.isLoadingMore).toBe(false);
+  } finally {
+    log.mockRestore();
+  }
+});
+
+test('a late next page cannot append objects to another folder', async () => {
+  const nextPage = Promise.withResolvers<ListObjectsResult>();
+  vi.mocked(objectApi.listObjects)
+    .mockResolvedValueOnce({ ...listing('first'), next_continuation_token: 'cursor', is_truncated: true })
+    .mockReturnValueOnce(nextPage.promise)
+    .mockResolvedValueOnce({ ...listing('new-folder/current'), prefix: 'new-folder/' });
+  const view = renderHook(({ prefix }) => useObjects('bucket', 'us-east-1', prefix), { initialProps: { prefix: '' } });
+  await waitFor(() => expect(view.result.current.hasMore).toBe(true));
+  let loading: Promise<void>;
+  act(() => { loading = view.result.current.loadMore(); });
+  view.rerender({ prefix: 'new-folder/' });
+  await waitFor(() => expect(view.result.current.data?.objects[0].key).toBe('new-folder/current'));
+  await act(async () => { nextPage.resolve(listing('old-page')); await loading; });
+  expect(view.result.current.data?.objects.map(object => object.key)).toEqual(['new-folder/current']);
+});
