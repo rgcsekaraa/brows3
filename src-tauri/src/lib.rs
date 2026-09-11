@@ -86,12 +86,26 @@ pub fn run() {
                     ],
                 )?;
 
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(target_os = "windows")]
                 let file_menu = Submenu::with_items(
                     handle,
                     "File",
                     true,
                     &[&PredefinedMenuItem::quit(handle, None)?],
+                )?;
+
+                #[cfg(target_os = "linux")]
+                let file_menu = Submenu::with_items(
+                    handle,
+                    "File",
+                    true,
+                    &[&tauri::menu::MenuItem::with_id(
+                        handle,
+                        "quit",
+                        "Quit",
+                        true,
+                        Some("Ctrl+Q"),
+                    )?],
                 )?;
 
                 // Edit Menu (Common)
@@ -111,6 +125,7 @@ pub fn run() {
                 )?;
 
                 // Window Menu (Common)
+                #[cfg(not(target_os = "linux"))]
                 let window_menu = Submenu::with_items(
                     handle,
                     "Window",
@@ -120,6 +135,37 @@ pub fn run() {
                         &PredefinedMenuItem::maximize(handle, None)?,
                         &PredefinedMenuItem::separator(handle)?,
                         &PredefinedMenuItem::close_window(handle, None)?,
+                    ],
+                )?;
+
+                #[cfg(target_os = "linux")]
+                let window_menu = Submenu::with_items(
+                    handle,
+                    "Window",
+                    true,
+                    &[
+                        &tauri::menu::MenuItem::with_id(
+                            handle,
+                            "minimize",
+                            "Minimize",
+                            true,
+                            None::<&str>,
+                        )?,
+                        &tauri::menu::MenuItem::with_id(
+                            handle,
+                            "maximize",
+                            "Maximize or Restore",
+                            true,
+                            None::<&str>,
+                        )?,
+                        &PredefinedMenuItem::separator(handle)?,
+                        &tauri::menu::MenuItem::with_id(
+                            handle,
+                            "close",
+                            "Close Window",
+                            true,
+                            Some("Ctrl+W"),
+                        )?,
                     ],
                 )?;
 
@@ -192,6 +238,32 @@ pub fn run() {
             }
 
             Ok(())
+        })
+        .on_menu_event(|_app, _event| {
+            #[cfg(target_os = "linux")]
+            {
+                if _event.id().as_ref() == "quit" {
+                    _app.exit(0);
+                    return;
+                }
+                if let Some(window) = _app.get_webview_window("main") {
+                    let result = match _event.id().as_ref() {
+                        "minimize" => window.minimize(),
+                        "maximize" => window.is_maximized().and_then(|maximized| {
+                            if maximized {
+                                window.unmaximize()
+                            } else {
+                                window.maximize()
+                            }
+                        }),
+                        "close" => window.close(),
+                        _ => Ok(()),
+                    };
+                    if let Err(error) = result {
+                        log::warn!("Window menu action failed: {}", error);
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Profile management commands
