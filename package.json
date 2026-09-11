@@ -27,7 +27,12 @@
     "start": "next start",
     "lint": "eslint",
     "test:frontend": "vitest run",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "pnpm test:frontend && pnpm test:release",
+    "test:release": "node --test .github/scripts/*.test.js",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --all-features --locked",
+    "test:smoke": "pnpm build && playwright test",
+    "typecheck": "tsc --noEmit --incremental false"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -47,6 +52,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tauri-apps/cli": "^2.9.6",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "14.6.1",
