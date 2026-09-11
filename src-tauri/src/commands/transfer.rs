@@ -70,21 +70,51 @@ fn safe_relative_download_path(key: &str) -> Result<PathBuf> {
         ))
     };
 
-    if key.is_empty() || key.starts_with('/') || key.starts_with('\\') {
+    if key.is_empty() || key.starts_with('/') || key.contains('\\') {
         return Err(invalid_path());
     }
 
     let mut relative_path = PathBuf::new();
-    for segment in key.split(['/', '\\']) {
+    for segment in key.split('/') {
         match segment {
-            "" | "." => continue,
-            ".." => return Err(invalid_path()),
+            "" | "." | ".." => return Err(invalid_path()),
             _ => {
                 let bytes = segment.as_bytes();
                 let is_windows_drive =
                     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
                 if is_windows_drive || segment.contains('\0') {
                     return Err(invalid_path());
+                }
+                #[cfg(windows)]
+                {
+                    let stem = segment.split('.').next().unwrap_or("").to_ascii_uppercase();
+                    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+                        || ["COM", "LPT"].iter().any(|prefix| {
+                            stem.strip_prefix(prefix).is_some_and(|suffix| {
+                                matches!(
+                                    suffix,
+                                    "1" | "2"
+                                        | "3"
+                                        | "4"
+                                        | "5"
+                                        | "6"
+                                        | "7"
+                                        | "8"
+                                        | "9"
+                                        | "¹"
+                                        | "²"
+                                        | "³"
+                                )
+                            })
+                        });
+                    if reserved
+                        || segment.ends_with(['.', ' '])
+                        || segment
+                            .chars()
+                            .any(|c| c.is_control() || "<>:\"|?*".contains(c))
+                    {
+                        return Err(invalid_path());
+                    }
                 }
                 relative_path.push(segment);
             }
@@ -373,6 +403,7 @@ pub async fn queue_folder_download(
     // Validate every object key before adding any jobs, so a malicious key cannot
     // leave a partially queued folder download behind.
     let mut jobs_data = Vec::with_capacity(objects.len());
+    let mut destinations = std::collections::HashSet::new();
     for (key, size) in objects {
         let relative_key = key.strip_prefix(&prefix).unwrap_or(&key);
         if relative_key.is_empty() {
@@ -382,6 +413,12 @@ pub async fn queue_folder_download(
         let relative_path = safe_relative_download_path(relative_key)?;
         let file_path = root_path.join(relative_path);
         validate_path(&file_path)?;
+        if !destinations.insert(file_path.clone()) {
+            return Err(crate::error::AppError::IoError(format!(
+                "Multiple objects would download to {}",
+                file_path.display()
+            )));
+        }
         jobs_data.push((key, size, file_path));
     }
 
@@ -451,6 +488,14 @@ pub async fn retry_transfer(
 #[cfg(test)]
 mod tests {
     use super::safe_relative_download_path;
+
+    #[test]
+    fn folder_download_rejects_keys_that_would_be_normalized() {
+        for key in ["a//b.txt", "a/./b.txt", "a\\b.txt", "a/"] {
+            assert!(safe_relative_download_path(key).is_err(), "{key}");
+        }
+        assert!(safe_relative_download_path("a/b.txt").is_ok());
+    }
     use std::path::PathBuf;
 
     #[test]
