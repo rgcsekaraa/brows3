@@ -199,6 +199,7 @@ export default function AppShell({ children }: AppShellProps) {
         
         {/* Sidebar Drawer */}
         <Drawer
+          id="sidebar-navigation"
           variant={isMobile ? 'temporary' : 'permanent'}
           open={isMobile ? sidebarOpen : true}
           onClose={() => setSidebarOpen(false)}
