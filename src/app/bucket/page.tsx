@@ -92,12 +92,13 @@ function BucketContent() {
   const { data, isLoading, error: initialError, refresh, loadMore } = useObjects(bucketName || '', bucketRegion, prefix, sortField, sortDirection);
   const addJob = useTransferStore(state => state.addJob);
   const activeProfileId = useProfileStore(state => state.activeProfileId);
+  const viewKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix]);
 
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [isDeepSearch, setIsDeepSearch] = useState(false);
-  const [searchResults, setSearchResults] = useState<S3Object[] | null>(null);
+  const [searchResults, setSearchResults] = useState<{ viewKey: string; objects: S3Object[] } | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   // Error handling effect
@@ -203,7 +204,7 @@ function BucketContent() {
 
             // CRITICAL FIX: Only update if this is still the latest search request
             if (currentSequence === searchSequenceRef.current) {
-                setSearchResults(result.objects);
+                setSearchResults({ viewKey, objects: result.objects });
 
                 if (result.is_truncated) {
                     toast.info(
@@ -244,10 +245,10 @@ function BucketContent() {
      const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
 
      // 1. Deep Search Results (Server-side)
-     if (isDeepSearch && searchResults) {
+     if (isDeepSearch && searchResults?.viewKey === viewKey) {
          return {
              common_prefixes: [],
-             objects: searchResults,
+             objects: searchResults.objects,
              next_continuation_token: null,
              is_truncated: false,
              prefix: prefix,
@@ -265,7 +266,7 @@ function BucketContent() {
 
      // 3. Default View
      return data;
-  }, [data, searchResults, deferredSearchQuery, prefix, isDeepSearch]);
+  }, [data, searchResults, deferredSearchQuery, prefix, isDeepSearch, viewKey]);
 
   const currentObjectSizeMap = useMemo(
     () => new Map((data?.objects || []).map((obj) => [obj.key, obj.size])),
@@ -394,7 +395,12 @@ function BucketContent() {
   useEffect(() => {
     setSelectedKeys(new Set());
     setSelectedObject(null);
-  }, [prefix, bucketName]);
+    setPreviewOpen(false);
+    setPropertiesOpen(false);
+    setPermissionsOpen(false);
+    setPresignedUrlOpen(false);
+    setDeleteConfirmOpen(false);
+  }, [viewKey]);
 
   // Selection Handlers - memoized to prevent re-renders
   const handleSelect = useCallback((key: string, checked: boolean) => {
@@ -527,11 +533,10 @@ function BucketContent() {
   // Keyboard Shortcuts - use refs to always get latest function
   useEffect(() => {
     searchSequenceRef.current += 1;
-    if (!searchQuery.trim()) {
-      setSearchResults(null);
-      setIsSearching(false);
-    }
-  }, [searchQuery]);
+    setSearchResults(null);
+    setIsSearching(false);
+    return () => { searchSequenceRef.current += 1; };
+  }, [searchQuery, viewKey]);
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -855,6 +860,12 @@ function BucketContent() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [renameTarget, setRenameTarget] = useState<{ key: string; isFolder: boolean } | null>(null);
+
+  useEffect(() => {
+    setRenameOpen(false);
+    setRenameTarget(null);
+    setRenameValue('');
+  }, [viewKey]);
 
   const handleRenamePrompt = () => {
     if (selectedObject) {
