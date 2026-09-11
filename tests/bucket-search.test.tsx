@@ -3,6 +3,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import BucketPage from '@/app/bucket/page';
 import { objectApi, operationsApi, transferApi, type S3Object, type SearchObjectsResult } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
+import { useClipboardStore } from '@/store/clipboardStore';
 
 const route = vi.hoisted(() => ({ params: 'name=a&region=us-east-1', push: vi.fn() }));
 vi.mock('next/navigation', () => ({
@@ -29,7 +30,7 @@ vi.mock('@/components/dialogs/ObjectPreviewDialog', () => ({ default: () => null
 vi.mock('@/components/dialogs/PresignedUrlDialog', () => ({ default: () => null }));
 vi.mock('@/components/common/StyledCheckbox', () => ({ StyledCheckbox: (props: { checked: boolean; onChange: React.ChangeEventHandler<HTMLInputElement> }) => <input type="checkbox" aria-label="Deep search" {...props} /> }));
 vi.mock('@/components/common/VirtualizedObjectTable', () => ({
-  VirtualizedObjectTable: ({ objects, onSelect }: { objects: S3Object[]; onSelect: (key: string, checked: boolean) => void }) => <ul>{objects.map(object => <li key={object.key}><button onClick={() => onSelect(object.key, true)}>{object.key}</button></li>)}</ul>,
+  VirtualizedObjectTable: ({ objects, onSelect }: { objects: S3Object[]; onSelect: (key: string, checked: boolean) => void }) => <ul>{objects.map(object => <li key={object.key}><input type="checkbox" aria-label={`Select ${object.key}`} onChange={event => onSelect(object.key, event.target.checked)} /><button onClick={() => onSelect(object.key, true)}>{object.key}</button></li>)}</ul>,
 }));
 
 const result: SearchObjectsResult = {
@@ -103,4 +104,16 @@ test('a failed recursive listing prevents all deletion', async () => {
   expect(operationsApi.deleteObjects).not.toHaveBeenCalled();
   expect(screen.getByText('1 selected')).toBeTruthy();
   loggedError.mockRestore();
+});
+
+
+test.each(['c', 'x'])('object clipboard shortcut %s works from a focused selection checkbox', async key => {
+  useClipboardStore.getState().clear();
+  render(<BucketPage />);
+  const checkbox = screen.getByRole('checkbox', { name: 'Select root.txt' });
+  fireEvent.click(checkbox);
+  checkbox.focus();
+  fireEvent.keyDown(checkbox, { key, ctrlKey: true });
+  expect(useClipboardStore.getState().items).toEqual([{ profileId: 'a', bucket: 'a', region: 'us-east-1', key: 'root.txt', isFolder: false }]);
+  expect(useClipboardStore.getState().mode).toBe(key === 'c' ? 'copy' : 'move');
 });

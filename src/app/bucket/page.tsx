@@ -541,6 +541,7 @@ function BucketContent() {
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false;
+      if (target instanceof HTMLInputElement && target.type === 'checkbox') return false;
       const tagName = target.tagName;
       return target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
     };
