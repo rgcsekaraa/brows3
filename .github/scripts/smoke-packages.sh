@@ -33,6 +33,6 @@ if [ "$BROWS3_SMOKE_STATUS" -ne 124 ]; then
   echo "Packaged application exited during startup with status $BROWS3_SMOKE_STATUS"
   exit 1
 fi
-if rg -i 'panicked at|Panic at|symbol lookup error|error while loading shared libraries' startup.log; then
+if grep -Ei 'panicked at|Panic at|symbol lookup error|error while loading shared libraries' startup.log; then
   exit 1
 fi
