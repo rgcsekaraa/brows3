@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "public/monaco-editor/**",
     "src-tauri/target/**",
+    "playwright-report/**",
+    "test-results/**",
   ]),
   {
     files: [".github/scripts/**/*.js", "scripts/**/*.js"],
