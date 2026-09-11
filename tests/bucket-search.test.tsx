@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import BucketPage from '@/app/bucket/page';
-import { objectApi, type S3Object, type SearchObjectsResult } from '@/lib/tauri';
+import { objectApi, transferApi, type S3Object, type SearchObjectsResult } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
 
 const route = vi.hoisted(() => ({ params: 'name=a&region=us-east-1', push: vi.fn() }));
@@ -15,8 +15,13 @@ vi.mock('@/hooks/useObjects', () => ({ useObjects: () => ({
 }) }));
 vi.mock('@/lib/tauri', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/tauri')>();
-  return { ...actual, objectApi: { ...actual.objectApi, searchObjects: vi.fn() } };
+  return {
+    ...actual,
+    objectApi: { ...actual.objectApi, searchObjects: vi.fn() },
+    transferApi: { ...actual.transferApi, queueDownload: vi.fn().mockResolvedValue('job'), queueFolderDownload: vi.fn().mockResolvedValue(1) },
+  };
 });
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn().mockResolvedValue('/tmp/downloads'), save: vi.fn().mockResolvedValue(null) }));
 vi.mock('@/components/dialogs/PropertiesDialog', () => ({ default: () => null }));
 vi.mock('@/components/dialogs/PermissionsDialog', () => ({ default: () => null }));
 vi.mock('@/components/dialogs/ObjectPreviewDialog', () => ({ default: () => null }));
@@ -68,4 +73,13 @@ test('ignores a search response that arrives after navigation', async () => {
   await act(async () => pending.resolve(result));
   expect(screen.queryByText('nested/match.txt')).toBeNull();
   expect(screen.getByText('root.txt')).toBeTruthy();
+});
+
+test.each([0, 42])('downloads a selected deep result with size %s', async size => {
+  vi.mocked(objectApi.searchObjects).mockResolvedValue({ ...result, objects: [{ ...result.objects[0], size }] });
+  render(<BucketPage />);
+  search();
+  fireEvent.click(await screen.findByText('nested/match.txt'));
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  await waitFor(() => expect(transferApi.queueDownload).toHaveBeenCalledWith('a', 'us-east-1', 'nested/match.txt', '/tmp/downloads/match.txt', size));
 });

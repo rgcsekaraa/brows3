@@ -269,8 +269,8 @@ function BucketContent() {
   }, [data, searchResults, deferredSearchQuery, prefix, isDeepSearch, viewKey]);
 
   const currentObjectSizeMap = useMemo(
-    () => new Map((data?.objects || []).map((obj) => [obj.key, obj.size])),
-    [data]
+    () => new Map([...(data?.objects || []), ...(displayData?.objects || [])].map((obj) => [obj.key, obj.size])),
+    [data, displayData]
   );
   const currentFolderKeys = useMemo(
     () => new Set(data?.common_prefixes || []),
@@ -670,6 +670,10 @@ function BucketContent() {
 
   const handleDownloadSelected = async () => {
     if (selectedKeys.size === 0) return;
+    if (Array.from(selectedKeys).some(key => !currentFolderKeys.has(key) && !currentObjectSizeMap.has(key))) {
+      displayError('The selection is no longer available. Select the items again.');
+      return;
+    }
 
     // Select directory for downloads
     const selected = await open({
