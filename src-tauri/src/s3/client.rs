@@ -40,12 +40,12 @@ fn build_s3_config(sdk_config: &aws_config::SdkConfig, profile: &Profile) -> aws
         CredentialType::CustomEndpoint { .. }
     ) || sdk_config.endpoint_url().is_some()
     {
-        builder = builder.force_path_style(true);
+        builder = builder
+            .force_path_style(true)
+            .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
     }
 
-    builder = builder
-        .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
-        .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
+    builder = builder.request_checksum_calculation(RequestChecksumCalculation::WhenRequired);
 
     builder.build()
 }
@@ -507,6 +507,27 @@ mod tests {
                 .starts_with("http://localhost:9100/test-bucket/folder/file.txt?"),
             "unexpected presigned URI: {}",
             request.uri()
+        );
+    }
+
+    #[test]
+    fn aws_upload_compatibility_preserves_download_checksum_validation() {
+        let config = SdkConfig::builder()
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .response_checksum_validation(
+                aws_sdk_s3::config::ResponseChecksumValidation::WhenSupported,
+            )
+            .build();
+        let profile = Profile::new("AWS".into(), CredentialType::Environment, None);
+        let result = build_s3_config(&config, &profile);
+        assert_eq!(
+            result.request_checksum_calculation(),
+            Some(&aws_sdk_s3::config::RequestChecksumCalculation::WhenRequired)
+        );
+        assert_eq!(
+            result.response_checksum_validation(),
+            Some(&aws_sdk_s3::config::ResponseChecksumValidation::WhenSupported)
         );
     }
 

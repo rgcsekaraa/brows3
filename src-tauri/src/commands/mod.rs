@@ -5,4 +5,4 @@ pub mod profiles;
 pub mod transfer;
 
 #[cfg(test)]
-mod test_s3;
+pub(crate) mod test_s3;

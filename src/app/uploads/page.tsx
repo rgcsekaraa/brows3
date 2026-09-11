@@ -315,6 +315,7 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                         <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>{job.key.split('/').pop()}</Typography>
                     </Tooltip>
                     {!isNested && <Typography variant="caption" color="text.secondary" noWrap display="block">{job.bucket}</Typography>}
+                    {status.detail && <Typography variant="caption" color="error" display="block" sx={{ overflowWrap: 'anywhere', maxWidth: 360 }}>{status.detail}</Typography>}
                 </Box>
             </TableCell>
             <TableCell>{formatBytes(displayBytes)}</TableCell>

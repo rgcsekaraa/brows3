@@ -62,6 +62,9 @@ tauri-plugin-clipboard-manager = "2.3.2"
 cap-std = "4.0.3"
 tempfile = "3.24"
 
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+
 [features]
 # This feature is used for production builds or when a dev server is not specified
 custom-protocol = ["tauri/custom-protocol"]

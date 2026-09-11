@@ -103,19 +103,29 @@ impl MultipartUploadGuard {
             return Ok(());
         };
 
-        self.client
-            .abort_multipart_upload()
-            .bucket(&self.bucket)
-            .key(&self.key)
-            .upload_id(&upload_id)
-            .send()
-            .await
-            .map_err(|error| {
-                AppError::S3Error(format!(
-                    "Failed to abort multipart upload {upload_id} for s3://{}/{}: {error}",
-                    self.bucket, self.key
-                ))
-            })?;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            self.client
+                .abort_multipart_upload()
+                .bucket(&self.bucket)
+                .key(&self.key)
+                .upload_id(&upload_id)
+                .send(),
+        )
+        .await
+        .map_err(|_| {
+            AppError::S3Error(format!(
+                "Aborting multipart upload {upload_id} timed out after 60 seconds"
+            ))
+        })?
+        .map_err(|error| {
+            AppError::S3Error(format!(
+                "Failed to abort multipart upload {upload_id} for s3://{}/{}: {}",
+                self.bucket,
+                self.key,
+                aws_sdk_s3::error::DisplayErrorContext(&error)
+            ))
+        })?;
 
         Ok(())
     }
@@ -138,14 +148,8 @@ impl Drop for MultipartUploadGuard {
         let bucket = self.bucket.clone();
         let key = self.key.clone();
         runtime.spawn(async move {
-            if let Err(error) = client
-                .abort_multipart_upload()
-                .bucket(&bucket)
-                .key(&key)
-                .upload_id(&upload_id)
-                .send()
-                .await
-            {
+            let mut guard = MultipartUploadGuard::new(client, &bucket, &key, upload_id.clone());
+            if let Err(error) = guard.abort().await {
                 log::error!(
                     "Best-effort abort failed for multipart upload {} at s3://{}/{}: {}",
                     upload_id,
@@ -164,6 +168,37 @@ mod tests {
         plan_multipart_upload, DEFAULT_PART_SIZE, MAX_OBJECT_SIZE, MAX_PARTS, MAX_PART_SIZE,
         MIN_PART_SIZE,
     };
+
+    #[tokio::test]
+    async fn abort_returns_when_the_provider_never_responds() {
+        let (endpoint, received, server) = crate::commands::test_s3::stalled_endpoint("").await;
+        let config = aws_sdk_s3::config::Builder::new()
+            .behavior_version_latest()
+            .region(aws_sdk_s3::config::Region::new("us-east-1"))
+            .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                "TEST",
+                "test-secret",
+                None,
+                None,
+                "test",
+            ))
+            .endpoint_url(endpoint)
+            .force_path_style(true)
+            .build();
+        let mut guard = super::MultipartUploadGuard::new(
+            aws_sdk_s3::Client::from_conf(config),
+            "bucket",
+            "file",
+            "upload".into(),
+        );
+        let task = tokio::spawn(async move { guard.abort().await });
+        received.await.unwrap();
+        tokio::time::pause();
+        let error = task.await.unwrap().unwrap_err();
+        tokio::time::resume();
+        server.abort();
+        assert!(error.to_string().contains("timed out"));
+    }
 
     #[test]
     fn plans_normal_large_uploads_with_contiguous_parts() {

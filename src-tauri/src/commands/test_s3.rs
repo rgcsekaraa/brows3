@@ -66,3 +66,29 @@ pub fn response(status: u16, headers: &str, body: &str) -> String {
         body.len()
     )
 }
+
+pub async fn stalled_endpoint(
+    response: &'static str,
+) -> (
+    String,
+    tokio::sync::oneshot::Receiver<()>,
+    tokio::task::JoinHandle<()>,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let (ready, received) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut byte = [0];
+        while !request.ends_with(b"\r\n\r\n") {
+            socket.read_exact(&mut byte).await.unwrap();
+            request.push(byte[0]);
+        }
+        socket.write_all(response.as_bytes()).await.unwrap();
+        let _ = ready.send(());
+        std::future::pending::<()>().await;
+        drop(socket);
+    });
+    (endpoint, received, server)
+}

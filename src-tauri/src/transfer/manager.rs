@@ -15,30 +15,13 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, Notify, RwLock};
 
-/// Per-request timeout floor. Even a request for a tiny object should not
-/// hang indefinitely when the connection stalls (bad proxy, TLS negotiation
-/// that never completes, a firewall that silently drops packets instead of
-/// resetting the connection). Without an explicit timeout the AWS SDK's HTTP
-/// client relies on OS-level TCP timeouts, which can take several minutes
-/// and give the user no indication anything is wrong in the meantime.
 const MIN_TRANSFER_TIMEOUT: Duration = Duration::from_secs(60);
-/// Per-request timeout ceiling, so a single stalled request cannot block a
-/// job forever even for a very large part.
 const MAX_TRANSFER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-/// Conservative assumed worst-case throughput used to size a request's
-/// timeout from its byte count, so slow-but-progressing transfers are not
-/// mistaken for a stalled connection.
 const MIN_ASSUMED_THROUGHPUT_BYTES_PER_SEC: u64 = 100 * 1024;
-/// Fixed timeout for requests whose duration doesn't scale with the object
-/// being transferred (metadata-only calls, and time-to-first-byte for a
-/// download).
 const METADATA_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Size a per-request timeout so it comfortably covers a slow real transfer
-/// while still failing a genuinely stalled connection well before the
-/// several-minute OS-level TCP timeout.
 fn transfer_timeout_for(size_bytes: u64) -> Duration {
-    let scaled_secs = size_bytes / MIN_ASSUMED_THROUGHPUT_BYTES_PER_SEC.max(1);
+    let scaled_secs = size_bytes.div_ceil(MIN_ASSUMED_THROUGHPUT_BYTES_PER_SEC);
     Duration::from_secs(scaled_secs).clamp(MIN_TRANSFER_TIMEOUT, MAX_TRANSFER_TIMEOUT)
 }
 
@@ -837,11 +820,18 @@ impl TransferManager {
                 let mut downloaded: u64 = 0;
                 let mut last_update = std::time::Instant::now();
 
-                while let Some(bytes) = output
-                    .body
-                    .try_next()
-                    .await
-                    .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?
+                while let Some(bytes) =
+                    tokio::time::timeout(METADATA_REQUEST_TIMEOUT, output.body.try_next())
+                        .await
+                        .map_err(|_| {
+                            crate::error::AppError::S3Error(
+                                "Download stalled for 60 seconds. Check the connection and retry."
+                                    .into(),
+                            )
+                        })?
+                        .map_err(|e| {
+                            crate::error::AppError::S3Error(format!("{}", DisplayErrorContext(&e)))
+                        })?
                 {
                     download
                         .write_all(&bytes)
@@ -882,12 +872,101 @@ impl TransferManager {
 
 #[cfg(test)]
 mod tests {
-    use super::TransferManager;
+    use super::{Client, RwLock, S3ClientManager, TransferManager};
     use crate::credentials::{CredentialType, Profile};
     use crate::transfer::{TransferJob, TransferStatus, TransferType};
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::Duration;
+
+    #[test]
+    fn upload_timeouts_cover_small_and_large_payloads_without_overflow() {
+        assert_eq!(super::transfer_timeout_for(0), Duration::from_secs(60));
+        assert_eq!(
+            super::transfer_timeout_for(10 * 1024 * 1024),
+            Duration::from_secs(103)
+        );
+        assert_eq!(
+            super::transfer_timeout_for(u64::MAX),
+            Duration::from_secs(1800)
+        );
+    }
+
+    #[tokio::test]
+    async fn stalled_download_releases_its_partial_file() {
+        let (endpoint, received, server) = crate::commands::test_s3::stalled_endpoint(
+            "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndo",
+        )
+        .await;
+        let profile = Profile::new(
+            "test".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: endpoint,
+                access_key_id: "TEST".into(),
+                secret_access_key: "test-secret".into(),
+            },
+            Some("us-east-1".into()),
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("result.txt");
+        let mut job = test_job(TransferStatus::InProgress);
+        job.profile_id = profile.id.clone();
+        job.local_path = path.to_string_lossy().into_owned();
+        job.download_destination = Some(Arc::new(
+            crate::transfer::download::DownloadDestination::from_path(&path, false).unwrap(),
+        ));
+        let manager = TransferManager::new();
+        manager.add_job(job.clone()).await;
+        let task = tokio::spawn(async move {
+            manager
+                .execute_job(
+                    &job,
+                    Arc::new(RwLock::new(S3ClientManager::new())),
+                    &profile,
+                )
+                .await
+        });
+        received.await.unwrap();
+        tokio::time::pause();
+        let result = task.await.unwrap();
+        tokio::time::resume();
+        server.abort();
+        assert!(result.is_err());
+        assert!(!path.exists());
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn failed_upload_retains_the_provider_error() {
+        let (client, server) =
+            crate::commands::test_s3::scripted_client(vec![crate::commands::test_s3::response(
+                403,
+                "",
+                "<Error><Code>AccessDenied</Code><Message>Uploads are disabled</Message></Error>",
+            )])
+            .await;
+        let client = Client::from_conf(
+            client
+                .config()
+                .to_builder()
+                .request_checksum_calculation(
+                    aws_sdk_s3::config::RequestChecksumCalculation::WhenRequired,
+                )
+                .build(),
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("input.txt");
+        std::fs::write(&path, b"test").unwrap();
+        let mut job = test_job(TransferStatus::InProgress);
+        job.local_path = path.to_string_lossy().into_owned();
+        let error = TransferManager::new()
+            .upload_file(&client, &job, "text/plain")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("AccessDenied"));
+        assert!(error.to_string().contains("Uploads are disabled"));
+        assert_eq!(server.await.unwrap().len(), 1);
+    }
 
     #[tokio::test]
     async fn retried_download_retains_its_destination_and_profile() {

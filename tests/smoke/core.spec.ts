@@ -150,3 +150,11 @@ test('empty truncated listings remain pageable until objects arrive', async ({ p
   expect(backend.calls.filter(call => call.command === 'list_objects').map(call => call.args.continuationToken)).toEqual([null, 'page-1', 'page-0']);
   await expect(page.getByRole('button', { name: 'Load more', exact: true })).toHaveCount(0);
 });
+
+for (const transferType of ['Upload', 'Download'] as const) {
+  test(`${transferType} failures show the provider message without hovering`, async ({ page, backend }) => {
+    backend.transfers = [{ id: 'failed', profile_id: 'a', transfer_type: transferType, bucket: 'demo-bucket', bucket_region: 'us-east-1', key: 'failed.txt', local_path: '/virtual/failed.txt', total_bytes: 4, processed_bytes: 0, status: { Failed: 'AccessDenied: This key cannot write objects' }, created_at: Date.now() }];
+    await page.goto(transferType === 'Upload' ? '/uploads' : '/downloads');
+    await expect(page.getByRole('main').getByText('AccessDenied: This key cannot write objects', { exact: true })).toBeVisible();
+  });
+}
