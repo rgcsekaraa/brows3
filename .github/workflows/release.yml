@@ -4,6 +4,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -79,7 +80,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --locked
 
   prepare-release:
-    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip release]')
+    if: github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip release]')
     needs:
       - validate
       - validate-windows
