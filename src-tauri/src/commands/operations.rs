@@ -121,8 +121,23 @@ fn classify_acl_error(error: &str) -> Option<(&'static str, &'static str)> {
     None
 }
 
-fn map_acl_error(error: impl ToString) -> crate::error::AppError {
-    let error_string = error.to_string();
+fn s3_error_message<E: aws_sdk_s3::error::ProvideErrorMetadata>(
+    error: &aws_sdk_s3::error::SdkError<E>,
+) -> String {
+    match error.as_service_error() {
+        Some(service) => format!(
+            "{}: {}",
+            service.code().unwrap_or("S3Error"),
+            service.message().unwrap_or("Request failed"),
+        ),
+        None => error.to_string(),
+    }
+}
+
+fn map_acl_error<E: aws_sdk_s3::error::ProvideErrorMetadata>(
+    error: aws_sdk_s3::error::SdkError<E>,
+) -> crate::error::AppError {
+    let error_string = s3_error_message(&error);
     if let Some((_, message)) = classify_acl_error(&error_string) {
         crate::error::AppError::S3Error(message.to_string())
     } else {
@@ -290,7 +305,7 @@ async fn multipart_copy_object(
     {
         Ok(output) => Some(output),
         Err(error) => {
-            let error_string = error.to_string();
+            let error_string = s3_error_message(&error);
             if matches!(classify_acl_error(&error_string), Some(("unsupported", _))) {
                 None
             } else {
@@ -345,7 +360,7 @@ async fn multipart_copy_object(
     let created = match build_create_request(acl_headers).send().await {
         Ok(output) => output,
         Err(error) => {
-            let error_string = error.to_string();
+            let error_string = s3_error_message(&error);
             if acl_headers.is_some()
                 && matches!(classify_acl_error(&error_string), Some(("unsupported", _)))
             {
@@ -1514,7 +1529,7 @@ pub(super) async fn save_object_text(
         Ok(output) => Some(copy_acl_headers(&output)?),
         Err(error)
             if matches!(
-                classify_acl_error(&error.to_string()),
+                classify_acl_error(&s3_error_message(&error)),
                 Some(("unsupported", _))
             ) =>
         {
@@ -1537,7 +1552,7 @@ pub(super) async fn save_object_text(
         Ok(output) => encode_object_tags(output.tag_set()),
         Err(error)
             if matches!(
-                classify_acl_error(&error.to_string()),
+                classify_acl_error(&s3_error_message(&error)),
                 Some(("unsupported", _))
             ) =>
         {
@@ -1589,7 +1604,7 @@ pub(super) async fn save_object_text(
     if let Err(error) = &result {
         if acl.is_some()
             && matches!(
-                classify_acl_error(&error.to_string()),
+                classify_acl_error(&s3_error_message(error)),
                 Some(("unsupported", _))
             )
         {
@@ -1693,7 +1708,7 @@ pub async fn set_object_content_type(
     {
         Ok(output) => Some(copy_acl_headers(&output)?),
         Err(error) => {
-            let error_string = error.to_string();
+            let error_string = s3_error_message(&error);
             if matches!(classify_acl_error(&error_string), Some(("unsupported", _))) {
                 None
             } else {
@@ -1763,7 +1778,7 @@ pub async fn set_object_content_type(
 
     let result = build_request(acl_headers.as_ref()).send().await;
     if let Err(error) = result {
-        let error_string = error.to_string();
+        let error_string = s3_error_message(&error);
         if acl_headers.is_some()
             && matches!(classify_acl_error(&error_string), Some(("unsupported", _)))
         {
@@ -1902,7 +1917,7 @@ pub async fn get_object_permissions(
     {
         Ok(output) => output,
         Err(err) => {
-            let error_string = err.to_string();
+            let error_string = s3_error_message(&err);
             if let Some((status, message)) = classify_acl_error(&error_string) {
                 return Ok(ObjectPermissions {
                     key,
@@ -2532,6 +2547,45 @@ mod text_save_tests {
             assert!(put.contains(header), "Missing {header}: {put}");
         }
         assert!(put.contains("edited"));
+    }
+
+    #[tokio::test]
+    async fn disabled_acls_retry_without_grants_and_keep_the_write_condition() {
+        let (client, server) = scripted_client(vec![
+            head("\"old\""), acl(), tags(),
+            response(400, "", "<Error><Code>AccessControlListNotSupported</Code><Message>ACLs are disabled</Message></Error>"),
+            response(200, "ETag: \"new\"\r\n", ""),
+        ]).await;
+        assert_eq!(
+            save_object_text(&client, "bucket", "file.txt", "edited".into(), "\"old\"")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("\"new\"")
+        );
+        let requests = server.await.unwrap();
+        assert!(requests[3].contains("x-amz-grant-full-control:"));
+        assert!(!requests[4].contains("x-amz-grant-"));
+        assert!(requests[4].contains("if-match: \"old\""));
+        assert!(requests[4].contains("x-amz-tagging: team%20name=web%2Bdocs"));
+    }
+
+    #[tokio::test]
+    async fn providers_without_acls_or_tags_can_still_save_conditionally() {
+        let unsupported = response(501, "", "<Error><Code>NotImplemented</Code></Error>");
+        let (client, server) = scripted_client(vec![
+            head("\"old\""),
+            unsupported.clone(),
+            unsupported,
+            response(200, "ETag: \"new\"\r\n", ""),
+        ])
+        .await;
+        save_object_text(&client, "bucket", "file.txt", "edited".into(), "\"old\"")
+            .await
+            .unwrap();
+        let requests = server.await.unwrap();
+        assert!(!requests[3].contains("x-amz-grant-"));
+        assert!(requests[3].contains("if-match: \"old\""));
     }
 
     #[tokio::test]
