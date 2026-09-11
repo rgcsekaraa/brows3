@@ -138,3 +138,15 @@ test('bucket favorites reopen the root and can be removed from the sidebar', asy
   await page.getByRole('button', { name: 'Remove demo-bucket from Favorites', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Add bucket root to Favorites', exact: true })).toHaveAttribute('aria-pressed', 'false');
 });
+
+test('empty truncated listings remain pageable until objects arrive', async ({ page, backend }) => {
+  backend.emptyListingPages = 2;
+  await page.goto(bucketUrl);
+  await expect(page.getByText('Empty folder', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Load more', exact: true }).click();
+  await expect.poll(() => backend.emptyListingPages).toBe(0);
+  await page.getByRole('button', { name: 'Load more', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Select notes.txt', exact: true })).toBeVisible();
+  expect(backend.calls.filter(call => call.command === 'list_objects').map(call => call.args.continuationToken)).toEqual([null, 'page-1', 'page-0']);
+  await expect(page.getByRole('button', { name: 'Load more', exact: true })).toHaveCount(0);
+});

@@ -89,7 +89,7 @@ function BucketContent() {
   const [sortField, setSortField] = useState<'name' | 'size' | 'date' | 'class'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const { data, isLoading, error: initialError, refresh, loadMore } = useObjects(bucketName || '', bucketRegion, prefix, sortField, sortDirection);
+  const { data, isLoading, error: initialError, refresh, loadMore, hasMore, isLoadingMore } = useObjects(bucketName || '', bucketRegion, prefix, sortField, sortDirection);
   const addJob = useTransferStore(state => state.addJob);
   const activeProfileId = useProfileStore(state => state.activeProfileId);
   const viewKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix]);
@@ -1243,7 +1243,8 @@ function BucketContent() {
         isLoading={isLoading || isSearching}
         onNavigate={handleNavigate}
         onSelect={handleSelect}
-        onEndReached={loadMore}
+        onEndReached={!isDeepSearch && hasMore ? loadMore : undefined}
+        isLoadingMore={isLoadingMore}
         onSelectAll={handleSelectAll}
         onMenuOpen={handleMenuOpen}
         onSortChange={(field) => {

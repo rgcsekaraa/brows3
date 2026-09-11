@@ -11,6 +11,7 @@ export class DesktopBackend {
     { id: 'b', name: 'Production', credential_type: { type: 'Environment' }, region: 'us-east-1', is_default: false },
   ];
   activeProfile = 'a';
+  emptyListingPages = 0;
   calls: { command: string; args: Args }[] = [];
   unexpected: string[] = [];
   transfers: TransferJob[] = [];
@@ -38,6 +39,10 @@ export class DesktopBackend {
       case 'list_buckets': return [{ name: 'demo-bucket', region: 'us-east-1', creation_date: null, object_count: null, total_size: null, total_size_formatted: null }];
       case 'get_bucket_region': return 'us-east-1';
       case 'list_objects': {
+        if (this.emptyListingPages > 0) {
+          this.emptyListingPages -= 1;
+          return { objects: [], common_prefixes: [], next_continuation_token: `page-${this.emptyListingPages}`, is_truncated: true, prefix: args.prefix || '', bucket_region: 'us-east-1' };
+        }
         const prefix = String(args.prefix || '');
         const objects = this.activeProfile === 'a' ? this.objects : [object('production.txt')];
         return { objects: objects.filter(item => item.key.startsWith(prefix) && !item.key.slice(prefix.length).includes('/')), common_prefixes: prefix ? [] : ['nested/'], next_continuation_token: null, is_truncated: false, prefix, bucket_region: 'us-east-1' };

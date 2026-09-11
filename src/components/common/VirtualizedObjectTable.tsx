@@ -14,6 +14,7 @@ import {
   Stack,
   Divider,
   CircularProgress,
+  Button,
 } from '@mui/material';
 import {
   Folder as FolderIcon,
@@ -146,6 +147,7 @@ interface Props {
   onEdit?: (key: string) => void;
   onCopyPath?: (key: string) => void;
   onEndReached?: () => void;
+  isLoadingMore?: boolean;
 }
 
 type ScrollerProps = HTMLAttributes<HTMLDivElement> & { style?: CSSProperties };
@@ -332,6 +334,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   onPreview,
   onEdit,
   onEndReached,
+  isLoadingMore = false,
 }: Props) {
   // Build rows - highly optimized
   const rows = useMemo<RowData[]>(() => {
@@ -475,7 +478,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
             <TableBody>
               <TableRow>
                 <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
-                  <Typography color="text.secondary">Empty folder</Typography>
+                  <Typography color="text.secondary">{onEndReached ? 'More results are available. Load the next page.' : 'Empty folder'}</Typography>
                 </TableCell>
               </TableRow>
             </TableBody>
@@ -529,9 +532,9 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
 
         <Stack direction="row" spacing={2} alignItems="center">
           {onEndReached && (
-            <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', fontSize: '0.7rem' }}>
-              Scroll for more
-            </Typography>
+            <Button size="small" onClick={onEndReached} disabled={isLoadingMore || isLoading}>
+              {isLoadingMore ? 'Loading more...' : 'Load more'}
+            </Button>
           )}
         </Stack>
       </Box>

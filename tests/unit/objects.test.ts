@@ -108,3 +108,18 @@ test('a late next page cannot append objects to another folder', async () => {
   await act(async () => { nextPage.resolve(listing('old-page')); await loading; });
   expect(view.result.current.data?.objects.map(object => object.key)).toEqual(['new-folder/current']);
 });
+
+test('overlapping pagination callbacks share one request', async () => {
+  const nextPage = Promise.withResolvers<ListObjectsResult>();
+  vi.mocked(objectApi.listObjects)
+    .mockResolvedValueOnce({ ...listing('first'), next_continuation_token: 'cursor', is_truncated: true })
+    .mockReturnValueOnce(nextPage.promise);
+  const view = renderHook(() => useObjects('bucket', 'us-east-1'));
+  await waitFor(() => expect(view.result.current.hasMore).toBe(true));
+  let first: Promise<void>;
+  let second: Promise<void>;
+  act(() => { first = view.result.current.loadMore(); second = view.result.current.loadMore(); });
+  await act(async () => { nextPage.resolve(listing('second')); await Promise.all([first, second]); });
+  expect(objectApi.listObjects).toHaveBeenCalledTimes(2);
+  expect(view.result.current.data?.objects.map(object => object.key)).toEqual(['first', 'second']);
+});
