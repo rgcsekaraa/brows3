@@ -1,9 +1,9 @@
 use aws_sdk_s3::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-pub async fn scripted_client(
+pub async fn scripted_endpoint(
     responses: Vec<String>,
-) -> (Client, tokio::task::JoinHandle<Vec<String>>) {
+) -> (String, tokio::task::JoinHandle<Vec<String>>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let server = tokio::spawn(async move {
@@ -36,6 +36,13 @@ pub async fn scripted_client(
         }
         requests
     });
+    (endpoint, server)
+}
+
+pub async fn scripted_client(
+    responses: Vec<String>,
+) -> (Client, tokio::task::JoinHandle<Vec<String>>) {
+    let (endpoint, server) = scripted_endpoint(responses).await;
     let config = aws_sdk_s3::config::Builder::new()
         .behavior_version_latest()
         .region(aws_sdk_s3::config::Region::new("us-east-1"))

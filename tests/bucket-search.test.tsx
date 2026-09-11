@@ -1,7 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import BucketPage from '@/app/bucket/page';
-import { objectApi, transferApi, type S3Object, type SearchObjectsResult } from '@/lib/tauri';
+import { objectApi, operationsApi, transferApi, type S3Object, type SearchObjectsResult } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
 
 const route = vi.hoisted(() => ({ params: 'name=a&region=us-east-1', push: vi.fn() }));
@@ -17,7 +17,8 @@ vi.mock('@/lib/tauri', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/tauri')>();
   return {
     ...actual,
-    objectApi: { ...actual.objectApi, searchObjects: vi.fn() },
+    objectApi: { ...actual.objectApi, searchObjects: vi.fn(), listObjects: vi.fn() },
+    operationsApi: { ...actual.operationsApi, deleteObjects: vi.fn().mockResolvedValue(undefined) },
     transferApi: { ...actual.transferApi, queueDownload: vi.fn().mockResolvedValue('job'), queueFolderDownload: vi.fn().mockResolvedValue(1) },
   };
 });
@@ -82,4 +83,24 @@ test.each([0, 42])('downloads a selected deep result with size %s', async size =
   fireEvent.click(await screen.findByText('nested/match.txt'));
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
   await waitFor(() => expect(transferApi.queueDownload).toHaveBeenCalledWith('a', 'us-east-1', 'nested/match.txt', '/tmp/downloads/match.txt', size));
+});
+
+
+test('a failed recursive listing prevents all deletion', async () => {
+  vi.mocked(objectApi.searchObjects).mockResolvedValue({ ...result, objects: [{ ...result.objects[0], key: 'folder/' }] });
+  vi.mocked(objectApi.listObjects)
+    .mockResolvedValueOnce({ objects: result.objects, common_prefixes: [], next_continuation_token: 'next', is_truncated: true, prefix: 'folder/' })
+    .mockRejectedValueOnce(new Error('Listing denied'));
+  const loggedError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  render(<BucketPage />);
+  search();
+  fireEvent.click(await screen.findByText('folder/'));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: /Delete/ }));
+  await waitFor(() => expect(objectApi.listObjects).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(loggedError).toHaveBeenCalled());
+  expect(operationsApi.deleteObjects).not.toHaveBeenCalled();
+  expect(screen.getByText('1 selected')).toBeTruthy();
+  loggedError.mockRestore();
 });

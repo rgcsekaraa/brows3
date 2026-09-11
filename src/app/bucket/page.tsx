@@ -760,8 +760,7 @@ function BucketContent() {
               keysToDelete.add(key);
             } catch (listErr) {
               console.error(`Failed to list folder contents: ${key}`, listErr);
-              // Still try to delete the folder marker
-              keysToDelete.add(key);
+              throw new Error(`Could not list all objects in ${key}. Nothing was deleted. ${listErr instanceof Error ? listErr.message : String(listErr)}`);
             }
           } else {
             // It's a file - just add it

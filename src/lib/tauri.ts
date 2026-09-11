@@ -304,8 +304,11 @@ export const operationsApi = {
   },
 
   async deleteObjects(bucketName: string, bucketRegion: string | undefined, keys: string[]): Promise<void> {
-    await invoke<void>('delete_objects', { bucketName, bucketRegion, keys });
-    invalidateCache(); // Auto-refresh after bulk delete
+    try {
+      await invoke<void>('delete_objects', { bucketName, bucketRegion, keys });
+    } finally {
+      invalidateCache();
+    }
   },
 
   async getObjectMetadata(bucketName: string, bucketRegion: string | undefined, key: string): Promise<ObjectMetadata> {

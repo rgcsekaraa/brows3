@@ -1197,80 +1197,84 @@ async fn delete_objects_with_profile(
         }
     };
 
-    // Delete in batches of 1000. Some S3-compatible providers support single-object
-    // deletion but return service errors for DeleteObjects, so fall back per key.
-    for chunk in keys.chunks(1000) {
-        let delete = build_delete_request(chunk)?;
+    let result = async {
+        // Delete in batches of 1000. Some S3-compatible providers support single-object
+        // deletion but return service errors for DeleteObjects, so fall back per key.
+        for chunk in keys.chunks(1000) {
+            let delete = build_delete_request(chunk)?;
 
-        let result = client
-            .delete_objects()
-            .bucket(&bucket_name)
-            .delete(delete.clone())
-            .send()
-            .await;
+            let result = client
+                .delete_objects()
+                .bucket(&bucket_name)
+                .delete(delete.clone())
+                .send()
+                .await;
 
-        match result {
-            Ok(output) => validate_delete_result(&bucket_name, &output)?,
-            Err(err) => {
-                // Retry logic for bulk delete
-                log::warn!(
-                    "delete_objects failed, attempting region discovery: {}",
-                    err
-                );
-                let detected_region = {
-                    let retry_client = {
-                        let mut s3_manager = s3_state.write().await;
-                        s3_manager.get_client(&active_profile).await?.clone()
-                    };
-                    crate::s3::get_bucket_region(&retry_client, &bucket_name)
-                        .await
-                        .ok()
-                };
-
-                if let Some(new_region) = detected_region {
-                    let new_client = {
-                        let mut s3_manager = s3_state.write().await;
-                        s3_manager.set_bucket_region(&bucket_name, new_region.clone());
-                        s3_manager
-                            .get_client_for_region(&active_profile, &new_region)
-                            .await?
-                            .clone()
-                    };
-
-                    match new_client
-                        .delete_objects()
-                        .bucket(&bucket_name)
-                        .delete(delete)
-                        .send()
-                        .await
-                    {
-                        Ok(output) => validate_delete_result(&bucket_name, &output)?,
-                        Err(retry_err) => {
-                            log::warn!(
-                                "delete_objects retry failed, falling back to single deletes: {}",
-                                retry_err
-                            );
-                            delete_keys_individually(&new_client, &bucket_name, chunk).await?;
-                        }
-                    }
-                } else {
+            match result {
+                Ok(output) => validate_delete_result(&bucket_name, &output)?,
+                Err(err) => {
+                    // Retry logic for bulk delete
                     log::warn!(
-                         "delete_objects region discovery failed, falling back to single deletes: {}",
-                         err
-                     );
-                    delete_keys_individually(&client, &bucket_name, chunk).await?;
+                        "delete_objects failed, attempting region discovery: {}",
+                        err
+                    );
+                    let detected_region = {
+                        let retry_client = {
+                            let mut s3_manager = s3_state.write().await;
+                            s3_manager.get_client(&active_profile).await?.clone()
+                        };
+                        crate::s3::get_bucket_region(&retry_client, &bucket_name)
+                            .await
+                            .ok()
+                    };
+
+                    if let Some(new_region) = detected_region {
+                        let new_client = {
+                            let mut s3_manager = s3_state.write().await;
+                            s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                            s3_manager
+                                .get_client_for_region(&active_profile, &new_region)
+                                .await?
+                                .clone()
+                        };
+
+                        match new_client
+                            .delete_objects()
+                            .bucket(&bucket_name)
+                            .delete(delete)
+                            .send()
+                            .await
+                        {
+                            Ok(output) => validate_delete_result(&bucket_name, &output)?,
+                            Err(retry_err) => {
+                                log::warn!(
+                                    "delete_objects retry failed, falling back to single deletes: {}",
+                                    retry_err
+                                );
+                                delete_keys_individually(&new_client, &bucket_name, chunk).await?;
+                            }
+                        }
+                    } else {
+                        log::warn!(
+                             "delete_objects region discovery failed, falling back to single deletes: {}",
+                             err
+                         );
+                        delete_keys_individually(&client, &bucket_name, chunk).await?;
+                    }
                 }
             }
         }
-    }
 
-    // Invalidate cache for this bucket after successful deletion
+        Ok(())
+    }
+    .await;
+
     {
         let mut s3_manager = s3_state.write().await;
         s3_manager.remove_bucket_cache(&active_profile.id, &bucket_name);
     }
 
-    Ok(())
+    result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2689,5 +2693,55 @@ mod large_copy_tests {
         assert_eq!(requests.len(), 1);
         assert!(requests[0].starts_with("PUT /destination/renamed.txt"));
         assert!(requests[0].contains("x-amz-copy-source: source/original.txt?versionId=v1"));
+    }
+}
+
+#[cfg(test)]
+mod partial_delete_tests {
+    use super::delete_objects_with_profile;
+    use crate::commands::test_s3::{response, scripted_endpoint};
+    use crate::credentials::{CredentialType, Profile};
+    use crate::s3::{FolderContent, S3ClientManager};
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    #[tokio::test]
+    async fn partial_delete_reports_the_failed_key_and_invalidates_cached_results() {
+        let (endpoint, server) = scripted_endpoint(vec![response(200, "", "<DeleteResult><Deleted><Key>deleted.txt</Key></Deleted><Error><Key>denied.txt</Key><Code>AccessDenied</Code><Message>Denied</Message></Error></DeleteResult>")]).await;
+        let profile = Profile::new(
+            "test".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: endpoint,
+                access_key_id: "TEST".into(),
+                secret_access_key: "test-secret".into(),
+            },
+            Some("us-east-1".into()),
+        );
+        let mut manager = S3ClientManager::new();
+        manager.set_sorted_folder_content(
+            &profile.id,
+            "bucket",
+            "",
+            "name",
+            "asc",
+            FolderContent::default(),
+        );
+        let state = Arc::new(RwLock::new(manager));
+        let error = delete_objects_with_profile(
+            "bucket".into(),
+            None,
+            vec!["deleted.txt".into(), "denied.txt".into()],
+            profile.clone(),
+            &state,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("denied.txt (AccessDenied"));
+        assert!(state
+            .read()
+            .await
+            .get_sorted_folder_content(&profile.id, "bucket", "", "name", "asc")
+            .is_none());
+        assert_eq!(server.await.unwrap().len(), 1);
     }
 }
