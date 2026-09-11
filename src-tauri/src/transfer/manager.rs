@@ -250,6 +250,9 @@ impl TransferManager {
 
     async fn acquire_slot(&self) -> ActiveSlotGuard {
         loop {
+            let notified = self.slot_notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
             let max = self.max_concurrency.load(Ordering::Acquire).max(1);
             let active = self.active_count.load(Ordering::Acquire);
 
@@ -267,7 +270,7 @@ impl TransferManager {
                 continue;
             }
 
-            self.slot_notify.notified().await;
+            notified.await;
         }
     }
 
@@ -775,6 +778,59 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn transfer_slots_follow_concurrency_changes_without_stalling() {
+        let manager = TransferManager::new();
+        manager.set_max_concurrency(1);
+        let first = manager.acquire_slot().await;
+        let second = manager.acquire_slot();
+        tokio::pin!(second);
+        assert!(futures::poll!(second.as_mut()).is_pending());
+        manager.set_max_concurrency(2);
+        let second = tokio::time::timeout(Duration::from_secs(1), second)
+            .await
+            .unwrap();
+        manager.set_max_concurrency(1);
+        let third = manager.acquire_slot();
+        tokio::pin!(third);
+        assert!(futures::poll!(third.as_mut()).is_pending());
+        drop(second);
+        assert!(futures::poll!(third.as_mut()).is_pending());
+        drop(first);
+        tokio::time::timeout(Duration::from_secs(1), third)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn released_slots_allow_all_waiting_transfers_to_finish() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let manager = Arc::new(TransferManager::new());
+        manager.set_max_concurrency(3);
+        let peak = Arc::new(AtomicUsize::new(0));
+        let tasks = (0..200)
+            .map(|_| {
+                let manager = manager.clone();
+                let peak = peak.clone();
+                tokio::spawn(async move {
+                    let _slot = manager.acquire_slot().await;
+                    peak.fetch_max(
+                        manager.active_count.load(Ordering::Acquire),
+                        Ordering::AcqRel,
+                    );
+                    tokio::task::yield_now().await;
+                })
+            })
+            .collect::<Vec<_>>();
+        let results =
+            tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(tasks))
+                .await
+                .unwrap();
+        assert!(results.into_iter().all(|result| result.is_ok()));
+        assert!(peak.load(Ordering::Acquire) <= 3);
+        assert_eq!(manager.active_count.load(Ordering::Acquire), 0);
+    }
 
     /// Run with BROWS3_S3_TEST_ENDPOINT=http://127.0.0.1:<port> against MinIO.
     /// The sparse 129 MiB source crosses the production multipart threshold
