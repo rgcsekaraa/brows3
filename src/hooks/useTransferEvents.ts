@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { TransferEvent, TransferJob } from '@/lib/tauri';
 import { isTauri } from '@/lib/tauri';
 import { useTransferStore } from '@/store/transferStore';
@@ -10,7 +10,6 @@ const REFRESH_INTERVAL_MS = 5000; // Refresh every 5 seconds
 
 export function useTransferEvents() {
   const store = useTransferStore();
-  const unlistenRef = useRef<(() => void) | null>(null);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isVisibleRef = useRef(true);
   
@@ -31,7 +30,6 @@ export function useTransferEvents() {
       refreshJobs: store.refreshJobs,
     };
     
-    return () => { isMounted.current = false; };
   }, [store.updateJob, store.upsertJob, store.refreshJobs]);
 
   // Manage refresh interval based on visibility
@@ -56,14 +54,24 @@ export function useTransferEvents() {
       return;
     }
 
-    // Setup listener
+    let cancelled = false;
+    let unlistenUpdate: UnlistenFn | undefined;
+    let unlistenAdded: UnlistenFn | undefined;
+    isMounted.current = true;
+    isVisibleRef.current = document.visibilityState === 'visible';
+    const cleanupListeners = () => {
+      unlistenUpdate?.();
+      unlistenAdded?.();
+      unlistenUpdate = undefined;
+      unlistenAdded = undefined;
+    };
+
     const setup = async () => {
-      if (unlistenRef.current) return;
       
       // Initial refresh on mount
       callbacksRef.current.refreshJobs();
       
-      const unlistenUpdate = await listen<TransferEvent>('transfer-update', (event) => {
+      const stopUpdates = await listen<TransferEvent>('transfer-update', (event) => {
         // Smart Throttling:
         // 1. If visible: Process everything
         // 2. If hidden: Only process "terminal" states (Completed, Failed, Cancelled)
@@ -76,32 +84,30 @@ export function useTransferEvents() {
           status === 'Cancelled' || 
           (typeof status === 'object' && 'Failed' in status);
 
-        if (isMounted.current && (isVisibleRef.current || isTerminal)) {
+        if (!cancelled && (isVisibleRef.current || isTerminal)) {
           callbacksRef.current.updateJob(event.payload);
         }
       });
       
-      const unlistenAdded = await listen<TransferJob>('transfer-added', (event) => {
+      if (cancelled) {
+        stopUpdates();
+        return;
+      }
+      unlistenUpdate = stopUpdates;
+      const stopAdded = await listen<TransferJob>('transfer-added', (event) => {
         // Always process new jobs to ensure store is aware of them
         // This is generally lower frequency than progress updates
-        if (isMounted.current) {
+        if (!cancelled) {
           callbacksRef.current.upsertJob(event.payload);
         }
       });
       
-      if (!isMounted.current) {
-          unlistenUpdate();
-          unlistenAdded();
-          return;
+      if (cancelled) {
+        stopAdded();
+        return;
       }
-      
-      unlistenRef.current = () => {
-          unlistenUpdate();
-          unlistenAdded();
-      };
-      
-      // Start periodic refresh only when visible
-      startRefreshInterval();
+      unlistenAdded = stopAdded;
+      if (isVisibleRef.current) startRefreshInterval();
     };
 
     // Handle visibility change - pause processing when not visible
@@ -119,14 +125,16 @@ export function useTransferEvents() {
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    setup();
+    setup().catch(error => {
+      cleanupListeners();
+      if (!cancelled) console.error('Could not subscribe to transfer events:', error);
+    });
 
     return () => {
+      cancelled = true;
+      isMounted.current = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (unlistenRef.current) {
-        unlistenRef.current();
-        unlistenRef.current = null;
-      }
+      cleanupListeners();
       stopRefreshInterval();
     };
   }, []); // Empty deps - runs once on mount
