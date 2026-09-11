@@ -194,6 +194,8 @@ impl TransferManager {
                         job.total_bytes,
                     );
 
+                    new_job.download_destination = job.download_destination.clone();
+
                     // Preserve grouping info
                     new_job.parent_group_id = job.parent_group_id.clone();
                     new_job.group_name = job.group_name.clone();
@@ -778,6 +780,51 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn retried_download_retains_its_destination_and_profile() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("result.txt");
+        let destination = Arc::new(
+            crate::transfer::download::DownloadDestination::from_path(&path, false).unwrap(),
+        );
+        let mut job = TransferJob::new(
+            TransferType::Download,
+            "profile-a".into(),
+            "bucket".into(),
+            Some("region".into()),
+            "folder/result.txt".into(),
+            path.clone(),
+            4,
+        )
+        .with_group("group".into(), "folder".into());
+        job.download_destination = Some(destination);
+        job.status = TransferStatus::Failed("Connection lost".into());
+        job.processed_bytes = 2;
+        let manager = TransferManager::new();
+        manager.add_job(job.clone()).await;
+        let retry_id = manager.retry_job(&job.id).await.unwrap();
+        let retry = manager.get_job(&retry_id).await.unwrap();
+        assert_ne!(retry_id, job.id);
+        assert_eq!(retry.profile_id, "profile-a");
+        assert_eq!(retry.parent_group_id, job.parent_group_id);
+        assert_eq!(retry.group_name, job.group_name);
+        assert_eq!(retry.status, TransferStatus::Pending);
+        assert_eq!(retry.processed_bytes, 0);
+        assert!(matches!(
+            manager.get_job(&job.id).await.unwrap().status,
+            TransferStatus::Failed(_)
+        ));
+        let mut pending = retry
+            .download_destination
+            .expect("A retry must retain the selected download directory")
+            .begin()
+            .unwrap();
+        pending.write_all(b"done").await.unwrap();
+        pending.finish_writing().await.unwrap();
+        pending.commit().unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), b"done");
+    }
 
     #[tokio::test]
     async fn transfer_slots_follow_concurrency_changes_without_stalling() {
