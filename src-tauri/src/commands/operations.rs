@@ -25,7 +25,7 @@ fn validate_operation_profile(expected: Option<&str>, actual: &str) -> Result<()
 async fn detect_and_cache_bucket_region(
     active_profile: &crate::credentials::Profile,
     bucket_name: &str,
-    s3_state: &State<'_, S3State>,
+    s3_state: &S3State,
 ) -> Result<Option<String>> {
     let retry_client = {
         let mut s3_manager = s3_state.write().await;
@@ -485,7 +485,25 @@ pub async fn put_object(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    put_object_with_profile(
+        bucket_name,
+        bucket_region,
+        key,
+        local_path,
+        active_profile,
+        &s3_state,
+    )
+    .await
+}
 
+async fn put_object_with_profile(
+    bucket_name: String,
+    bucket_region: Option<String>,
+    key: String,
+    local_path: Option<String>,
+    active_profile: crate::credentials::Profile,
+    s3_state: &S3State,
+) -> Result<()> {
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
@@ -530,7 +548,7 @@ pub async fn put_object(
         log::warn!("put_object failed, attempting region discovery: {}", err);
 
         if let Some(new_region) =
-            detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await?
+            detect_and_cache_bucket_region(&active_profile, &bucket_name, s3_state).await?
         {
             let new_client = {
                 let mut s3_manager = s3_state.write().await;
@@ -691,7 +709,16 @@ pub async fn delete_object(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    delete_object_with_profile(bucket_name, bucket_region, key, active_profile, &s3_state).await
+}
 
+async fn delete_object_with_profile(
+    bucket_name: String,
+    bucket_region: Option<String>,
+    key: String,
+    active_profile: crate::credentials::Profile,
+    s3_state: &S3State,
+) -> Result<()> {
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
@@ -723,7 +750,7 @@ pub async fn delete_object(
         log::warn!("delete_object failed, attempting region discovery: {}", err);
 
         if let Some(new_region) =
-            detect_and_cache_bucket_region(&active_profile, &bucket_name, &s3_state).await?
+            detect_and_cache_bucket_region(&active_profile, &bucket_name, s3_state).await?
         {
             let new_client = {
                 let mut s3_manager = s3_state.write().await;
@@ -785,7 +812,30 @@ pub async fn copy_object(
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
     validate_operation_profile(expected_profile_id.as_deref(), &active_profile.id)?;
+    copy_object_with_profile(
+        source_bucket,
+        source_region,
+        source_key,
+        destination_bucket,
+        destination_region,
+        destination_key,
+        active_profile,
+        &s3_state,
+    )
+    .await
+}
 
+#[allow(clippy::too_many_arguments)]
+async fn copy_object_with_profile(
+    source_bucket: String,
+    source_region: Option<String>,
+    source_key: String,
+    destination_bucket: String,
+    destination_region: Option<String>,
+    destination_key: String,
+    active_profile: crate::credentials::Profile,
+    s3_state: &S3State,
+) -> Result<()> {
     // Check if this is a folder copy (key ends with /)
     if source_key.ends_with('/') {
         // RECURSIVE FOLDER COPY
@@ -867,7 +917,7 @@ pub async fn copy_object(
                 destination_region.clone(),
                 &new_key,
                 &active_profile,
-                &s3_state,
+                s3_state,
             )
             .await?;
         }
@@ -879,13 +929,13 @@ pub async fn copy_object(
             } else {
                 format!("{}/", destination_key)
             };
-            put_object(
+            put_object_with_profile(
                 destination_bucket.clone(),
                 destination_region,
                 destination_marker,
                 None,
-                profile_state.clone(),
-                s3_state.clone(),
+                active_profile.clone(),
+                s3_state,
             )
             .await?;
         }
@@ -904,7 +954,7 @@ pub async fn copy_object(
             destination_region,
             &destination_key,
             &active_profile,
-            &s3_state,
+            s3_state,
         )
         .await?;
 
@@ -920,7 +970,7 @@ async fn copy_single_object(
     destination_region: Option<String>,
     destination_key: &str,
     active_profile: &crate::credentials::Profile,
-    s3_state: &State<'_, S3State>,
+    s3_state: &S3State,
 ) -> Result<()> {
     // Check cache for bucket region first
     let destination_region = {
@@ -1050,7 +1100,16 @@ pub async fn delete_objects(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    delete_objects_with_profile(bucket_name, bucket_region, keys, active_profile, &s3_state).await
+}
 
+async fn delete_objects_with_profile(
+    bucket_name: String,
+    bucket_region: Option<String>,
+    keys: Vec<String>,
+    active_profile: crate::credentials::Profile,
+    s3_state: &S3State,
+) -> Result<()> {
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
@@ -1169,16 +1228,40 @@ pub async fn move_object(
         &destination_key,
     )?;
 
+    let profile_manager = profile_state.read().await;
+    let active_profile = profile_manager
+        .get_active_profile()
+        .await?
+        .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
+    drop(profile_manager);
+    validate_operation_profile(expected_profile_id.as_deref(), &active_profile.id)?;
+    move_object_with_profile(
+        source_bucket,
+        source_region,
+        source_key,
+        destination_bucket,
+        destination_region,
+        destination_key,
+        active_profile,
+        &s3_state,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn move_object_with_profile(
+    source_bucket: String,
+    source_region: Option<String>,
+    source_key: String,
+    destination_bucket: String,
+    destination_region: Option<String>,
+    destination_key: String,
+    active_profile: crate::credentials::Profile,
+    s3_state: &S3State,
+) -> Result<()> {
     // Check if this is a folder move (key ends with /)
     if source_key.ends_with('/') {
         // RECURSIVE FOLDER MOVE
-        let profile_manager = profile_state.read().await;
-        let active_profile = profile_manager
-            .get_active_profile()
-            .await?
-            .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
-        drop(profile_manager);
-        validate_operation_profile(expected_profile_id.as_deref(), &active_profile.id)?;
 
         // Get client for listing source bucket
         let source_region_resolved = {
@@ -1254,7 +1337,7 @@ pub async fn move_object(
                     destination_region.clone(),
                     &destination_folder_key,
                     &active_profile,
-                    &s3_state,
+                    s3_state,
                 )
                 .await?;
             } else {
@@ -1268,7 +1351,7 @@ pub async fn move_object(
                     destination_region.clone(),
                     &new_key,
                     &active_profile,
-                    &s3_state,
+                    s3_state,
                 )
                 .await?;
             }
@@ -1276,11 +1359,11 @@ pub async fn move_object(
 
         // Delete all source objects at once
         if !all_keys.is_empty() {
-            delete_objects(
+            delete_objects_with_profile(
                 source_bucket,
                 source_region_resolved,
                 all_keys,
-                profile_state,
+                active_profile,
                 s3_state,
             )
             .await?;
@@ -1290,25 +1373,24 @@ pub async fn move_object(
     } else {
         // Single file move (original behavior)
         // 1. Copy
-        copy_object(
+        copy_object_with_profile(
             source_bucket.clone(),
             source_region.clone(),
             source_key.clone(),
             destination_bucket.clone(),
             destination_region.clone(),
             destination_key.clone(),
-            expected_profile_id,
-            profile_state.clone(),
-            s3_state.clone(),
+            active_profile.clone(),
+            s3_state,
         )
         .await?;
 
         // 2. Delete source
-        delete_object(
+        delete_object_with_profile(
             source_bucket,
             source_region,
             source_key,
-            profile_state,
+            active_profile,
             s3_state,
         )
         .await?;
@@ -2077,5 +2159,116 @@ mod operation_profile_tests {
         assert!(validate_operation_profile(Some("profile-a"), "profile-b").is_err());
         assert!(validate_operation_profile(Some("profile-a"), "profile-a").is_ok());
         assert!(validate_operation_profile(None, "profile-a").is_ok());
+    }
+}
+
+#[cfg(test)]
+mod move_profile_tests {
+    use super::*;
+    use crate::credentials::{CredentialType, Profile, ProfileManager};
+    use crate::s3::S3ClientManager;
+    use std::sync::Arc;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::sync::RwLock;
+
+    #[tokio::test]
+    async fn move_keeps_its_profile_when_selection_changes_after_copy() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let directory =
+            std::env::temp_dir().join(format!("brows3-move-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut profiles = ProfileManager::new(directory.clone(), true).unwrap();
+        let profile = profiles
+            .add_profile(Profile::new(
+                "A".into(),
+                CredentialType::CustomEndpoint {
+                    endpoint_url: endpoint,
+                    access_key_id: "TEST-A".into(),
+                    secret_access_key: "test-secret".into(),
+                },
+                Some("us-east-1".into()),
+            ))
+            .await
+            .unwrap();
+        let other = profiles
+            .add_profile(Profile::new(
+                "B".into(),
+                CredentialType::Environment,
+                Some("us-east-1".into()),
+            ))
+            .await
+            .unwrap();
+        profiles.set_active_profile(&profile.id).await.unwrap();
+        let captured = profiles.get_active_profile().await.unwrap().unwrap();
+        let profiles = Arc::new(RwLock::new(profiles));
+        let server_profiles = profiles.clone();
+        let other_id = other.id.clone();
+        let server = tokio::spawn(async move {
+            let mut requests = Vec::new();
+            for index in 0..2 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut byte = [0];
+                while !request.ends_with(b"\r\n\r\n") {
+                    socket.read_exact(&mut byte).await.unwrap();
+                    request.push(byte[0]);
+                }
+                requests.push(String::from_utf8(request).unwrap());
+                let body = if index == 0 {
+                    server_profiles
+                        .write()
+                        .await
+                        .set_active_profile(&other_id)
+                        .await
+                        .unwrap();
+                    "<CopyObjectResult><ETag>&quot;test&quot;</ETag><LastModified>2026-01-01T00:00:00Z</LastModified></CopyObjectResult>"
+                } else {
+                    ""
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+            }
+            requests
+        });
+        let s3 = Arc::new(RwLock::new(S3ClientManager::new()));
+        tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            move_object_with_profile(
+                "bucket".into(),
+                Some("us-east-1".into()),
+                "source.txt".into(),
+                "bucket".into(),
+                Some("us-east-1".into()),
+                "dest.txt".into(),
+                captured,
+                &s3,
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let requests = server.await.unwrap();
+        assert!(requests[0].starts_with("PUT /bucket/dest.txt"));
+        assert!(requests[1].starts_with("DELETE /bucket/source.txt"));
+        assert!(requests
+            .iter()
+            .all(|request| request.contains("Credential=TEST-A/")));
+        assert_eq!(
+            profiles
+                .read()
+                .await
+                .get_active_profile()
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            other.id
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }
