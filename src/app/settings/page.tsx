@@ -40,7 +40,7 @@ import { useAppStore } from '@/store/appStore';
 import { useMonitorStore } from '@/store/monitorStore';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
 import { toast } from '@/store/toastStore';
-import { copyToClipboard, invalidateCache, isTauri, logApi, type LogFileInfo } from '@/lib/tauri';
+import { bucketApi, copyToClipboard, invalidateCache, isTauri, logApi, type LogFileInfo } from '@/lib/tauri';
 
 export default function SettingsPage() {
   // Theme is controlled by appStore (used by the actual app)
@@ -90,11 +90,16 @@ export default function SettingsPage() {
     setPendingPreviewLimit(maxTextPreviewSizeMb);
   }, [maxTextPreviewSizeMb]);
 
-  const handleClearCache = () => {
-    invalidateBucketCache();
-    clearDiscoveredRegions();
-    invalidateCache();
-    toast.success('Caches cleared', 'Bucket lists, discovered regions, and object views were reset.');
+  const handleClearCache = async () => {
+    try {
+      if (isTauri()) await bucketApi.refreshS3Client();
+      invalidateBucketCache();
+      clearDiscoveredRegions();
+      invalidateCache();
+      toast.success('Caches cleared', 'Bucket lists, discovered regions, and object views were reset.');
+    } catch (error) {
+      toast.error('Could not clear caches', String(error));
+    }
   };
 
   const handleCheckUpdate = async () => {

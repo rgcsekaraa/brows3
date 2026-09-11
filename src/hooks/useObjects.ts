@@ -37,6 +37,7 @@ export function useObjects(
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [cacheRevision, setCacheRevision] = useState(0);
   
   const fetchIdRef = useRef(0);
   const lastDataKeyRef = useRef<string>('');
@@ -130,15 +131,18 @@ export function useObjects(
         viewKeyRef.current = '';
       }
     };
-  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection, fetchItems]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection, fetchItems, cacheRevision]);
 
   useEffect(() => {
     return subscribeCacheInvalidation(() => {
+      fetchIdRef.current += 1;
+      fetchInProgress.current = false;
       loadedViewKeyRef.current = '';
       lastDataKeyRef.current = '';
       setData(null);
       setContinuationToken(null);
       setHasMore(false);
+      setCacheRevision(revision => revision + 1);
     });
   }, []);
 

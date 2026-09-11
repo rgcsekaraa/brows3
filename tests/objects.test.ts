@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { useObjects } from '@/hooks/useObjects';
-import { objectApi, type ListObjectsResult } from '@/lib/tauri';
+import { invalidateCache, objectApi, type ListObjectsResult } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
 import { useAppStore } from '@/store/appStore';
 
@@ -39,4 +39,24 @@ test('a response for the old region cannot replace the current view', async () =
   await waitFor(() => expect(view.result.current.data?.objects[0].key).toBe('us-west-2'));
   await act(async () => old.resolve(listing('old')));
   expect(view.result.current.data?.objects[0].key).toBe('us-west-2');
+});
+
+test('cache invalidation refetches the visible folder', async () => {
+  const view = renderHook(() => useObjects('bucket', 'us-east-1'));
+  await waitFor(() => expect(view.result.current.data).not.toBeNull());
+  vi.mocked(objectApi.listObjects).mockResolvedValue(listing('updated'));
+  act(() => invalidateCache());
+  await waitFor(() => expect(view.result.current.data?.objects[0].key).toBe('updated'));
+  expect(objectApi.listObjects).toHaveBeenCalledTimes(2);
+});
+
+test('invalidation prevents an outstanding request from restoring stale data', async () => {
+  const old = Promise.withResolvers<ListObjectsResult>();
+  vi.mocked(objectApi.listObjects).mockReturnValueOnce(old.promise);
+  const view = renderHook(() => useObjects('bucket', 'us-east-1'));
+  vi.mocked(objectApi.listObjects).mockResolvedValue(listing('updated'));
+  act(() => invalidateCache());
+  await waitFor(() => expect(view.result.current.data?.objects[0].key).toBe('updated'));
+  await act(async () => old.resolve(listing('old')));
+  expect(view.result.current.data?.objects[0].key).toBe('updated');
 });
