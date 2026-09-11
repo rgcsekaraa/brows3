@@ -354,6 +354,24 @@ function BucketContent() {
 
   const { addRecent, addFavorite, removeFavorite, isFavorite } = useHistoryStore();
 
+  const handleToggleBucketFavorite = () => {
+    if (!bucketName || !activeProfileId) return;
+    if (isFavorite('', bucketName, activeProfileId)) {
+      removeFavorite('', bucketName, activeProfileId);
+      displaySuccess('Removed bucket from Favorites');
+      return;
+    }
+    addFavorite({
+      key: '',
+      name: bucketName,
+      bucket: bucketName,
+      region: bucketRegion,
+      profileId: activeProfileId,
+      isFolder: true,
+    });
+    displaySuccess('Added bucket root to Favorites');
+  };
+
   const handleNavigate = (newPrefix: string) => {
     // Track in recent history
     if (newPrefix && bucketName) {
@@ -1055,6 +1073,19 @@ function BucketContent() {
             })}
           </Breadcrumbs>
         </Box>
+
+        <Tooltip title={isFavorite('', bucketName || undefined, activeProfileId || undefined) ? 'Remove bucket root from Favorites' : 'Add bucket root to Favorites'}>
+          <IconButton
+            size="small"
+            color={isFavorite('', bucketName || undefined, activeProfileId || undefined) ? 'warning' : 'default'}
+            aria-label={isFavorite('', bucketName || undefined, activeProfileId || undefined) ? 'Remove bucket root from Favorites' : 'Add bucket root to Favorites'}
+            onClick={handleToggleBucketFavorite}
+          >
+            {isFavorite('', bucketName || undefined, activeProfileId || undefined)
+              ? <StarIcon fontSize="small" />
+              : <StarBorderIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
 
 
         {/* Action Buttons */}
