@@ -578,10 +578,19 @@ async fn put_object_with_profile(
         request = request.body(body);
     } else {
         // Create empty object (folder)
-        request = request.body(ByteStream::from_static(b""));
+        request = request.content_length(0).body(ByteStream::from_static(b""));
     }
 
     if let Err(err) = request.send().await {
+        if matches!(
+            active_profile.credential_type,
+            crate::credentials::CredentialType::CustomEndpoint { .. }
+        ) {
+            return Err(crate::error::AppError::S3Error(format!(
+                "{}",
+                aws_sdk_s3::error::DisplayErrorContext(&err)
+            )));
+        }
         log::warn!("put_object failed, attempting region discovery: {}", err);
 
         if let Some(new_region) =
@@ -607,15 +616,22 @@ async fn put_object_with_profile(
                     .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
                 retry_request = retry_request.body(body);
             } else {
-                retry_request = retry_request.body(ByteStream::from_static(b""));
+                retry_request = retry_request
+                    .content_length(0)
+                    .body(ByteStream::from_static(b""));
             }
 
-            retry_request
-                .send()
-                .await
-                .map_err(|e| crate::error::AppError::S3Error(format!("Retry put failed: {}", e)))?;
+            retry_request.send().await.map_err(|e| {
+                crate::error::AppError::S3Error(format!(
+                    "Retry put failed: {}",
+                    aws_sdk_s3::error::DisplayErrorContext(&e)
+                ))
+            })?;
         } else {
-            return Err(crate::error::AppError::S3Error(err.to_string()));
+            return Err(crate::error::AppError::S3Error(format!(
+                "{}",
+                aws_sdk_s3::error::DisplayErrorContext(&err)
+            )));
         }
     }
 
@@ -2814,5 +2830,86 @@ mod partial_delete_tests {
             .get_sorted_folder_content(&profile.id, "bucket", "", "name", "asc")
             .is_none());
         assert_eq!(server.await.unwrap().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod folder_creation_tests {
+    use super::put_object_with_profile;
+    use crate::commands::test_s3::{response, scripted_endpoint};
+    use crate::credentials::{CredentialType, Profile};
+    use crate::s3::S3ClientManager;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    #[tokio::test]
+    #[ignore = "requires a disposable S3-compatible bucket"]
+    async fn folder_round_trip_against_compatibility_endpoint() {
+        let bucket = std::env::var("BROWS3_S3_TEST_BUCKET").unwrap();
+        let region = std::env::var("BROWS3_S3_TEST_REGION").unwrap_or_else(|_| "us-east-1".into());
+        let profile = Profile::new(
+            "Compatibility test".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: std::env::var("BROWS3_S3_TEST_ENDPOINT").unwrap(),
+                access_key_id: std::env::var("BROWS3_S3_TEST_ACCESS_KEY").unwrap(),
+                secret_access_key: std::env::var("BROWS3_S3_TEST_SECRET_KEY").unwrap(),
+            },
+            Some(region),
+        );
+        let key = format!("brows3-test-{}/", uuid::Uuid::new_v4());
+        let state = Arc::new(RwLock::new(S3ClientManager::new()));
+        put_object_with_profile(
+            bucket.clone(),
+            None,
+            key.clone(),
+            None,
+            profile.clone(),
+            &state,
+        )
+        .await
+        .unwrap();
+        let client = crate::s3::client::build_s3_client(&profile, None)
+            .await
+            .unwrap();
+        let result = client.head_object().bucket(&bucket).key(&key).send().await;
+        client
+            .delete_object()
+            .bucket(&bucket)
+            .key(&key)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(result.unwrap().content_length(), Some(0));
+    }
+
+    #[tokio::test]
+    async fn empty_folder_put_signs_a_fixed_content_length() {
+        let (endpoint, server) = scripted_endpoint(vec![response(200, "", "")]).await;
+        let profile = Profile::new(
+            "Garage".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: endpoint,
+                access_key_id: "TEST".into(),
+                secret_access_key: "test-secret".into(),
+            },
+            Some("garage".into()),
+        );
+        let state = Arc::new(RwLock::new(S3ClientManager::new()));
+        put_object_with_profile(
+            "bucket".into(),
+            None,
+            "folder/".into(),
+            None,
+            profile,
+            &state,
+        )
+        .await
+        .unwrap();
+        let requests = server.await.unwrap();
+        let request = requests[0].to_lowercase();
+        assert!(request.starts_with("put /bucket/folder/"));
+        assert!(request.contains("content-length: 0\r\n"));
+        assert!(request.contains("signedheaders=content-length;"));
+        assert!(!request.contains("transfer-encoding: chunked"));
     }
 }

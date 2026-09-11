@@ -51,3 +51,12 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Start Garage compatibility service
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/start-garage-test.sh
+      - name: Test Garage folder creation
+        if: runner.os == 'Linux'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked folder_round_trip_against_compatibility_endpoint -- --ignored
+      - name: Stop Garage compatibility service
+        if: always() && runner.os == 'Linux'
+        run: docker rm -f brows3-garage-test || true
