@@ -4,6 +4,7 @@ import { memo } from 'react';
 import { useTheme } from '@mui/material/styles';
 
 interface Props {
+  'aria-label': string;
   checked: boolean;
   indeterminate?: boolean;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -18,6 +19,7 @@ const CHECKBOX_COLOR = '#1976d2';
  * All states use same SVG container size for consistency.
  */
 export const StyledCheckbox = memo(function StyledCheckbox({
+  'aria-label': ariaLabel,
   checked,
   indeterminate = false,
   onChange,
@@ -29,15 +31,10 @@ export const StyledCheckbox = memo(function StyledCheckbox({
   
   return (
     <span
-      onClick={(e) => {
-        e.stopPropagation();
-        const syntheticEvent = {
-          target: { checked: !checked },
-          stopPropagation: () => {},
-        } as React.ChangeEvent<HTMLInputElement>;
-        onChange(syntheticEvent);
-      }}
+      className="styled-checkbox"
+      onClick={(event) => event.stopPropagation()}
       style={{
+        position: 'relative',
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -57,8 +54,17 @@ export const StyledCheckbox = memo(function StyledCheckbox({
         flexGrow: 0,
       }}
     >
+      <input
+        type="checkbox"
+        aria-label={ariaLabel}
+        checked={checked}
+        ref={(input) => { if (input) input.indeterminate = indeterminate; }}
+        onChange={onChange}
+        style={{ position: 'absolute', inset: -2, width: 18, height: 18, margin: 0, opacity: 0, cursor: 'pointer' }}
+      />
       {/* Always render SVG container with fixed size - content changes based on state */}
       <svg
+        aria-hidden="true"
         viewBox="0 0 24 24"
         style={{
           width: 14,

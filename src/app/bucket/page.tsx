@@ -1090,6 +1090,7 @@ function BucketContent() {
            />
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 0.5 }}>
               <StyledCheckbox
+                aria-label="Deep search"
                 checked={isDeepSearch}
                 onChange={(e) => setIsDeepSearch(e.target.checked)}
               />

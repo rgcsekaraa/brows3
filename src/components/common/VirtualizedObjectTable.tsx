@@ -232,6 +232,7 @@ const RowContent = memo(function RowContent({
       </TableCell>
       <TableCell sx={{ width: 40, minWidth: 40, maxWidth: 40, p: 0, bgcolor: 'background.paper', textAlign: 'center', verticalAlign: 'middle' }}>
         <StyledCheckbox
+          aria-label={`Select ${row.key}`}
           checked={isSelected}
           onChange={handleCheckboxChange}
         />
@@ -396,6 +397,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
       <TableCell sx={{ width: 40, bgcolor: 'background.default', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>#</TableCell>
       <TableCell sx={{ width: 40, minWidth: 40, maxWidth: 40, p: 0, bgcolor: 'background.default', textAlign: 'center', verticalAlign: 'middle' }}>
         <StyledCheckbox
+          aria-label="Select all objects"
           indeterminate={someSelected}
           checked={allSelected}
           onChange={(e) => onSelectAll(e.target.checked)}
