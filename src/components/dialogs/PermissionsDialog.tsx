@@ -51,7 +51,7 @@ export default function PermissionsDialog({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [permissions, setPermissions] = useState<ObjectPermissions | null>(null);
-  const [selectedAcl, setSelectedAcl] = useState<ObjectCannedAcl>('private');
+  const [selectedAcl, setSelectedAcl] = useState<ObjectCannedAcl | ''>('');
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const canEditAcl = permissions?.status === 'available';
@@ -59,6 +59,8 @@ export default function PermissionsDialog({
   const fetchPermissions = useCallback(async () => {
     const requestId = ++requestIdRef.current;
     setLoading(true);
+    setPermissions(null);
+    setSelectedAcl('');
     setError(null);
     try {
       const data = await operationsApi.getObjectPermissions(bucketName, bucketRegion, objectKey, isFolder);
@@ -82,20 +84,25 @@ export default function PermissionsDialog({
     } else {
       setPermissions(null);
       setError(null);
-      setSelectedAcl('private');
+      setSelectedAcl('');
     }
+    return () => { requestIdRef.current += 1; };
   }, [open, bucketName, objectKey, fetchPermissions]);
 
   const handleSave = async () => {
-    if (!bucketName || !objectKey) return;
+    if (!bucketName || !objectKey || !selectedAcl || !canEditAcl || saving || loading) return;
+    const requestId = requestIdRef.current;
     setSaving(true);
     setError(null);
     try {
       const result = await operationsApi.setObjectPermissions(bucketName, bucketRegion, objectKey, isFolder, selectedAcl);
+      if (requestId !== requestIdRef.current) return;
       toast.success(`Updated permissions for ${result.affected_count} object${result.affected_count === 1 ? '' : 's'}.`);
       await fetchPermissions();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (requestId === requestIdRef.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setSaving(false);
     }
@@ -110,7 +117,7 @@ export default function PermissionsDialog({
       actions={
         <>
           <Button onClick={onClose} disabled={saving}>Close</Button>
-          <Button onClick={handleSave} variant="contained" disabled={loading || saving || !!error || !canEditAcl}>
+          <Button onClick={handleSave} variant="contained" disabled={loading || saving || !!error || !canEditAcl || !selectedAcl}>
             {saving ? 'Saving...' : 'Save'}
           </Button>
         </>
@@ -135,7 +142,7 @@ export default function PermissionsDialog({
 
               {isFolder && (
                 <Alert severity="info">
-                  Saving applies the selected ACL to {permissions.target_count.toLocaleString()} object{permissions.target_count === 1 ? '' : 's'} under this folder.
+                  The grants shown are from one object in this folder. Saving applies the selected ACL to {permissions.target_count.toLocaleString()} object{permissions.target_count === 1 ? '' : 's'} under this folder.
                 </Alert>
               )}
 
@@ -146,14 +153,15 @@ export default function PermissionsDialog({
                 </Typography>
               </Box>
 
-              <FormControl fullWidth size="small" disabled={!canEditAcl}>
-                <InputLabel id="acl-select-label">ACL</InputLabel>
+              <FormControl fullWidth size="small" disabled={!canEditAcl || saving}>
+                <InputLabel id="acl-select-label">New permissions</InputLabel>
                 <Select
                   labelId="acl-select-label"
-                  label="ACL"
+                  label="New permissions"
                   value={selectedAcl}
                   onChange={(event) => setSelectedAcl(event.target.value as ObjectCannedAcl)}
                 >
+                  <MenuItem value="" disabled>Choose permissions</MenuItem>
                   {ACL_OPTIONS.map((option) => (
                     <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
                   ))}
