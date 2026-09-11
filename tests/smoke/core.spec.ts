@@ -127,3 +127,14 @@ test('deletion requires confirmation and refreshes the listing afterwards', asyn
   await expect(page.getByRole('checkbox', { name: 'Select notes.txt', exact: true })).toHaveCount(0);
   await expect(confirmation).toHaveCount(0);
 });
+
+test('bucket favorites reopen the root and can be removed from the sidebar', async ({ page }) => {
+  await page.goto(`${bucketUrl}&prefix=nested%2F`);
+  await page.getByRole('button', { name: 'Add bucket root to Favorites', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove bucket root from Favorites', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByText('Favorites', { exact: true }).first().click();
+  await page.getByRole('main').getByText('demo-bucket', { exact: true }).click();
+  await expect(page).toHaveURL(/name=demo-bucket&region=us-east-1$/);
+  await page.getByRole('button', { name: 'Remove demo-bucket from Favorites', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Add bucket root to Favorites', exact: true })).toHaveAttribute('aria-pressed', 'false');
+});

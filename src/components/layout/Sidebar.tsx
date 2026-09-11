@@ -187,7 +187,7 @@ export default function Sidebar() {
                   <ListItemButton 
                       onClick={() => handleBucketClick(bucket.name, bucket.region || 'us-east-1')}
                       selected={pathname === '/bucket' && activeBucketName === bucket.name}
-                      sx={{ mx: 1, my: 0.2 }}
+                      sx={{ mx: 1, my: 0.2, minWidth: 0, flex: 1 }}
                   >
                     <ListItemIcon sx={{ minWidth: 32 }}>
                       <StorageIcon fontSize="small" sx={{ color: 'primary.main', opacity: 0.8 }} />
@@ -206,6 +206,7 @@ export default function Sidebar() {
                     <IconButton
                       edge="end"
                       size="small"
+                      aria-pressed={isFavorite('', bucket.name, activeProfileId)}
                       aria-label={isFavorite('', bucket.name, activeProfileId) ? `Remove ${bucket.name} from Favorites` : `Add ${bucket.name} to Favorites`}
                       onClick={(event) => {
                         event.stopPropagation();
