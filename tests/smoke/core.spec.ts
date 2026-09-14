@@ -103,6 +103,28 @@ test('audio previews load under the packaged content security policy', async ({ 
   await expect.poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.readyState)).toBeGreaterThanOrEqual(1);
 });
 
+test('a large image preview scales down to fit inside the dialog', async ({ page, backend }) => {
+  backend.objects.push({ key: 'photo.svg', size: 2048, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' });
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="6000" height="4000"><rect width="100%" height="100%" fill="red"/></svg>';
+  await page.route('https://media.brows3.test/photo.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: svg }));
+  await page.goto(bucketUrl);
+  await page.getByRole('row').filter({ hasText: 'photo.svg' }).getByTitle('Preview', { exact: true }).click();
+
+  const image = page.getByRole('dialog').getByRole('img', { name: 'photo.svg' });
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(6000);
+
+  const dialogBox = await page.getByRole('dialog').boundingBox();
+  const imageBox = await image.boundingBox();
+  expect(dialogBox).not.toBeNull();
+  expect(imageBox).not.toBeNull();
+  // The image keeps its 3:2 intrinsic ratio but must be scaled far below its
+  // native 6000x4000 size to fit inside the dialog, not overflow it.
+  expect(imageBox!.width).toBeLessThanOrEqual(dialogBox!.width);
+  expect(imageBox!.height).toBeLessThanOrEqual(dialogBox!.height);
+  expect(imageBox!.width).toBeLessThan(1000);
+});
+
 test('uploads use the current folder and appear on the upload page', async ({ page, backend }) => {
   await page.goto(`${bucketUrl}&prefix=nested%2F`);
   await page.getByRole('button', { name: 'Upload', exact: true }).click();

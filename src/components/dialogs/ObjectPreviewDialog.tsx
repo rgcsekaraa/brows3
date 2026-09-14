@@ -353,7 +353,7 @@ export default function ObjectPreviewDialog({
         ) : null
       }
     >
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 1 }}>
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 1, minHeight: 0, minWidth: 0 }}>
         {isLoading && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
             <CircularProgress size={40} thickness={4} />
@@ -372,16 +372,19 @@ export default function ObjectPreviewDialog({
         )}
 
         {!isLoading && (!error || textIdentity) && (
-          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
             {/* Image Preview */}
             {isImageFile && presignedUrl && (
-              <Box sx={{ 
-                flex: 1, 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                p: 2, 
+              <Box sx={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                p: 2,
                 position: 'relative',
+                overflow: 'hidden',
+                minHeight: 0,
+                minWidth: 0,
                 bgcolor: alpha(theme.palette.background.paper, 0.5)
               }}>
                 {isImageRendering && <CircularProgress size={32} sx={{ position: 'absolute' }} />}

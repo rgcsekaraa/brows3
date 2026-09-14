@@ -66,7 +66,11 @@ export class DesktopBackend {
         return { objects: objects.filter(item => item.key.startsWith(prefix) && !item.key.slice(prefix.length).includes('/')), common_prefixes: prefix ? [] : ['nested/'], next_continuation_token: null, is_truncated: false, prefix, bucket_region: 'us-east-1' };
       }
       case 'search_objects': return { objects: this.objects.filter(item => item.key.includes(String(args.query))), scanned_objects: this.objects.length, is_truncated: false };
-      case 'get_object_metadata': return { key: args.key, size: this.content.length, content_type: String(args.key).endsWith('.wav') ? 'audio/wav' : this.contentType, e_tag: this.etag, last_modified: null, storage_class: null, user_metadata: {} };
+      case 'get_object_metadata': {
+        const key = String(args.key);
+        const contentType = key.endsWith('.wav') ? 'audio/wav' : key.endsWith('.svg') ? 'image/svg+xml' : this.contentType;
+        return { key: args.key, size: this.content.length, content_type: contentType, e_tag: this.etag, last_modified: null, storage_class: null, user_metadata: {} };
+      }
       case 'get_object_content': return { content: this.content, e_tag: this.etag, profile_id: this.activeProfile };
       case 'put_object_content':
         if (this.conflict || args.expectedEtag !== this.etag) throw new Error('This object has changed since it was opened.');
@@ -74,7 +78,7 @@ export class DesktopBackend {
         this.content = String(args.content);
         this.etag = '"v2"';
         return this.etag;
-      case 'get_presigned_url': return 'https://media.brows3.test/sound.wav';
+      case 'get_presigned_url': return `https://media.brows3.test/${args.key}`;
       case 'copy_object':
       case 'move_object': {
         if (args.expectedProfileId !== this.activeProfile) throw new Error('The active profile changed.');
