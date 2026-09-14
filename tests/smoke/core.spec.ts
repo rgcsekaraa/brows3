@@ -126,36 +126,42 @@ test('a large image preview scales down to fit inside the dialog', async ({ page
 });
 
 test('zoom and pan controls scale and reposition the image', async ({ page, backend }) => {
-  backend.objects.push({ key: 'huge.svg', size: 4096, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' });
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="6000" height="4000"><rect width="100%" height="100%" fill="blue"/></svg>';
-  await page.route('https://media.brows3.test/huge.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: svg }));
+  backend.objects.push({ key: 'medium.svg', size: 4096, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' });
+  // Sized so its fit-to-window ratio comfortably clears the 25% interactive floor,
+  // keeping this test about the buttons/slider/pan mechanics (the floor edge case
+  // has its own dedicated regression test below).
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1000"><rect width="100%" height="100%" fill="blue"/></svg>';
+  await page.route('https://media.brows3.test/medium.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: svg }));
   await page.goto(bucketUrl);
-  await page.getByRole('row').filter({ hasText: 'huge.svg' }).getByTitle('Preview', { exact: true }).click();
+  await page.getByRole('row').filter({ hasText: 'medium.svg' }).getByTitle('Preview', { exact: true }).click();
 
   const dialog = page.getByRole('dialog');
-  const image = dialog.getByRole('img', { name: 'huge.svg' });
+  const image = dialog.getByRole('img', { name: 'medium.svg' });
   await expect(image).toBeVisible();
-  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(6000);
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1500);
 
-  // The image is far larger than the dialog, so it opens clamped to the minimum 25% zoom.
-  await expect(dialog.getByText('25%', { exact: true })).toBeVisible();
-  const fitBox = await image.boundingBox();
-  expect(Math.round(fitBox!.width)).toBe(1500);
+  // The image opens scaled down to fit the window.
+  const initialFitBox = (await image.boundingBox())!;
+  expect(initialFitBox.width).toBeLessThan(1500);
 
   await dialog.getByRole('button', { name: 'Original Size' }).click();
   await expect(dialog.getByText('100%', { exact: true })).toBeVisible();
   const originalBox = await image.boundingBox();
-  expect(Math.round(originalBox!.width)).toBe(6000);
+  expect(Math.round(originalBox!.width)).toBe(1500);
 
   await dialog.getByRole('button', { name: 'Fit to Window' }).click();
-  await expect(dialog.getByText('25%', { exact: true })).toBeVisible();
+  const refitBox = await image.boundingBox();
+  expect(Math.abs(refitBox!.width - initialFitBox.width)).toBeLessThan(1);
 
   const slider = dialog.getByRole('slider', { name: 'Zoom' });
   await slider.focus();
+  await page.keyboard.press('Home');
+  await expect(dialog.getByText('25%', { exact: true })).toBeVisible();
+
   await page.keyboard.press('End');
   await expect(dialog.getByText('300%', { exact: true })).toBeVisible();
   const zoomedBox = await image.boundingBox();
-  expect(Math.round(zoomedBox!.width)).toBe(18000);
+  expect(Math.round(zoomedBox!.width)).toBe(4500);
 
   // Panning: drag from a point that is definitely still on-screen (the dialog
   // itself, well above its bottom controls bar) and confirm the oversized image moves.
@@ -169,6 +175,34 @@ test('zoom and pan controls scale and reposition the image', async ({ page, back
   const pannedBox = await image.boundingBox();
   expect(pannedBox!.x).toBeLessThan(zoomedBox!.x - 50);
   expect(pannedBox!.y).toBeLessThan(zoomedBox!.y - 50);
+});
+
+test('fit to window leaves no room to pan the image', async ({ page, backend }) => {
+  backend.objects.push({ key: 'fitted.svg', size: 2048, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' });
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1600"><rect width="100%" height="100%" fill="green"/></svg>';
+  await page.route('https://media.brows3.test/fitted.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: svg }));
+  await page.goto(bucketUrl);
+  await page.getByRole('row').filter({ hasText: 'fitted.svg' }).getByTitle('Preview', { exact: true }).click();
+
+  const dialog = page.getByRole('dialog');
+  const image = dialog.getByRole('img', { name: 'fitted.svg' });
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(2400);
+  await dialog.getByRole('button', { name: 'Fit to Window' }).click();
+
+  // At an exact fit, the image should match the visible content area with no
+  // slack left over from container padding, so dragging it must not move it.
+  const fitBox = (await image.boundingBox())!;
+  const startX = fitBox.x + fitBox.width / 2;
+  const startY = fitBox.y + fitBox.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX - 80, startY - 80, { steps: 5 });
+  await page.mouse.up();
+
+  const afterDragBox = await image.boundingBox();
+  expect(Math.abs(afterDragBox!.x - fitBox.x)).toBeLessThan(1);
+  expect(Math.abs(afterDragBox!.y - fitBox.y)).toBeLessThan(1);
 });
 
 test('uploads use the current folder and appear on the upload page', async ({ page, backend }) => {

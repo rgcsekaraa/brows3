@@ -270,9 +270,22 @@ export default function ObjectPreviewDialog({
   };
 
   const getViewportSize = (): Size | null => {
-    const rect = imageViewportRef.current?.getBoundingClientRect();
-    return rect ? { width: rect.width, height: rect.height } : null;
+    const el = imageViewportRef.current;
+    if (!el) return null;
+    // clientWidth/clientHeight include padding, but the image is centered inside
+    // that padding, so it must be excluded or "fit" leaves the image slightly
+    // larger than the visible content area (and thus draggable/scrollable).
+    const style = window.getComputedStyle(el);
+    const paddingX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const paddingY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    return { width: el.clientWidth - paddingX, height: el.clientHeight - paddingY };
   };
+
+  // Only caps at MAX_ZOOM: a fit ratio above 300% just letterboxes a tiny image
+  // (still fully visible), but a fit ratio below MIN_ZOOM must NOT be clamped up
+  // to 25% here or the image would end up larger than the viewport and scrollable.
+  const computeFitZoom = (natural: Size, viewport: Size): number =>
+    Math.min(MAX_ZOOM, viewport.width / natural.width, viewport.height / natural.height);
 
   const handleImageLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
     setIsImageRendering(false);
@@ -281,16 +294,14 @@ export default function ObjectPreviewDialog({
     const natural = { width: img.naturalWidth, height: img.naturalHeight };
     setNaturalSize(natural);
     const viewport = getViewportSize();
-    const fit = viewport ? clampZoom(Math.min(viewport.width / natural.width, viewport.height / natural.height)) : 1;
-    setZoom(fit);
+    setZoom(viewport ? computeFitZoom(natural, viewport) : 1);
     setPan({ x: 0, y: 0 });
   };
 
   const handleFitToWindow = () => {
     if (!naturalSize) return;
     const viewport = getViewportSize();
-    const fit = viewport ? clampZoom(Math.min(viewport.width / naturalSize.width, viewport.height / naturalSize.height)) : 1;
-    setZoom(fit);
+    setZoom(viewport ? computeFitZoom(naturalSize, viewport) : 1);
     setPan({ x: 0, y: 0 });
   };
 
@@ -528,7 +539,7 @@ export default function ObjectPreviewDialog({
                   <Slider
                     size="small"
                     value={Math.round(zoom * 100)}
-                    min={Math.round(MIN_ZOOM * 100)}
+                    min={Math.min(Math.round(MIN_ZOOM * 100), Math.round(zoom * 100))}
                     max={Math.round(MAX_ZOOM * 100)}
                     onChange={handleZoomSliderChange}
                     disabled={!naturalSize}
