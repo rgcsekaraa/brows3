@@ -5,6 +5,7 @@ import {
   Typography,
   CircularProgress,
   Alert,
+  Slider,
   useTheme,
   alpha,
 } from '@mui/material';
@@ -12,6 +13,8 @@ import {
   Edit as EditIcon,
   Save as SaveIcon,
   ContentCopy as CopyIcon,
+  FitScreen as FitScreenIcon,
+  CropOriginal as CropOriginalIcon,
 } from '@mui/icons-material';
 import { copyToClipboard, objectApi } from '@/lib/tauri';
 import Editor, { OnMount } from '@monaco-editor/react';
@@ -19,6 +22,23 @@ import { toast } from '@/store/toastStore';
 import { BaseDialog } from '../common/BaseDialog';
 import { getEditorLanguage, getObjectExtension, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
 import { useSettingsStore } from '@/store/settingsStore';
+
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 3;
+const clampZoom = (value: number): number => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+
+type Size = { width: number; height: number };
+type Offset = { x: number; y: number };
+
+const clampPan = (pan: Offset, zoom: number, natural: Size | null, viewport: Size | null): Offset => {
+  if (!natural || !viewport) return { x: 0, y: 0 };
+  const overflowX = Math.max(0, (natural.width * zoom - viewport.width) / 2);
+  const overflowY = Math.max(0, (natural.height * zoom - viewport.height) / 2);
+  return {
+    x: Math.min(overflowX, Math.max(-overflowX, pan.x)),
+    y: Math.min(overflowY, Math.max(-overflowY, pan.y)),
+  };
+};
 
 interface ObjectPreviewDialogProps {
   open: boolean;
@@ -54,6 +74,12 @@ export default function ObjectPreviewDialog({
   const [textIdentity, setTextIdentity] = useState<{ etag: string | null; profileId: string } | null>(null);
   const [isImageRendering, setIsImageRendering] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<Offset>({ x: 0, y: 0 });
+  const [naturalSize, setNaturalSize] = useState<Size | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const imageViewportRef = useRef<HTMLDivElement | null>(null);
+  const panStateRef = useRef<{ pointerId: number; startX: number; startY: number; startPanX: number; startPanY: number } | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const initialVersionIdRef = useRef<number>(0);
   const [currentVersionId, setCurrentVersionId] = useState<number>(0);
@@ -91,6 +117,9 @@ export default function ObjectPreviewDialog({
       setContentType(null);
       setPresignedUrl(null);
       setIsEditing(startInEditMode); // Reset edit mode based on prop
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      setNaturalSize(null);
       // Reset version tracking for fresh content
       initialVersionIdRef.current = 0;
       setCurrentVersionId(0);
@@ -240,6 +269,65 @@ export default function ObjectPreviewDialog({
     }
   };
 
+  const getViewportSize = (): Size | null => {
+    const rect = imageViewportRef.current?.getBoundingClientRect();
+    return rect ? { width: rect.width, height: rect.height } : null;
+  };
+
+  const handleImageLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    setIsImageRendering(false);
+    const img = event.currentTarget;
+    if (img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
+    const natural = { width: img.naturalWidth, height: img.naturalHeight };
+    setNaturalSize(natural);
+    const viewport = getViewportSize();
+    const fit = viewport ? clampZoom(Math.min(viewport.width / natural.width, viewport.height / natural.height)) : 1;
+    setZoom(fit);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const handleFitToWindow = () => {
+    if (!naturalSize) return;
+    const viewport = getViewportSize();
+    const fit = viewport ? clampZoom(Math.min(viewport.width / naturalSize.width, viewport.height / naturalSize.height)) : 1;
+    setZoom(fit);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const handleOriginalSize = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const handleZoomSliderChange = (_event: Event, value: number | number[]) => {
+    const nextZoom = clampZoom((Array.isArray(value) ? value[0] : value) / 100);
+    setZoom(nextZoom);
+    setPan(prev => clampPan(prev, nextZoom, naturalSize, getViewportSize()));
+  };
+
+  const handleImagePointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (!naturalSize) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    panStateRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, startPanX: pan.x, startPanY: pan.y };
+    setIsPanning(true);
+  };
+
+  const handleImagePointerMove = (event: React.PointerEvent<HTMLImageElement>) => {
+    const panState = panStateRef.current;
+    if (!panState || panState.pointerId !== event.pointerId) return;
+    const nextPan = {
+      x: panState.startPanX + (event.clientX - panState.startX),
+      y: panState.startPanY + (event.clientY - panState.startY),
+    };
+    setPan(clampPan(nextPan, zoom, naturalSize, getViewportSize()));
+  };
+
+  const handleImagePointerUp = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (panStateRef.current?.pointerId !== event.pointerId) return;
+    panStateRef.current = null;
+    setIsPanning(false);
+  };
+
   const handleEditorDidMount: OnMount = (editor) => {
     editorRef.current = editor;
     // Store the initial version ID when editor mounts with content
@@ -375,33 +463,82 @@ export default function ObjectPreviewDialog({
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
             {/* Image Preview */}
             {isImageFile && presignedUrl && (
-              <Box sx={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                p: 2,
-                position: 'relative',
-                overflow: 'hidden',
-                minHeight: 0,
-                minWidth: 0,
-                bgcolor: alpha(theme.palette.background.paper, 0.5)
-              }}>
-                {isImageRendering && <CircularProgress size={32} sx={{ position: 'absolute' }} />}
-                {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs are dynamic and not known to Next image config. */}
-                <img 
-                  src={presignedUrl} 
-                  alt={filename}
-                  onLoad={() => setIsImageRendering(false)}
-                  style={{ 
-                    maxWidth: '100%', 
-                    maxHeight: '100%', 
-                    objectFit: 'contain',
-                    borderRadius: 4,
-                    opacity: isImageRendering ? 0 : 1,
-                    transition: 'opacity 0.3s'
+              <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+                <Box
+                  ref={imageViewportRef}
+                  sx={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    p: 2,
+                    position: 'relative',
+                    overflow: 'hidden',
+                    minHeight: 0,
+                    minWidth: 0,
+                    bgcolor: alpha(theme.palette.background.paper, 0.5)
                   }}
-                />
+                >
+                  {isImageRendering && <CircularProgress size={32} sx={{ position: 'absolute' }} />}
+                  {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs are dynamic and not known to Next image config. */}
+                  <img
+                    src={presignedUrl}
+                    alt={filename}
+                    draggable={false}
+                    onLoad={handleImageLoad}
+                    onPointerDown={handleImagePointerDown}
+                    onPointerMove={handleImagePointerMove}
+                    onPointerUp={handleImagePointerUp}
+                    onPointerCancel={handleImagePointerUp}
+                    style={{
+                      ...(naturalSize
+                        ? { width: naturalSize.width * zoom, height: naturalSize.height * zoom, maxWidth: 'none', maxHeight: 'none' }
+                        : { maxWidth: '100%', maxHeight: '100%' }),
+                      objectFit: 'contain',
+                      borderRadius: 4,
+                      opacity: isImageRendering ? 0 : 1,
+                      transition: isPanning ? 'none' : 'opacity 0.3s',
+                      transform: `translate(${pan.x}px, ${pan.y}px)`,
+                      cursor: naturalSize ? (isPanning ? 'grabbing' : 'grab') : 'default',
+                      userSelect: 'none',
+                      touchAction: 'none',
+                    }}
+                  />
+                </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                  <Button
+                    size="small"
+                    startIcon={<FitScreenIcon />}
+                    onClick={handleFitToWindow}
+                    disabled={!naturalSize}
+                    sx={{ color: theme.palette.text.secondary, fontWeight: 600, flexShrink: 0 }}
+                  >
+                    Fit to Window
+                  </Button>
+                  <Button
+                    size="small"
+                    startIcon={<CropOriginalIcon />}
+                    onClick={handleOriginalSize}
+                    disabled={!naturalSize}
+                    sx={{ color: theme.palette.text.secondary, fontWeight: 600, flexShrink: 0 }}
+                  >
+                    Original Size
+                  </Button>
+                  <Slider
+                    size="small"
+                    value={Math.round(zoom * 100)}
+                    min={Math.round(MIN_ZOOM * 100)}
+                    max={Math.round(MAX_ZOOM * 100)}
+                    onChange={handleZoomSliderChange}
+                    disabled={!naturalSize}
+                    aria-label="Zoom"
+                    sx={{ flex: 1, mx: 1 }}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, minWidth: 40, textAlign: 'right', flexShrink: 0 }}>
+                    {Math.round(zoom * 100)}%
+                  </Typography>
+                </Box>
               </Box>
             )}
 
