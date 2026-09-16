@@ -1630,6 +1630,10 @@ function BucketContent() {
         startInEditMode={startInEditMode}
         onNavigate={handleNavigatePreview}
         canNavigate={canNavigatePreview && !isNavigatingPreview}
+        isSelected={!!previewKey && selectedKeys.has(previewKey)}
+        onToggleSelect={() => {
+          if (previewKey) handleSelect(previewKey, !selectedKeys.has(previewKey));
+        }}
       />
 
       {/* Presigned URL Dialog */}

@@ -18,6 +18,8 @@ import {
   CropOriginal as CropOriginalIcon,
   NavigateBefore as NavigateBeforeIcon,
   NavigateNext as NavigateNextIcon,
+  CheckBox as CheckBoxIcon,
+  CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon,
 } from '@mui/icons-material';
 import { copyToClipboard, objectApi } from '@/lib/tauri';
 import Editor, { OnMount } from '@monaco-editor/react';
@@ -54,6 +56,8 @@ interface ObjectPreviewDialogProps {
   startInEditMode?: boolean;
   onNavigate?: (direction: 'prev' | 'next') => void;
   canNavigate?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export default function ObjectPreviewDialog({
@@ -67,6 +71,8 @@ export default function ObjectPreviewDialog({
   startInEditMode = false,
   onNavigate,
   canNavigate = false,
+  isSelected = false,
+  onToggleSelect,
 }: ObjectPreviewDialogProps) {
   const theme = useTheme();
   const maxTextPreviewSizeMb = useSettingsStore((state) => state.maxTextPreviewSizeMb);
@@ -574,6 +580,16 @@ export default function ObjectPreviewDialog({
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                  <IconButton
+                    size="small"
+                    onClick={onToggleSelect}
+                    disabled={!onToggleSelect}
+                    title={isSelected ? 'Deselect item' : 'Select item'}
+                    aria-label={isSelected ? 'Deselect item' : 'Select item'}
+                    sx={{ flexShrink: 0, color: isSelected ? theme.palette.primary.main : theme.palette.text.secondary }}
+                  >
+                    {isSelected ? <CheckBoxIcon fontSize="small" /> : <CheckBoxOutlineBlankIcon fontSize="small" />}
+                  </IconButton>
                   <Button
                     size="small"
                     startIcon={<FitScreenIcon />}
