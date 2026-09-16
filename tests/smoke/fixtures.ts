@@ -23,6 +23,9 @@ export class DesktopBackend {
   etag = '"v1"';
   conflict = false;
   objects = [object('notes.txt'), object('sound.wav', 1644), object('nested/match.txt')];
+  // When set, the first (non-continued) list_objects response reports more pages
+  // available, and a follow-up call with the 'second-page' token returns these.
+  secondPage: S3Object[] | null = null;
 
   async invoke(command: string, args: Args = {}): Promise<unknown> {
     this.calls.push({ command, args });
@@ -62,8 +65,12 @@ export class DesktopBackend {
           return { objects: [], common_prefixes: [], next_continuation_token: `page-${this.emptyListingPages}`, is_truncated: true, prefix: args.prefix || '', bucket_region: 'us-east-1' };
         }
         const prefix = String(args.prefix || '');
+        if (args.continuationToken === 'second-page') {
+          return { objects: this.secondPage || [], common_prefixes: [], next_continuation_token: null, is_truncated: false, prefix, bucket_region: 'us-east-1' };
+        }
         const objects = this.activeProfile === 'a' ? this.objects : [object('production.txt')];
-        return { objects: objects.filter(item => item.key.startsWith(prefix) && !item.key.slice(prefix.length).includes('/')), common_prefixes: prefix ? [] : ['nested/'], next_continuation_token: null, is_truncated: false, prefix, bucket_region: 'us-east-1' };
+        const nextToken = this.secondPage ? 'second-page' : null;
+        return { objects: objects.filter(item => item.key.startsWith(prefix) && !item.key.slice(prefix.length).includes('/')), common_prefixes: prefix ? [] : ['nested/'], next_continuation_token: nextToken, is_truncated: !!nextToken, prefix, bucket_region: 'us-east-1' };
       }
       case 'search_objects': return { objects: this.objects.filter(item => item.key.includes(String(args.query))), scanned_objects: this.objects.length, is_truncated: false };
       case 'get_object_metadata': {

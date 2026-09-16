@@ -59,7 +59,8 @@ import { useProfileStore } from '@/store/profileStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
 import PermissionsDialog from '@/components/dialogs/PermissionsDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
-import { canObjectBeEdited, getObjectName } from '@/lib/objectCapabilities';
+import { canObjectBeEdited, canObjectBePreviewed, getObjectName } from '@/lib/objectCapabilities';
+import { compareSortable, type SortableItem } from '@/lib/objectSort';
 import PresignedUrlDialog from '@/components/dialogs/PresignedUrlDialog';
 import { VirtualizedObjectTable } from '@/components/common/VirtualizedObjectTable';
 import { toast } from '@/store/toastStore';
@@ -277,6 +278,23 @@ function BucketContent() {
     [data]
   );
 
+  // Same shape VirtualizedObjectTable derives from S3Object for its own sort (RowData),
+  // so navigation order always matches what's rendered on screen.
+  const toSortable = useCallback((o: S3Object): SortableItem => ({
+    name: getObjectName(o.key),
+    size: o.size,
+    modifiedTimestamp: o.last_modified ? new Date(o.last_modified).getTime() : 0,
+    storageClass: o.storage_class || 'STANDARD',
+  }), []);
+
+  const navigableObjects = useMemo(() => {
+    const files = (displayData?.objects || []).filter(o => canObjectBePreviewed(getObjectName(o.key)));
+    return [...files].sort((a, b) => compareSortable(toSortable(a), toSortable(b), sortField, sortDirection));
+  }, [displayData, sortField, sortDirection, toSortable]);
+  // Even with only one item loaded so far, more may exist server-side (infinite
+  // scroll) - keep navigation available so "next" can fetch and reveal it.
+  const canNavigatePreview = navigableObjects.length > 1 || (!isDeepSearch && hasMore);
+
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMenuAnchor, setUploadMenuAnchor] = useState<null | HTMLElement>(null);
 
@@ -302,6 +320,7 @@ function BucketContent() {
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [previewSize, setPreviewSize] = useState<number | undefined>(undefined);
   const [startInEditMode, setStartInEditMode] = useState(false);
+  const [isNavigatingPreview, setIsNavigatingPreview] = useState(false);
 
   // Presigned URL Dialog State
   const [presignedUrlOpen, setPresignedUrlOpen] = useState(false);
@@ -953,6 +972,44 @@ function BucketContent() {
     setStartInEditMode(false);
   };
 
+  const handleNavigatePreview = useCallback(async (direction: 'prev' | 'next') => {
+    if (previewKey === null) return;
+    let list = navigableObjects;
+    let idx = list.findIndex(o => o.key === previewKey);
+    if (idx === -1) return;
+
+    if (direction === 'prev') {
+      const target = list[(idx - 1 + list.length) % list.length];
+      setPreviewKey(target.key);
+      setPreviewSize(target.size);
+      setStartInEditMode(false);
+      return;
+    }
+
+    // Next: the loaded list may be a strict subset of the folder (infinite scroll),
+    // so fetch further pages before wrapping to the first item.
+    setIsNavigatingPreview(true);
+    try {
+      let rawObjects = displayData?.objects || [];
+      let stillHasMore = !isDeepSearch && hasMore;
+      while (idx === list.length - 1 && stillHasMore) {
+        const page = await loadMore();
+        if (!page) break;
+        rawObjects = [...rawObjects, ...page.objects];
+        const files = rawObjects.filter(o => canObjectBePreviewed(getObjectName(o.key)));
+        list = [...files].sort((a, b) => compareSortable(toSortable(a), toSortable(b), sortField, sortDirection));
+        idx = list.findIndex(o => o.key === previewKey);
+        stillHasMore = !!page.next_continuation_token;
+      }
+      const target = list[(idx + 1) % list.length];
+      setPreviewKey(target.key);
+      setPreviewSize(target.size);
+      setStartInEditMode(false);
+    } finally {
+      setIsNavigatingPreview(false);
+    }
+  }, [previewKey, navigableObjects, displayData, isDeepSearch, hasMore, loadMore, sortField, sortDirection, toSortable]);
+
   if (!bucketName) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -1571,6 +1628,8 @@ function BucketContent() {
         objectSize={previewSize}
         onSave={() => refresh()}
         startInEditMode={startInEditMode}
+        onNavigate={handleNavigatePreview}
+        canNavigate={canNavigatePreview && !isNavigatingPreview}
       />
 
       {/* Presigned URL Dialog */}

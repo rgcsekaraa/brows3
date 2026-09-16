@@ -14,7 +14,7 @@ interface UseObjectsResult {
   error: string | null;
   stats: BucketStats;
   refresh: () => Promise<void>;
-  loadMore: () => Promise<void>;
+  loadMore: () => Promise<ListObjectsResult | null>;
   isLoadingMore: boolean;
   hasMore: boolean;
 }
@@ -171,9 +171,9 @@ export function useObjects(
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [bucketName, activeProfileId, fetchItems, autoRefreshOnFocus]);
 
-  const loadMore = useCallback(async () => {
-    if (!bucketName || !activeProfileId || !continuationToken || loadMoreRequest.current || fetchInProgress.current) return;
-    
+  const loadMore = useCallback(async (): Promise<ListObjectsResult | null> => {
+    if (!bucketName || !activeProfileId || !continuationToken || loadMoreRequest.current || fetchInProgress.current) return null;
+
     const currentViewKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix, sortField, sortDirection]);
     const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
     const currentFetchId = fetchIdRef.current;
@@ -185,7 +185,7 @@ export function useObjects(
     try {
        const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', requestToken, false, sortField, sortDirection);
        if (currentViewKey !== viewKeyRef.current || currentFetchId !== fetchIdRef.current) {
-         return;
+         return null;
        }
        setData(prev => {
          if (!prev) return result;
@@ -199,11 +199,13 @@ export function useObjects(
        });
        setContinuationToken(result.next_continuation_token || null);
        setHasMore(!!result.next_continuation_token);
+       return result;
     } catch (err) {
        if (currentViewKey === viewKeyRef.current && currentFetchId === fetchIdRef.current) {
          setError(err instanceof Error ? err.message : String(err));
        }
        console.error('Load more error:', err);
+       return null;
     } finally {
        if (loadMoreRequest.current === request) {
          loadMoreRequest.current = null;

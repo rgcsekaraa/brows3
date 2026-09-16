@@ -6,6 +6,7 @@ import {
   CircularProgress,
   Alert,
   Slider,
+  IconButton,
   useTheme,
   alpha,
 } from '@mui/material';
@@ -15,6 +16,8 @@ import {
   ContentCopy as CopyIcon,
   FitScreen as FitScreenIcon,
   CropOriginal as CropOriginalIcon,
+  NavigateBefore as NavigateBeforeIcon,
+  NavigateNext as NavigateNextIcon,
 } from '@mui/icons-material';
 import { copyToClipboard, objectApi } from '@/lib/tauri';
 import Editor, { OnMount } from '@monaco-editor/react';
@@ -49,6 +52,8 @@ interface ObjectPreviewDialogProps {
   objectSize?: number;
   onSave?: () => void;
   startInEditMode?: boolean;
+  onNavigate?: (direction: 'prev' | 'next') => void;
+  canNavigate?: boolean;
 }
 
 export default function ObjectPreviewDialog({
@@ -60,6 +65,8 @@ export default function ObjectPreviewDialog({
   objectSize,
   onSave,
   startInEditMode = false,
+  onNavigate,
+  canNavigate = false,
 }: ObjectPreviewDialogProps) {
   const theme = useTheme();
   const maxTextPreviewSizeMb = useSettingsStore((state) => state.maxTextPreviewSizeMb);
@@ -227,6 +234,19 @@ export default function ObjectPreviewDialog({
       }
     };
   }, [open, objectKey, bucketName, bucketRegion, objectSize, startInEditMode, filename, maxTextPreviewSizeMb]);
+
+  useEffect(() => {
+    if (!open || !canNavigate || !onNavigate) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isEditing) return; // Monaco is active; don't steal arrow keys from typing/cursor movement
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); onNavigate('prev'); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); onNavigate('next'); }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, canNavigate, onNavigate, isEditing]);
 
   const handleSave = async () => {
     if (!isEditing || isSaving || !textIdentity?.etag) return;
@@ -452,7 +472,43 @@ export default function ObjectPreviewDialog({
         ) : null
       }
     >
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 1, minHeight: 0, minWidth: 0 }}>
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
+        {canNavigate && onNavigate && (
+          <>
+            <IconButton
+              aria-label="Previous item"
+              onClick={() => onNavigate('prev')}
+              sx={{
+                position: 'absolute',
+                top: '50%',
+                left: 8,
+                transform: 'translateY(-50%)',
+                zIndex: 1200,
+                bgcolor: alpha(theme.palette.background.paper, 0.7),
+                '&:hover': { bgcolor: alpha(theme.palette.background.paper, 0.95) },
+                boxShadow: 2,
+              }}
+            >
+              <NavigateBeforeIcon />
+            </IconButton>
+            <IconButton
+              aria-label="Next item"
+              onClick={() => onNavigate('next')}
+              sx={{
+                position: 'absolute',
+                top: '50%',
+                right: 8,
+                transform: 'translateY(-50%)',
+                zIndex: 1200,
+                bgcolor: alpha(theme.palette.background.paper, 0.7),
+                '&:hover': { bgcolor: alpha(theme.palette.background.paper, 0.95) },
+                boxShadow: 2,
+              }}
+            >
+              <NavigateNextIcon />
+            </IconButton>
+          </>
+        )}
         {isLoading && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
             <CircularProgress size={40} thickness={4} />

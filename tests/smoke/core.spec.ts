@@ -205,6 +205,66 @@ test('fit to window leaves no room to pan the image', async ({ page, backend }) 
   expect(Math.abs(afterDragBox!.y - fitBox.y)).toBeLessThan(1);
 });
 
+test('the prev/next controls cycle through previewable items and wrap around', async ({ page, backend }) => {
+  backend.objects.push(
+    { key: 'nav/a-first.txt', size: 20, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' },
+    { key: 'nav/b-second.txt', size: 20, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' },
+    { key: 'nav/c-third.txt', size: 20, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' },
+  );
+  await page.goto(`${bucketUrl}&prefix=nav%2F`);
+  await page.getByRole('row').filter({ hasText: 'a-first.txt' }).getByTitle('Preview', { exact: true }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('a-first.txt', { exact: true })).toBeVisible();
+
+  await dialog.getByRole('button', { name: 'Next item' }).click();
+  await expect(dialog.getByText('b-second.txt', { exact: true })).toBeVisible();
+
+  await page.keyboard.press('ArrowRight');
+  await expect(dialog.getByText('c-third.txt', { exact: true })).toBeVisible();
+
+  // Past the last item, next wraps back to the first.
+  await page.keyboard.press('ArrowRight');
+  await expect(dialog.getByText('a-first.txt', { exact: true })).toBeVisible();
+
+  // Before the first item, previous wraps back to the last.
+  await dialog.getByRole('button', { name: 'Previous item' }).click();
+  await expect(dialog.getByText('c-third.txt', { exact: true })).toBeVisible();
+});
+
+test('prev/next controls are hidden when only one previewable item exists', async ({ page, backend }) => {
+  backend.objects.push({ key: 'solo/alone.txt', size: 20, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' });
+  await page.goto(`${bucketUrl}&prefix=solo%2F`);
+  await page.getByRole('row').filter({ hasText: 'alone.txt' }).getByTitle('Preview', { exact: true }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('alone.txt', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Next item' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Previous item' })).toHaveCount(0);
+
+  await page.keyboard.press('ArrowRight');
+  await expect(dialog.getByText('alone.txt', { exact: true })).toBeVisible();
+});
+
+test('next loads further pages before wrapping to the first item', async ({ page, backend }) => {
+  backend.objects.push({ key: 'paged/a.txt', size: 20, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' });
+  backend.secondPage = [{ key: 'paged/b.txt', size: 20, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' }];
+  await page.goto(`${bucketUrl}&prefix=paged%2F`);
+  await page.getByRole('row').filter({ hasText: 'a.txt' }).getByTitle('Preview', { exact: true }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('a.txt', { exact: true })).toBeVisible();
+
+  // Only one item is loaded so far, but the folder isn't fully loaded (hasMore),
+  // so "next" must fetch the rest before landing on the real next item.
+  await dialog.getByRole('button', { name: 'Next item' }).click();
+  await expect(dialog.getByText('b.txt', { exact: true })).toBeVisible();
+
+  // Now everything is loaded: next wraps back to the first item.
+  await dialog.getByRole('button', { name: 'Next item' }).click();
+  await expect(dialog.getByText('a.txt', { exact: true })).toBeVisible();
+});
+
 test('uploads use the current folder and appear on the upload page', async ({ page, backend }) => {
   await page.goto(`${bucketUrl}&prefix=nested%2F`);
   await page.getByRole('button', { name: 'Upload', exact: true }).click();

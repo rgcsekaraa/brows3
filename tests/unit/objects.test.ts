@@ -101,7 +101,7 @@ test('a late next page cannot append objects to another folder', async () => {
     .mockResolvedValueOnce({ ...listing('new-folder/current'), prefix: 'new-folder/' });
   const view = renderHook(({ prefix }) => useObjects('bucket', 'us-east-1', prefix), { initialProps: { prefix: '' } });
   await waitFor(() => expect(view.result.current.hasMore).toBe(true));
-  let loading: Promise<void>;
+  let loading: Promise<ListObjectsResult | null>;
   act(() => { loading = view.result.current.loadMore(); });
   view.rerender({ prefix: 'new-folder/' });
   await waitFor(() => expect(view.result.current.data?.objects[0].key).toBe('new-folder/current'));
@@ -116,8 +116,8 @@ test('overlapping pagination callbacks share one request', async () => {
     .mockReturnValueOnce(nextPage.promise);
   const view = renderHook(() => useObjects('bucket', 'us-east-1'));
   await waitFor(() => expect(view.result.current.hasMore).toBe(true));
-  let first: Promise<void>;
-  let second: Promise<void>;
+  let first: Promise<ListObjectsResult | null>;
+  let second: Promise<ListObjectsResult | null>;
   act(() => { first = view.result.current.loadMore(); second = view.result.current.loadMore(); });
   await act(async () => { nextPage.resolve(listing('second')); await Promise.all([first, second]); });
   expect(objectApi.listObjects).toHaveBeenCalledTimes(2);

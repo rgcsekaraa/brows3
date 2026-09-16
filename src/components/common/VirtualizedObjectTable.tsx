@@ -37,6 +37,7 @@ import { S3Object } from '@/lib/tauri';
 import { formatSize } from '@/lib/utils';
 import { StyledCheckbox } from './StyledCheckbox';
 import { canObjectBeEdited, canObjectBePreviewed } from '@/lib/objectCapabilities';
+import { compareSortable } from '@/lib/objectSort';
 
 // Get extension - simple and fast
 const getExt = (name: string): string => {
@@ -371,14 +372,7 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
     // Sort - folders first, then by field
     result.sort((a, b) => {
       if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
-      
-      let cmp = 0;
-      if (sortField === 'name') cmp = a.name.localeCompare(b.name);
-      else if (sortField === 'size') cmp = a.size - b.size;
-      else if (sortField === 'date') cmp = a.modifiedTimestamp - b.modifiedTimestamp;
-      else if (sortField === 'class') cmp = a.storageClass.localeCompare(b.storageClass);
-      
-      return sortDirection === 'asc' ? cmp : -cmp;
+      return compareSortable(a, b, sortField, sortDirection);
     });
     
     return result;
