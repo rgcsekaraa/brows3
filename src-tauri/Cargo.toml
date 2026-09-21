@@ -7,6 +7,16 @@ license = "MIT"
 homepage = "https://github.com/rgcsekaraa/brows3"
 repository = "https://github.com/rgcsekaraa/brows3"
 edition = "2021"
+# Publish only the self-contained package produced by scripts/prepare-crate.js.
+# The development manifest points at a frontend outside this directory.
+publish = false
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/app-v{ version }/brows3-v{ version }-{ target }.tar.gz"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+# Use our release artifacts, or fall back to building the verified source crate.
+disabled-strategies = ["quick-install"]
 
 [lib]
 name = "brows3_lib"
@@ -67,6 +77,7 @@ tempfile = "3.24"
 tokio = { version = "1", features = ["test-util"] }
 
 [features]
+crate-distribution = []
 # This feature is used for production builds or when a dev server is not specified
 custom-protocol = ["tauri/custom-protocol"]
 

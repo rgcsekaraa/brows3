@@ -1,0 +1,179 @@
+name: crates.io package
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to crates.io (run on a published app-v tag only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crates-io
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: macos-latest
+    outputs:
+      version: ${{ steps.stage.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 11.2.2
+      - uses: dtolnay/rust-toolchain@1.97.1
+
+      - name: Require a matching published release before uploading
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p 'require("./package.json").version')
+          test "$GITHUB_REF" = "refs/tags/app-v$VERSION"
+          gh release view "app-v$VERSION" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)' | grep -qx true
+
+      - name: Build and stage the self-contained crate
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          node --test .github/scripts/*.test.js
+          pnpm build
+          CRATE_DIR=$(node scripts/prepare-crate.js)
+          echo "CRATE_DIR=$CRATE_DIR" >> "$GITHUB_ENV"
+          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the extracted package builds
+        shell: bash
+        run: cargo package --manifest-path "$CRATE_DIR/Cargo.toml" --locked
+
+      - name: Enforce crates.io archive size limit
+        shell: bash
+        run: |
+          node -e 'const fs = require("node:fs"); const p = require("node:path"); const dir = p.join(process.env.CRATE_DIR, "target/package"); const archive = fs.readdirSync(dir).find(n => n.endsWith(".crate")); if (!archive || fs.statSync(p.join(dir, archive)).size > 10000000) throw new Error("Crate missing or exceeds 10 MB");'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brows3-crate
+          path: ${{ env.CRATE_DIR }}/target/package/*.crate
+          if-no-files-found: error
+
+  install:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ needs.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb libssl-dev pkg-config
+      - uses: actions/download-artifact@v4
+        with:
+          name: brows3-crate
+          path: crate
+      - name: Install from the exact packaged source
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xzf "crate/brows3-$VERSION.crate" -C crate
+          cargo install --path "crate/brows3-$VERSION" --locked --root cargo-install --bin brows3
+      - name: Archive the Cargo executable
+        shell: bash
+        run: node scripts/archive-cargo-binary.js cargo-install "$VERSION" "${{ matrix.target }}" cargo-assets
+      - name: Install pinned binstall test tool
+        shell: bash
+        run: cargo install cargo-binstall --version 1.23.0 --locked --root binstall-tool
+      - name: Test actual binstall download and installation
+        shell: bash
+        run: node scripts/check-binstall.js "binstall-tool/bin/cargo-binstall${{ runner.os == 'Windows' && '.exe' || '' }}" "crate/brows3-$VERSION/Cargo.toml" "cargo-assets/brows3-v$VERSION-${{ matrix.target }}.tar.gz" "${{ matrix.target }}" binstall-installed
+      - name: Smoke test the extracted binary archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/smoke-cargo-binary.js "binstall-installed/brows3${{ runner.os == 'Windows' && '.exe' || '' }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cargo-binary-${{ matrix.target }}
+          path: cargo-assets/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    if: inputs.publish
+    needs: [package, install]
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: brows3-crate
+          path: crate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cargo-binary-*
+          merge-multiple: true
+          path: cargo-assets
+      - name: Upload verified binaries before publishing crate metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/tags/app-v$VERSION"
+          gh release view "app-v$VERSION" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)' | grep -qx true
+          for TARGET in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+            test -s "cargo-assets/brows3-v$VERSION-$TARGET.tar.gz"
+          done
+          # Refuse to overwrite existing release assets.
+          gh release upload "app-v$VERSION" cargo-assets/*.tar.gz
+
+      - name: Publish verified crate
+        if: inputs.publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::Add the CARGO_REGISTRY_TOKEN repository secret before publishing."
+            exit 1
+          fi
+          tar -xzf "crate/brows3-$VERSION.crate" -C crate
+          cargo publish --manifest-path "crate/brows3-$VERSION/Cargo.toml" --locked
