@@ -175,5 +175,9 @@ jobs:
             echo "::error::Add the CARGO_REGISTRY_TOKEN repository secret before publishing."
             exit 1
           fi
-          tar -xzf "crate/brows3-$VERSION.crate" -C crate
-          cargo publish --manifest-path "crate/brows3-$VERSION/Cargo.toml" --locked
+          PUBLISH_DIR=$(mktemp -d "$RUNNER_TEMP/brows3-publish.XXXXXX")
+          # Generated crate files inside the checkout are untracked and Cargo
+          # correctly refuses to publish them. Keep verification enabled and
+          # publish the downloaded artifact from an isolated directory instead.
+          tar -xzf "crate/brows3-$VERSION.crate" -C "$PUBLISH_DIR"
+          cargo publish --manifest-path "$PUBLISH_DIR/brows3-$VERSION/Cargo.toml" --locked
