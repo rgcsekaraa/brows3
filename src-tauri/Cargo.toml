@@ -34,7 +34,8 @@ tokio = { version = "1", features = ["full"] }
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "credentials-process", "rt-tokio", "rustls", "sso"] }
 aws-sdk-s3 = "1"
 aws-credential-types = "1"
-aws-smithy-types = { version = "1", features = ["rt-tokio"] }
+aws-smithy-types = { version = "1", features = ["rt-tokio", "http-body-1-x"] }
+http-body = "1"
 
 # Secure credential storage. Linux defaults to the persistent freedesktop
 # Secret Service; keyutils remains available only to migrate legacy entries.

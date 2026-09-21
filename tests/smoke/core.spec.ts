@@ -82,7 +82,10 @@ test('downloads can be queued, cancelled and retried through the transfer page',
   await expect.poll(() => backend.transfers.length).toBe(1);
   await page.getByText('Downloads', { exact: true }).first().click();
   await expect(page).toHaveURL(/\/downloads/);
-  await page.getByLabel('Cancel', { exact: true }).getByRole('button').click();
+  await page.getByRole('button', { name: 'Cancel download', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  expect(backend.transfers[0].status).toBe('Pending');
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel download', exact: true }).click();
   await expect.poll(() => backend.transfers[0].status).toBe('Cancelled');
   await page.getByLabel('Retry', { exact: true }).getByRole('button').click();
   await expect.poll(() => backend.transfers.length).toBe(2);

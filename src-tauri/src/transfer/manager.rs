@@ -92,6 +92,7 @@ impl TransferManager {
                 }
             };
             for job in &mut restored {
+                job.bytes_per_second = 0.0;
                 if matches!(
                     job.status,
                     TransferStatus::Pending | TransferStatus::InProgress
@@ -209,6 +210,7 @@ impl TransferManager {
             match job.status {
                 TransferStatus::Pending | TransferStatus::InProgress => {
                     job.status = TransferStatus::Cancelled;
+                    job.bytes_per_second = 0.0;
                     let job_clone = job.clone();
                     let needs_graceful_cleanup = Self::is_multipart_upload_job(job);
 
@@ -330,6 +332,7 @@ impl TransferManager {
         if let Some(app) = self.app_handle.read().await.as_ref() {
             let event = TransferEvent {
                 job_id: job.id.clone(),
+                bytes_per_second: job.bytes_per_second,
                 processed_bytes: job.processed_bytes,
                 total_bytes: job.total_bytes,
                 status: job.status.clone(),
@@ -445,7 +448,38 @@ impl TransferManager {
 
                         let result = match profile_result {
                             Ok(profile) => {
-                                manager_inner.execute_job(&job, s3_inner, &profile).await
+                                let execution = manager_inner.execute_job(&job, s3_inner, &profile);
+                                tokio::pin!(execution);
+                                let mut timer = tokio::time::interval(Duration::from_millis(250));
+                                timer.set_missed_tick_behavior(
+                                    tokio::time::MissedTickBehavior::Skip,
+                                );
+                                let mut speed =
+                                    super::speed::SpeedWindow::new(std::time::Instant::now());
+                                loop {
+                                    tokio::select! {
+                                        result = &mut execution => break result,
+                                        _ = timer.tick() => {
+                                            let (position, attempt) = {
+                                                let progress = job.progress.lock().unwrap();
+                                                (progress.position, progress.attempt)
+                                            };
+                                            let rate = speed.sample(std::time::Instant::now(), position, attempt);
+                                            let mut jobs = manager_inner.jobs.write().await;
+                                            if let Some(current) = jobs.get_mut(&job.id) {
+                                                if current.status == TransferStatus::InProgress {
+                                                    current.processed_bytes = if current.total_bytes > 0 {
+                                                        position.min(current.total_bytes)
+                                                    } else {
+                                                        position
+                                                    };
+                                                    current.bytes_per_second = rate;
+                                                    manager_inner.emit_update(current).await;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             Err(err) => Err(err),
                         };
@@ -505,6 +539,7 @@ impl TransferManager {
                     return;
                 }
                 job.status = status.clone();
+                job.bytes_per_second = 0.0;
                 // If final status, set finished_at
                 match status {
                     TransferStatus::Completed
@@ -538,7 +573,11 @@ impl TransferManager {
         {
             let mut jobs = self.jobs.write().await;
             if let Some(job) = jobs.get_mut(id) {
+                if job.status != TransferStatus::InProgress {
+                    return;
+                }
                 job.processed_bytes = processed;
+                job.progress.lock().unwrap().position = processed;
             }
         }
         if let Some(job) = self.get_job(id).await {
@@ -576,6 +615,7 @@ impl TransferManager {
             let body = ByteStream::from_path(&job.local_path)
                 .await
                 .map_err(|error| crate::error::AppError::IoError(error.to_string()))?;
+            let body = super::speed::track(body, job.progress.clone(), 0);
             let timeout = transfer_timeout_for(file_size);
             let send = client
                 .put_object()
@@ -678,6 +718,7 @@ impl TransferManager {
                         ))
                     })?;
 
+                let body = super::speed::track(body, job.progress.clone(), part.offset);
                 let part_timeout = transfer_timeout_for(part.length);
                 let part_send = client
                     .upload_part()
@@ -1189,6 +1230,30 @@ mod tests {
         );
         job.status = status;
         job
+    }
+
+    #[tokio::test]
+    async fn terminal_jobs_clear_speed_and_ignore_late_progress() {
+        for status in [
+            TransferStatus::Completed,
+            TransferStatus::Failed("offline".into()),
+            TransferStatus::Cancelled,
+        ] {
+            let manager = TransferManager::new();
+            let mut job = test_job(TransferStatus::InProgress);
+            job.bytes_per_second = 1024.0;
+            manager.add_job(job.clone()).await;
+            if status == TransferStatus::Cancelled {
+                manager.cancel_job(&job.id).await;
+            } else {
+                manager.update_job_status(&job.id, status.clone()).await;
+            }
+            manager.update_job_progress(&job.id, 5).await;
+            let saved = manager.get_job(&job.id).await.unwrap();
+            assert_eq!(saved.status, status);
+            assert_eq!(saved.bytes_per_second, 0.0);
+            assert_eq!(saved.processed_bytes, 0);
+        }
     }
 
     #[tokio::test]

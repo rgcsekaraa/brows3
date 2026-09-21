@@ -1,5 +1,6 @@
 pub mod download;
 pub mod manager;
+mod speed;
 
 pub use manager::TransferManager;
 
@@ -38,6 +39,10 @@ pub struct TransferJob {
     pub status: TransferStatus,
     pub total_bytes: u64,
     pub processed_bytes: u64,
+    #[serde(default)]
+    pub bytes_per_second: f64,
+    #[serde(skip)]
+    pub progress: std::sync::Arc<std::sync::Mutex<speed::Progress>>,
     pub created_at: i64,          // Timestamp (ms)
     pub finished_at: Option<i64>, // Timestamp (ms)
     // Grouping fields
@@ -49,6 +54,7 @@ pub struct TransferJob {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransferEvent {
     pub job_id: String,
+    pub bytes_per_second: f64,
     pub processed_bytes: u64,
     pub total_bytes: u64,
     pub status: TransferStatus,
@@ -77,6 +83,8 @@ impl TransferJob {
             status: TransferStatus::Pending,
             total_bytes,
             processed_bytes: 0,
+            bytes_per_second: 0.0,
+            progress: Default::default(),
             created_at: Utc::now().timestamp_millis(),
             finished_at: None,
             parent_group_id: None,

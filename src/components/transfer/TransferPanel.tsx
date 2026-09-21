@@ -7,7 +7,6 @@ import {
   ListItem,
   Typography,
   LinearProgress,
-  Badge,
   Paper,
   Tooltip,
 } from '@mui/material';
@@ -22,6 +21,9 @@ import {
 } from '@mui/icons-material';
 import { useTransferStore } from '@/store/transferStore';
 import { TransferJob } from '@/lib/tauri';
+import { formatTransferSpeed, totalTransferSpeed, transferSpeed } from '@/lib/transferSpeed';
+
+import { TransferActivityIcon } from './TransferActivityIcon';
 
 interface TransferPanelProps {
   filterType?: 'Upload' | 'Download';
@@ -41,11 +43,12 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
     (typeof j.status === 'object' && 'Failed' in j.status)
   );
   
-  const getStatusIcon = (status: TransferJob['status']) => {
+  const getStatusIcon = (job: TransferJob) => {
+    const status = job.status;
     if (status === 'Completed') return <CheckCircleIcon color="success" fontSize="small" />;
     if (status === 'Cancelled') return <CancelIcon color="disabled" fontSize="small" />;
     if (typeof status === 'object' && 'Failed' in status) return <ErrorIcon color="error" fontSize="small" />;
-    return <SwapIcon color="primary" fontSize="small" className="spin-animation" />;
+    return <TransferActivityIcon type={job.transfer_type} active={status === 'InProgress'} />;
   };
 
   // Don't show if no jobs or user closed it
@@ -55,7 +58,7 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
     <Box 
       sx={{ 
         position: 'fixed', 
-        bottom: 24, 
+        bottom: 32,
         right: 24, 
         width: 320, 
         zIndex: 1200,
@@ -82,9 +85,7 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
              sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer', flex: 1 }}
              onClick={togglePanel}
            >
-             <Badge badgeContent={activeJobs.length} color="primary" max={99}>
-               <SwapIcon fontSize="small" color={activeJobs.length > 0 ? 'primary' : 'disabled'} />
-             </Badge>
+             <SwapIcon fontSize="small" color={activeJobs.length > 0 ? 'primary' : 'disabled'} />
              <Typography variant="body2" sx={{ fontWeight: 600 }}>
                Transfers
              </Typography>
@@ -99,14 +100,25 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
            </Box>
            
            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-             <IconButton size="small" onClick={togglePanel}>
+             <IconButton size="small" aria-label={isPanelOpen ? 'Collapse transfers' : 'Expand transfers'} onClick={togglePanel}>
                {isPanelOpen ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
              </IconButton>
-             <IconButton size="small" onClick={hidePanel}>
+             <IconButton size="small" aria-label="Hide transfers" onClick={hidePanel}>
                <CloseIcon fontSize="small" />
              </IconButton>
            </Box>
         </Paper>
+
+        {activeJobs.length > 0 && (
+          <Box sx={{ px: 1.5, py: 0.5, bgcolor: 'background.paper', display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+            {(['Upload', 'Download'] as const).filter(type => activeJobs.some(job => job.transfer_type === type)).map(type => (
+              <Typography key={type} variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <TransferActivityIcon type={type} active={activeJobs.some(job => job.transfer_type === type && job.status === 'InProgress')} />
+                {type}: {formatTransferSpeed(totalTransferSpeed(activeJobs, type))}
+              </Typography>
+            ))}
+          </Box>
+        )}
 
         {/* Expanded List */}
         {isPanelOpen && (
@@ -124,7 +136,7 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
                    <Typography variant="caption" color="text.secondary">No transfers</Typography>
                  </ListItem>
                ) : (
-                 filteredJobs.slice(0, 8).map((job) => {
+                 [...activeJobs, ...filteredJobs.filter(job => !activeJobs.includes(job))].slice(0, 8).map((job) => {
                    const isError = typeof job.status === 'object' && 'Failed' in job.status;
                    const errorMessage = isError && typeof job.status === 'object' ? job.status.Failed : '';
                    const progress =
@@ -140,13 +152,13 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
                           <Box sx={{ width: '100%' }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.25 }}>
                               <Tooltip title={isError ? errorMessage : job.key}>
-                                <Typography variant="caption" noWrap sx={{ maxWidth: 200, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  {getStatusIcon(job.status)}
-                                  {job.transfer_type === 'Upload' ? '↑' : '↓'} {job.key.split('/').pop()}
+                                <Typography variant="caption" noWrap sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  {getStatusIcon(job)}
+                                  <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{job.key.split('/').pop()}</Box>
                                 </Typography>
                               </Tooltip>
-                              <Typography variant="caption" color="text.secondary">
-                                {Math.round(progress)}%
+                              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap', ml: 1, fontVariantNumeric: 'tabular-nums' }}>
+                                {job.status === 'InProgress' ? `${formatTransferSpeed(transferSpeed(job))} · ` : ''}{Math.round(progress)}%
                               </Typography>
                             </Box>
                             <LinearProgress
@@ -188,10 +200,6 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
            </Paper>
         )}
         
-         <style jsx global>{`
-            @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-            .spin-animation { animation: spin 1s linear infinite; }
-          `}</style>
     </Box>
   );
 }

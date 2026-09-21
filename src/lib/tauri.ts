@@ -416,6 +416,7 @@ export interface TransferJob {
   local_path: string;
   total_bytes: number;
   processed_bytes: number;
+  bytes_per_second?: number;
   status: 'Pending' | 'InProgress' | 'Completed' | { Failed: string } | 'Paused' | 'Cancelled';
   created_at: number; // milliseconds
   finished_at?: number; // milliseconds
@@ -427,6 +428,7 @@ export interface TransferJob {
 export interface TransferEvent {
   job_id: string;
   processed_bytes: number;
+  bytes_per_second?: number;
   total_bytes: number;
   status: TransferJob['status'];
   finished_at?: number;

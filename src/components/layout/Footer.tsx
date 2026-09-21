@@ -1,5 +1,7 @@
 'use client';
 
+import { formatTransferSpeed, totalTransferSpeed } from '@/lib/transferSpeed';
+
 import { Box, Typography, Divider, Tooltip } from '@mui/material';
 import { 
     CloudDone as CloudDoneIcon, 
@@ -146,6 +148,7 @@ export default function Footer() {
            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
              <TransferIcon sx={{ fontSize: 13, color: activeTransfers.length > 0 ? 'primary.main' : 'inherit' }} />
              <Typography variant="caption" sx={{ fontSize: '0.7rem' }}>{activeTransfers.length}</Typography>
+             {activeTransfers.length > 0 && <Typography variant="caption" sx={{ fontSize: '0.7rem', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', display: { xs: 'none', lg: 'block' } }}>{(['Upload', 'Download'] as const).filter(type => activeTransfers.some(job => job.transfer_type === type)).map(type => `${type}: ${formatTransferSpeed(totalTransferSpeed(activeTransfers, type))}`).join(' · ')}</Typography>}
            </Box>
         </Tooltip>
       </Box>

@@ -23,7 +23,6 @@ import {
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
   Schedule as ScheduleIcon,
-  Sync as SyncIcon,
   Delete as DeleteIcon,
 
   FolderOpen as FolderOpenIcon,
@@ -35,6 +34,10 @@ import {
 
 import { useTransferStore } from '@/store/transferStore';
 import { TransferJob } from '@/lib/tauri';
+import { transferColumnWidths, transferTableSx } from '@/components/transfer/tableLayout';
+import { CancelTransferButton } from '@/components/transfer/CancelTransferButton';
+import { TransferActivityIcon } from '@/components/transfer/TransferActivityIcon';
+import { formatTransferSpeed, transferSpeed, totalTransferSpeed } from '@/lib/transferSpeed';
 
 type StatusColor = NonNullable<ChipProps['color']>;
 type ProgressColor = NonNullable<LinearProgressProps['color']>;
@@ -74,7 +77,7 @@ const getStatusInfo = (status: TransferJob['status']): { label: string; color: S
     return { label: 'Completed', color: 'success', icon: <CheckCircleIcon fontSize="small" /> };
   }
   if (status === 'InProgress') {
-    return { label: 'Uploading', color: 'info', icon: <SyncIcon fontSize="small" className="spin" /> };
+    return { label: 'Uploading', color: 'info', icon: <TransferActivityIcon type="Upload" active /> };
   }
   if (status === 'Pending') {
     return { label: 'Pending', color: 'default', icon: <ScheduleIcon fontSize="small" /> };
@@ -210,18 +213,20 @@ export default function UploadsPage() {
           </Typography>
         </Paper>
       ) : (
-        <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, overflow: 'auto' }}>
-          <Table stickyHeader size="small" sx={{ tableLayout: 'fixed' }}>
+        <TableContainer component={Paper} variant="outlined" sx={{ flex: 1, minWidth: 0, width: '100%', containerType: 'inline-size', overflowY: 'auto', overflowX: 'hidden' }}>
+          <Table stickyHeader size="small" sx={transferTableSx}>
+            <colgroup>{transferColumnWidths.map((width, index) => <col key={index} style={{ width }} />)}</colgroup>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 600, width: 150 }}>Status</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>File</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 100 }}>Size</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 180 }}>Progress</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 140 }}>Started</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 140 }}>Finished</TableCell>
-                <TableCell sx={{ fontWeight: 600, width: 100 }}>Elapsed</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, width: 100 }}>Actions</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Size</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Progress</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Speed</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Started</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Finished</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Elapsed</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -234,7 +239,7 @@ export default function UploadsPage() {
                       {folders.length > 0 && (
                         <>
                           <TableRow>
-                            <TableCell colSpan={8} sx={{ bgcolor: 'action.hover', fontWeight: 600, py: 1 }}>
+                            <TableCell colSpan={9} sx={{ bgcolor: 'action.hover', fontWeight: 600, py: 1 }}>
                               Folders ({folders.length})
                             </TableCell>
                           </TableRow>
@@ -247,7 +252,7 @@ export default function UploadsPage() {
                       {files.length > 0 && (
                         <>
                            <TableRow>
-                            <TableCell colSpan={8} sx={{ bgcolor: 'action.hover', fontWeight: 600, py: 1 }}>
+                            <TableCell colSpan={9} sx={{ bgcolor: 'action.hover', fontWeight: 600, py: 1 }}>
                               Files ({files.length})
                             </TableCell>
                           </TableRow>
@@ -271,15 +276,6 @@ export default function UploadsPage() {
          </Typography>
       )}
 
-      <style jsx global>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .spin {
-          animation: spin 1s linear infinite;
-        }
-      `}</style>
     </Box>
   );
 }
@@ -289,15 +285,24 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
     const isCompleted = job.status === 'Completed';
     const progress = isCompleted ? 100 : (job.total_bytes > 0 ? (job.processed_bytes / job.total_bytes) * 100 : 0);
     const displayBytes = job.total_bytes > 0 ? job.total_bytes : (isCompleted ? job.processed_bytes : 0);
-    const { cancelJob, retryJob } = useTransferStore();
+    const { retryJob } = useTransferStore();
     
     // Actions
-    const handleCancel = () => cancelJob(job.id);
     const handleRetry = () => retryJob(job.id);
 
     return (
         <TableRow sx={{ '&:last-child td, &:last-child th': { border: 0 }, bgcolor: isNested ? 'action.hover' : 'inherit' }}>
-            <TableCell component="th" scope="row">
+            <TableCell component="th" scope="row" sx={{ pl: isNested ? 1.5 : 0.5 }}>
+                <Box sx={{ overflow: 'hidden' }}>
+                    <Tooltip title={job.key.split('/').pop() || ''}>
+                        <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>{job.key.split('/').pop()}</Typography>
+                    </Tooltip>
+                    {!isNested && <Typography variant="caption" color="text.secondary" noWrap display="block">{job.bucket}</Typography>}
+                    {job.status === 'InProgress' && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontVariantNumeric: 'tabular-nums' }}>{formatTransferSpeed(transferSpeed(job))}</Typography>}
+                    {status.detail && <Typography variant="caption" color="error" display="block" sx={{ overflowWrap: 'anywhere', maxWidth: 360 }}>{status.detail}</Typography>}
+                </Box>
+            </TableCell>
+            <TableCell>
                  <Tooltip title={status.detail || ''}>
                      <Chip
                         icon={status.icon}
@@ -309,24 +314,16 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                     />
                  </Tooltip>
             </TableCell>
-            <TableCell sx={{ pl: isNested ? 10 : 2 }}>
-                <Box sx={{ overflow: 'hidden' }}>
-                    <Tooltip title={job.key.split('/').pop() || ''}>
-                        <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>{job.key.split('/').pop()}</Typography>
-                    </Tooltip>
-                    {!isNested && <Typography variant="caption" color="text.secondary" noWrap display="block">{job.bucket}</Typography>}
-                    {status.detail && <Typography variant="caption" color="error" display="block" sx={{ overflowWrap: 'anywhere', maxWidth: 360 }}>{status.detail}</Typography>}
-                </Box>
-            </TableCell>
             <TableCell>{formatBytes(displayBytes)}</TableCell>
             <TableCell>
                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Box sx={{ width: '100%', mr: 1 }}>
+                    <Box sx={{ flex: 1, minWidth: 0, mr: 0.5 }}>
                         <LinearProgress variant="determinate" value={progress} color={toProgressColor(status.color)} sx={{ height: 4, borderRadius: 1 }} />
                     </Box>
-                    <Typography variant="caption" color="text.secondary">{Math.round(progress)}%</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{Math.round(progress)}%</Typography>
                 </Box>
             </TableCell>
+            <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{job.status === 'InProgress' ? formatTransferSpeed(transferSpeed(job)) : '-'}</TableCell>
             <TableCell>
                 <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.2 }}>
                    {new Date(job.created_at).toLocaleDateString()}
@@ -353,7 +350,7 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
              
             {/* 8. Actions */}
             <TableCell align="right">
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0, flexWrap: 'wrap' }}>
                     {/* Retry Button */}
                     <Tooltip title={((typeof job.status === 'object' && 'Failed' in job.status) || job.status === 'Cancelled') ? "Retry" : ""}>
                         <span>
@@ -369,18 +366,7 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                     </Tooltip>
 
                     {/* Cancel Button */}
-                    <Tooltip title={(job.status === 'Pending' || job.status === 'InProgress') ? "Cancel" : ""}>
-                        <span>
-                            <IconButton 
-                                onClick={handleCancel} 
-                                size="small" 
-                                color="error"
-                                disabled={!(job.status === 'Pending' || job.status === 'InProgress')}
-                            >
-                                <CancelIcon fontSize="small" />
-                            </IconButton>
-                        </span>
-                    </Tooltip>
+                    <CancelTransferButton job={job} />
                 </Box>
             </TableCell>
         </TableRow>
@@ -440,19 +426,7 @@ function GroupRow({ group }: { group: TransferGroupRow }) {
     return (
         <>
             <TableRow sx={{ '& > *': { borderBottom: 'unset' } }} hover onClick={() => setOpen(!open)} style={{ cursor: 'pointer' }}>
-                {/* 1. Status */}
-                <TableCell>
-                    <Chip 
-                        label={statusLabel}
-                        size="small"
-                        color={statusColor}
-                        variant="outlined"
-                        sx={{ borderRadius: 1, height: 24 }}
-                    />
-                </TableCell>
-
-                {/* 2. File */}
-                <TableCell>
+                <TableCell component="th" scope="row">
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
                          <IconButton
                             aria-label="expand row"
@@ -461,13 +435,13 @@ function GroupRow({ group }: { group: TransferGroupRow }) {
                                 e.stopPropagation();
                                 setOpen(!open);
                             }}
-                            sx={{ mr: 1, p: 0.5 }}
+                            sx={{ mr: 0.5, p: 0.5, flexShrink: 0 }}
                         >
                             {open ? <KeyboardArrowUpIcon fontSize="small" /> : <KeyboardArrowDownIcon fontSize="small" />}
                         </IconButton>
-                        <FolderOpenIcon color="action" sx={{ mr: 1, fontSize: 20 }} />
-                        <Box>
-                             <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        <FolderOpenIcon color="action" sx={{ mr: 0.5, fontSize: 20, flexShrink: 0 }} />
+                        <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                             <Typography variant="body2" title={group.name} noWrap sx={{ fontWeight: 600 }}>
                                 {group.name ? group.name.replace('s3://', '') : 'Group'}
                              </Typography>
                              <Typography variant="caption" color="text.secondary">
@@ -476,6 +450,15 @@ function GroupRow({ group }: { group: TransferGroupRow }) {
                         </Box>
                     </Box>
                 </TableCell>
+                <TableCell>
+                    <Chip
+                        label={statusLabel}
+                        size="small"
+                        color={statusColor}
+                        variant="outlined"
+                        sx={{ borderRadius: 1, height: 24 }}
+                    />
+                </TableCell>
 
                 {/* 3. Size */}
                 <TableCell>{formatBytes(totalBytes)}</TableCell>
@@ -483,13 +466,14 @@ function GroupRow({ group }: { group: TransferGroupRow }) {
                 {/* 4. Progress */}
                 <TableCell>
                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{ flex: 1, minWidth: 80 }}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
                             <LinearProgress variant="determinate" value={progress} color={toProgressColor(statusColor)} sx={{ height: 6, borderRadius: 1 }} />
                         </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 35 }}>{Math.round(progress)}%</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>{Math.round(progress)}%</Typography>
                     </Box>
                 </TableCell>
                 
+                <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{items.some(job => job.status === 'InProgress') ? formatTransferSpeed(totalTransferSpeed(items)) : '-'}</TableCell>
                 {/* 5. Started */}
                 <TableCell>{startDateStr}</TableCell>
                 {/* 6. Finished */}
