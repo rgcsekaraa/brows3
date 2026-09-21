@@ -1,0 +1,68 @@
+name: Retry verified crates.io publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Failed crates.io run whose package and five installation jobs passed
+        required: true
+        type: string
+      tag:
+        description: Published release tag matching the verified run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: crates-io
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    runs-on: macos-latest
+    env:
+      RUN_ID: ${{ inputs.run_id }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - name: Verify original run and published release
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^app-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          RETRY_DIR=$(mktemp -d "$RUNNER_TEMP/brows3-retry.XXXXXX")
+          echo "RETRY_DIR=$RETRY_DIR" >> "$GITHUB_ENV"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RETRY_DIR/run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > "$RETRY_DIR/jobs.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RETRY_DIR/release.json"
+          gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" > "$RETRY_DIR/commit.json"
+          node .github/scripts/verify-crate-retry.js source "$RETRY_DIR" "$RELEASE_TAG"
+      - name: Download tested artifacts and verify published binary checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name brows3-crate --dir "$RETRY_DIR/crate"
+          for TARGET in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+            gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name "cargo-binary-$TARGET" --dir "$RETRY_DIR/binaries"
+          done
+          node .github/scripts/verify-crate-retry.js assets "$RETRY_DIR" "$RELEASE_TAG"
+      - name: Publish original verified crate without replacing release assets
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CARGO_REGISTRY_TOKEN"
+          VERSION="${RELEASE_TAG#app-v}"
+          tar -xzf "$RETRY_DIR/crate/brows3-$VERSION.crate" -C "$RETRY_DIR/crate"
+          cargo publish --manifest-path "$RETRY_DIR/crate/brows3-$VERSION/Cargo.toml" --locked
