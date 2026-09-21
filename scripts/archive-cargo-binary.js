@@ -20,7 +20,20 @@ function archiveBinary(root, version, target, destination) {
   fs.mkdirSync(destination, { recursive: true });
   const archive = path.resolve(destination, `brows3-v${version}-${target}.tar.gz`);
   if (fs.existsSync(archive)) throw new Error(`Refusing to overwrite ${archive}`);
-  execFileSync('tar', ['-czf', archive, '-C', path.dirname(binary), name]);
+  // Stream to a Node-owned file descriptor. GNU tar interprets Windows drive
+  // letters in archive paths as remote hosts (for example, D:), even in CI.
+  const fd = fs.openSync(archive, 'wx');
+  try {
+    execFileSync('tar', ['-czf', '-', name], {
+      cwd: path.resolve(path.dirname(binary)),
+      stdio: ['ignore', fd, 'pipe'],
+    });
+  } catch (error) {
+    fs.closeSync(fd);
+    fs.unlinkSync(archive);
+    throw error;
+  }
+  fs.closeSync(fd);
   return archive;
 }
 
