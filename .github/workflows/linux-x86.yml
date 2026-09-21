@@ -1,0 +1,89 @@
+name: Experimental Linux 32-bit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-x86-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: i386/debian:bookworm
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
+      CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER: gcc
+      CFLAGS_i686_unknown_linux_gnu: -m32
+      CC_i686_unknown_linux_gnu: gcc
+      PKG_CONFIG_ALLOW_CROSS: 1
+      PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig:/usr/share/pkgconfig
+      RUSTFLAGS: -C link-arg=-m32
+    steps:
+      - name: Install native and 32-bit development dependencies
+        run: |
+          dpkg --add-architecture amd64
+          apt-get update
+          apt-get install -y libc6:amd64 libstdc++6:amd64 ca-certificates curl git build-essential gcc-multilib g++-multilib pkg-config cmake perl file binutils xz-utils xvfb xauth dpkg-dev \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libssl-dev libdbus-1-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 11.2.2
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          toolchain: 1.97.1-x86_64-unknown-linux-gnu
+          targets: i686-unknown-linux-gnu
+      - name: Build frontend and stage source
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm build
+          echo "CRATE_DIR=$(node scripts/prepare-crate.js)" >> "$GITHUB_ENV"
+      - name: Build a real 32-bit executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --path "$CRATE_DIR" --target i686-unknown-linux-gnu --locked --root x86-install --bin brows3
+          file x86-install/bin/brows3
+          readelf -h x86-install/bin/brows3 | grep -E 'Class:.*ELF32'
+          readelf -h x86-install/bin/brows3 | grep -E 'Machine:.*Intel 80386'
+      - name: Test 32-bit backend
+        shell: bash
+        run: cargo test --manifest-path "$CRATE_DIR/Cargo.toml" --target i686-unknown-linux-gnu --locked --lib
+        env:
+          CARGO_PROFILE_DEV_DEBUG: 0
+          CARGO_PROFILE_TEST_DEBUG: 0
+      - name: Create experimental Debian installer
+        run: node scripts/package-linux-x86.js x86-install x86-assets
+      - name: Verify installer and start the packaged application
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p 'require("./package.json").version')
+          test "$(dpkg-deb -f "x86-assets/Brows3_${VERSION}_i386.deb" Architecture)" = i386
+          dpkg -i "x86-assets/Brows3_${VERSION}_i386.deb"
+          mkdir x86-smoke
+          cp /usr/bin/brows3 x86-smoke/brows3
+          node scripts/smoke-cargo-binary.js x86-smoke/brows3
+        env:
+          # WebKit cannot use its sandbox under the root-only CI container.
+          # This is a test environment setting, not part of the shipped app.
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: experimental-linux-i386
+          path: x86-assets/*.deb
+          if-no-files-found: error
