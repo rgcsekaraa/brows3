@@ -7,6 +7,9 @@ use aws_sdk_s3::types::{BucketLocationConstraint, CreateBucketConfiguration};
 use aws_sdk_s3::Client;
 use tauri::State;
 
+static POLICY_WRITES: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
+
 async fn selected_client(
     expected_profile_id: &str,
     region: Option<&str>,
@@ -222,6 +225,7 @@ async fn write_policy(
     policy: Option<&str>,
     expected: Option<&str>,
 ) -> Result<()> {
+    let _write = POLICY_WRITES.lock().await;
     let new_value = policy.map(parse_policy).transpose()?;
     let expected_value = expected.map(parse_policy).transpose()?;
     let current = read_policy(client, bucket).await?;

@@ -8,7 +8,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
 use aws_smithy_types::byte_stream::Length;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,12 +28,13 @@ fn transfer_timeout_for(size_bytes: u64) -> Duration {
 // Define a safe shared state for the manager
 pub struct TransferManager {
     jobs: Arc<RwLock<HashMap<String, TransferJob>>>,
-    queue: Arc<Mutex<Vec<String>>>, // List of Job IDs
+    queue: Arc<Mutex<VecDeque<String>>>, // List of Job IDs
     abort_handles: Arc<RwLock<HashMap<String, tokio::task::AbortHandle>>>,
     max_concurrency: Arc<AtomicUsize>,
     active_count: Arc<AtomicUsize>,
     slot_notify: Arc<Notify>,
     app_handle: Arc<RwLock<Option<AppHandle>>>,
+    journal: Mutex<Option<std::path::PathBuf>>,
 }
 
 struct ActiveSlotGuard {
@@ -58,12 +59,13 @@ impl TransferManager {
     pub fn new() -> Self {
         Self {
             jobs: Arc::new(RwLock::new(HashMap::new())),
-            queue: Arc::new(Mutex::new(Vec::new())),
+            queue: Arc::new(Mutex::new(VecDeque::new())),
             abort_handles: Arc::new(RwLock::new(HashMap::new())),
             max_concurrency: Arc::new(AtomicUsize::new(5)),
             active_count: Arc::new(AtomicUsize::new(0)),
             slot_notify: Arc::new(Notify::new()),
             app_handle: Arc::new(RwLock::new(None)),
+            journal: Mutex::new(None),
         }
     }
 
@@ -72,22 +74,113 @@ impl TransferManager {
         *handle = Some(app_handle);
     }
 
+    pub async fn configure_journal(&self, path: std::path::PathBuf) -> crate::error::Result<()> {
+        *self.journal.lock().await = Some(path.clone());
+        if path.exists() {
+            let content = std::fs::read(&path)?;
+            let mut restored: Vec<TransferJob> = match serde_json::from_slice(&content) {
+                Ok(jobs) => jobs,
+                Err(error) => {
+                    let backup = path
+                        .with_file_name(format!("transfers.invalid-{}.json", uuid::Uuid::new_v4()));
+                    std::fs::rename(&path, &backup)?;
+                    log::error!(
+                        "Invalid transfer journal preserved at {}: {error}",
+                        backup.display()
+                    );
+                    Vec::new()
+                }
+            };
+            for job in &mut restored {
+                if matches!(
+                    job.status,
+                    TransferStatus::Pending | TransferStatus::InProgress
+                ) {
+                    job.status = TransferStatus::Failed(match job.transfer_type {
+                        TransferType::Upload => "Interrupted when the app closed. Check the destination before retrying; existing objects will not be replaced.".into(),
+                        TransferType::Download => "Interrupted when the app closed. Queue the download again to choose its destination.".into(),
+                    });
+                    job.finished_at = Some(chrono::Utc::now().timestamp_millis());
+                }
+            }
+            *self.jobs.write().await = restored
+                .into_iter()
+                .map(|job| (job.id.clone(), job))
+                .collect();
+        }
+        self.persist_jobs().await
+    }
+
+    async fn persist_jobs(&self) -> crate::error::Result<()> {
+        // Serialize snapshots and writes together, so an older snapshot cannot win.
+        let journal = self.journal.lock().await;
+        let Some(path) = journal.as_ref() else {
+            return Ok(());
+        };
+        let mut jobs = self.jobs.write().await;
+        let mut finished: Vec<_> = jobs
+            .values()
+            .filter(|job| {
+                matches!(
+                    job.status,
+                    TransferStatus::Completed
+                        | TransferStatus::Failed(_)
+                        | TransferStatus::Cancelled
+                )
+            })
+            .map(|job| (job.finished_at.unwrap_or(job.created_at), job.id.clone()))
+            .collect();
+        finished.sort_unstable();
+        let excess = finished.len().saturating_sub(1000);
+        for (_, id) in finished.into_iter().take(excess) {
+            jobs.remove(&id);
+        }
+        let bytes = serde_json::to_vec(&jobs.values().collect::<Vec<_>>())?;
+        drop(jobs);
+        let path = path.clone();
+        tokio::task::spawn_blocking(move || crate::credentials::write_private_file(&path, &bytes))
+            .await
+            .map_err(|error| crate::error::AppError::IoError(error.to_string()))??;
+        Ok(())
+    }
+
+    async fn persist_or_log(&self) {
+        if let Err(error) = self.persist_jobs().await {
+            log::error!("Transfer recovery journal could not be saved: {error}");
+        }
+    }
+
     pub async fn add_job(&self, job: TransferJob) {
+        self.add_jobs(vec![job]).await;
+    }
+
+    pub async fn add_jobs(&self, added: Vec<TransferJob>) {
         {
             let mut jobs = self.jobs.write().await;
-            jobs.insert(job.id.clone(), job.clone());
+            for job in &added {
+                jobs.insert(job.id.clone(), job.clone());
+            }
         }
-
-        let mut queue = self.queue.lock().await;
-        queue.push(job.id.clone());
-
-        // Emit added event with full job data
-        if let Some(app) = self.app_handle.read().await.as_ref() {
-            let _ = app.emit("transfer-added", &job);
+        if let Err(error) = self.persist_jobs().await {
+            let mut jobs = self.jobs.write().await;
+            for job in &added {
+                if let Some(current) = jobs.get_mut(&job.id) {
+                    current.status =
+                        TransferStatus::Failed(format!("Could not save queued transfer: {error}"));
+                }
+            }
+            return;
         }
-
-        // Also emit initial status update
-        self.emit_update(&job).await;
+        {
+            let mut queue = self.queue.lock().await;
+            queue.extend(added.iter().map(|job| job.id.clone()));
+        }
+        for job in added {
+            if let Some(app) = self.app_handle.read().await.as_ref() {
+                let _ = app.emit("transfer-added", &job);
+            }
+            self.emit_update(&job).await;
+        }
     }
 
     pub fn set_max_concurrency(&self, max: usize) {
@@ -141,6 +234,7 @@ impl TransferManager {
 
                     drop(handles);
                     drop(jobs);
+                    self.persist_or_log().await;
                     self.emit_update(&job_clone).await;
                     return true;
                 }
@@ -172,7 +266,10 @@ impl TransferManager {
         drop(handles);
 
         let mut jobs = self.jobs.write().await;
-        jobs.remove(id).is_some()
+        let removed = jobs.remove(id).is_some();
+        drop(jobs);
+        self.persist_or_log().await;
+        removed
     }
 
     /// Clear all completed/failed/cancelled transfers
@@ -185,7 +282,10 @@ impl TransferManager {
                 TransferStatus::Pending | TransferStatus::InProgress
             )
         });
-        initial_count - jobs.len()
+        let removed = initial_count - jobs.len();
+        drop(jobs);
+        self.persist_or_log().await;
+        removed
     }
 
     /// Retry a failed transfer
@@ -304,7 +404,7 @@ impl TransferManager {
                     if queue.is_empty() {
                         break;
                     }
-                    queue.remove(0)
+                    queue.pop_front().expect("queue checked above")
                 };
 
                 // 2. Wait for a slot in the concurrency limit
@@ -335,6 +435,9 @@ impl TransferManager {
                     // Run the job
                     let job_opt = manager_inner.get_job(&id_inner).await;
                     if let Some(job) = job_opt {
+                        if job.status != TransferStatus::InProgress {
+                            return;
+                        }
                         let profile_result = {
                             let profiles = profiles_inner.read().await;
                             profiles.get_profile(&job.profile_id).await
@@ -392,6 +495,15 @@ impl TransferManager {
         {
             let mut jobs = self.jobs.write().await;
             if let Some(job) = jobs.get_mut(id) {
+                if matches!(
+                    job.status,
+                    TransferStatus::Cancelled
+                        | TransferStatus::Completed
+                        | TransferStatus::Failed(_)
+                ) && job.status != status
+                {
+                    return;
+                }
                 job.status = status.clone();
                 // If final status, set finished_at
                 match status {
@@ -404,6 +516,7 @@ impl TransferManager {
                 }
             }
         }
+        self.persist_or_log().await;
         if let Some(job) = self.get_job(id).await {
             self.emit_update(&job).await;
         }
@@ -469,6 +582,7 @@ impl TransferManager {
                 .bucket(&job.bucket)
                 .key(&job.key)
                 .content_type(content_type)
+                .if_none_match("*")
                 .body(body)
                 .send();
             match tokio::time::timeout(timeout, send).await {
@@ -622,6 +736,7 @@ impl TransferManager {
                 .build();
             let complete_send = client
                 .complete_multipart_upload()
+                .if_none_match("*")
                 .bucket(&job.bucket)
                 .key(&job.key)
                 .upload_id(guard.upload_id())
@@ -671,7 +786,7 @@ impl TransferManager {
     ) -> crate::error::Result<()> {
         let resolved_region = {
             let s3 = s3_manager.read().await;
-            s3.get_bucket_region(&job.bucket)
+            s3.get_bucket_region(profile, &job.bucket)
         }
         .or(job.bucket_region.clone());
 
@@ -696,7 +811,7 @@ impl TransferManager {
                 .ok();
             if let Some(ref region) = new_region {
                 let mut s3 = s3_manager.write().await;
-                s3.set_bucket_region(&job.bucket, region.clone());
+                s3.set_bucket_region(profile, &job.bucket, region.clone());
             }
             Ok::<Option<String>, crate::error::AppError>(new_region)
         };
@@ -863,6 +978,8 @@ impl TransferManager {
                 download.commit()?;
                 current.status = TransferStatus::Completed;
                 current.finished_at = Some(chrono::Utc::now().timestamp_millis());
+                drop(jobs);
+                self.persist_or_log().await;
             }
         }
 
@@ -873,6 +990,53 @@ impl TransferManager {
 #[cfg(test)]
 mod tests {
     use super::{Client, RwLock, S3ClientManager, TransferManager};
+
+    #[tokio::test]
+    async fn interrupted_jobs_are_recovered_without_restarting_writes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("transfers.json");
+        let manager = TransferManager::new();
+        manager.configure_journal(path.clone()).await.unwrap();
+        let job = TransferJob::new(
+            TransferType::Upload,
+            "profile".into(),
+            "bucket".into(),
+            None,
+            "key".into(),
+            "/unused".into(),
+            10,
+        );
+        let id = job.id.clone();
+        manager.add_job(job).await;
+        let restarted = TransferManager::new();
+        restarted.configure_journal(path).await.unwrap();
+        assert!(matches!(
+            restarted.get_job(&id).await.unwrap().status,
+            TransferStatus::Failed(_)
+        ));
+        assert!(restarted.queue.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn corrupt_recovery_journal_is_preserved_without_blocking_startup() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("transfers.json");
+        std::fs::write(&path, "broken").unwrap();
+        let manager = TransferManager::new();
+        manager.configure_journal(path).await.unwrap();
+        assert!(manager.list_jobs().await.is_empty());
+        let backup = std::fs::read_dir(directory.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("transfers.invalid-")
+            })
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(backup).unwrap(), "broken");
+    }
     use crate::credentials::{CredentialType, Profile};
     use crate::transfer::{TransferJob, TransferStatus, TransferType};
     use std::path::PathBuf;

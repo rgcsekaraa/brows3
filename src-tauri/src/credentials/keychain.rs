@@ -95,7 +95,7 @@ impl KeychainStorage {
         let entry = self.get_entry(key)?;
         match entry.set_password(secret) {
             Ok(()) => {
-                let _ = self.delete_fallback(key);
+                self.delete_fallback(key)?;
                 Ok(())
             }
             Err(err) => {
@@ -115,6 +115,10 @@ impl KeychainStorage {
             return self.get_fallback(key);
         }
 
+        // Fallback writes supersede native values left behind by a failed write.
+        if let Some(secret) = self.read_fallback_secrets()?.secrets.get(key) {
+            return Ok(secret.clone());
+        }
         let entry = self.get_entry(key)?;
         match entry.get_password() {
             Ok(secret) => Ok(secret),
@@ -157,6 +161,9 @@ impl KeychainStorage {
 
         let entry = self.get_entry(key)?;
         if let Err(err) = entry.delete_credential() {
+            if !matches!(err, keyring::Error::NoEntry) {
+                return Err(AppError::KeychainError(err.to_string()));
+            }
             log::warn!(
                 "Native keychain delete failed for '{}', clearing local fallback if present: {}",
                 key,
@@ -179,6 +186,15 @@ impl KeychainStorage {
 #[cfg(test)]
 mod tests {
     use super::KeychainStorage;
+
+    #[test]
+    fn fallback_value_is_authoritative_even_when_native_storage_is_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage = KeychainStorage::new("isolated-review-test", dir.path(), false);
+        storage.store_fallback("revision", "new-value").unwrap();
+        // Must return without touching the real OS keychain.
+        assert_eq!(storage.get("revision").unwrap(), "new-value");
+    }
 
     #[test]
     fn fallback_replacement_keeps_other_secrets_and_reports_corrupt_storage() {

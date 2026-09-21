@@ -17,6 +17,7 @@ import { copyToClipboard, objectApi } from '@/lib/tauri';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { toast } from '@/store/toastStore';
 import { BaseDialog } from '../common/BaseDialog';
+import ImagePreviewViewer from './ImagePreviewViewer';
 import { getEditorLanguage, getObjectExtension, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
 import { useSettingsStore } from '@/store/settingsStore';
 
@@ -29,6 +30,8 @@ interface ObjectPreviewDialogProps {
   objectSize?: number;
   onSave?: () => void;
   startInEditMode?: boolean;
+  imageSequence?: string[];
+  onNavigateImage?: (key: string) => void;
 }
 
 export default function ObjectPreviewDialog({
@@ -40,6 +43,8 @@ export default function ObjectPreviewDialog({
   objectSize,
   onSave,
   startInEditMode = false,
+  imageSequence = [],
+  onNavigateImage,
 }: ObjectPreviewDialogProps) {
   const theme = useTheme();
   const maxTextPreviewSizeMb = useSettingsStore((state) => state.maxTextPreviewSizeMb);
@@ -52,7 +57,8 @@ export default function ObjectPreviewDialog({
   const [isEditing, setIsEditing] = useState(startInEditMode);
   const [isSaving, setIsSaving] = useState(false);
   const [textIdentity, setTextIdentity] = useState<{ etag: string | null; profileId: string } | null>(null);
-  const [isImageRendering, setIsImageRendering] = useState(false);
+  const [reloadAttempt, setReloadAttempt] = useState(0);
+  const [loadedObjectKey, setLoadedObjectKey] = useState('');
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const initialVersionIdRef = useRef<number>(0);
@@ -83,6 +89,7 @@ export default function ObjectPreviewDialog({
     let cancelled = false;
 
     const loadContent = async () => {
+      setLoadedObjectKey(objectKey);
       setIsLoading(true);
       setError(null);
       setContent('');
@@ -136,7 +143,6 @@ export default function ObjectPreviewDialog({
 
         if (resolvedKind === 'image' || resolvedKind === 'audio' || resolvedKind === 'video' || resolvedKind === 'pdf') {
           // Get presigned URL for preview
-          if (resolvedKind === 'image') setIsImageRendering(true);
           if (resolvedKind === 'pdf') {
              setIsPdfLoading(true);
              pdfLoadingTimeoutRef.current = setTimeout(() => {
@@ -197,7 +203,7 @@ export default function ObjectPreviewDialog({
         pdfLoadingTimeoutRef.current = null;
       }
     };
-  }, [open, objectKey, bucketName, bucketRegion, objectSize, startInEditMode, filename, maxTextPreviewSizeMb]);
+  }, [open, objectKey, bucketName, bucketRegion, objectSize, startInEditMode, filename, maxTextPreviewSizeMb, reloadAttempt]);
 
   const handleSave = async () => {
     if (!isEditing || isSaving || !textIdentity?.etag) return;
@@ -263,6 +269,18 @@ export default function ObjectPreviewDialog({
     setIsEditing(false);
     onClose();
   };
+
+  if (isImageFile) {
+    const index = imageSequence.indexOf(objectKey);
+    return <ImagePreviewViewer
+      key={JSON.stringify([bucketName, bucketRegion])}
+      open={open} name={filename} url={isLoading || loadedObjectKey !== objectKey ? null : presignedUrl} error={loadedObjectKey === objectKey ? error : null} attempt={reloadAttempt}
+      index={index} total={index >= 0 ? imageSequence.length : 0}
+      onPrevious={onNavigateImage && index > 0 ? () => onNavigateImage(imageSequence[index - 1]) : undefined}
+      onNext={onNavigateImage && index >= 0 && index < imageSequence.length - 1 ? () => onNavigateImage(imageSequence[index + 1]) : undefined}
+      onClose={handleClose} onRetry={() => setReloadAttempt(attempt => attempt + 1)}
+    />;
+  }
 
   return (
     <BaseDialog 
@@ -373,35 +391,6 @@ export default function ObjectPreviewDialog({
 
         {!isLoading && (!error || textIdentity) && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* Image Preview */}
-            {isImageFile && presignedUrl && (
-              <Box sx={{ 
-                flex: 1, 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                p: 2, 
-                position: 'relative',
-                bgcolor: alpha(theme.palette.background.paper, 0.5)
-              }}>
-                {isImageRendering && <CircularProgress size={32} sx={{ position: 'absolute' }} />}
-                {/* eslint-disable-next-line @next/next/no-img-element -- presigned S3 URLs are dynamic and not known to Next image config. */}
-                <img 
-                  src={presignedUrl} 
-                  alt={filename}
-                  onLoad={() => setIsImageRendering(false)}
-                  style={{ 
-                    maxWidth: '100%', 
-                    maxHeight: '100%', 
-                    objectFit: 'contain',
-                    borderRadius: 4,
-                    opacity: isImageRendering ? 0 : 1,
-                    transition: 'opacity 0.3s'
-                  }}
-                />
-              </Box>
-            )}
-
             {/* Video Preview */}
             {isVideoFile && presignedUrl && (
               <Box sx={{ flex: 1, bgcolor: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

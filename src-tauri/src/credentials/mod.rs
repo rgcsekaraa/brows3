@@ -43,7 +43,7 @@ fn portable_data_dir() -> Option<PathBuf> {
 
 /// Initialize the credentials manager and register it as app state.
 /// This must happen during Tauri setup before frontend commands run.
-pub fn init<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<()> {
+pub fn init<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf> {
     // When both Linux backends are compiled, make the persistent desktop
     // Secret Service selection explicit. Kernel keyutils is retained only so
     // KeychainStorage can migrate credentials written by older Brows3 builds.
@@ -63,7 +63,7 @@ pub fn init<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<()> {
     // Ensure config directory exists
     std::fs::create_dir_all(&config_dir)?;
 
-    let manager = ProfileManager::new(config_dir, force_secret_fallback)?;
+    let manager = ProfileManager::new(config_dir.clone(), force_secret_fallback)?;
     let state = Arc::new(RwLock::new(manager));
 
     app.manage(state);
@@ -76,5 +76,5 @@ pub fn init<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<()> {
             ""
         }
     );
-    Ok(())
+    Ok(config_dir)
 }

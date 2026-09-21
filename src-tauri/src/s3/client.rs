@@ -149,7 +149,7 @@ pub struct S3ClientManager {
     sorted_folder_cache: HashMap<SortedFolderCacheKey, FolderContent>,
     sorted_folder_cache_order: VecDeque<SortedFolderCacheKey>,
     sorted_folder_cache_items: usize,
-    bucket_regions: HashMap<String, String>, // bucket_name -> region
+    bucket_regions: HashMap<(String, String), String>, // profile revision + bucket
 }
 
 impl S3ClientManager {
@@ -178,7 +178,7 @@ impl S3ClientManager {
         profile: &Profile,
         region: &str,
     ) -> Result<&Client> {
-        let key = (profile.id.clone(), region.to_string());
+        let key = (profile.cache_identity(), region.to_string());
 
         if !self.clients.contains_key(&key) {
             let client = self.build_client(profile, Some(region.to_string())).await?;
@@ -207,23 +207,26 @@ impl S3ClientManager {
     }
 
     /// Get cached region for a bucket
-    pub fn get_bucket_region(&self, bucket_name: &str) -> Option<String> {
-        self.bucket_regions.get(bucket_name).cloned()
+    pub fn get_bucket_region(&self, profile: &Profile, bucket_name: &str) -> Option<String> {
+        self.bucket_regions
+            .get(&(profile.cache_identity(), bucket_name.to_string()))
+            .cloned()
     }
 
     /// Cache the region for a bucket
-    pub fn set_bucket_region(&mut self, bucket_name: &str, region: String) {
-        self.bucket_regions.insert(bucket_name.to_string(), region);
+    pub fn set_bucket_region(&mut self, profile: &Profile, bucket_name: &str, region: String) {
+        self.bucket_regions
+            .insert((profile.cache_identity(), bucket_name.to_string()), region);
     }
 
     /// Cache the same region for a set of buckets.
-    pub fn set_bucket_regions<I>(&mut self, bucket_names: I, region: &str)
+    pub fn set_bucket_regions<I>(&mut self, profile: &Profile, bucket_names: I, region: &str)
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
         for bucket_name in bucket_names {
-            self.set_bucket_region(bucket_name.as_ref(), region.to_string());
+            self.set_bucket_region(profile, bucket_name.as_ref(), region.to_string());
         }
     }
 
@@ -304,12 +307,15 @@ impl S3ClientManager {
     /// Remove cached sorted results for a specific profile and bucket.
     pub fn remove_bucket_cache(&mut self, profile_id: &str, bucket_name: &str) {
         let pid = profile_id.to_string();
+        let revision_prefix = format!("{profile_id}:");
         let bname = bucket_name.to_string();
 
-        self.sorted_folder_cache
-            .retain(|(p, b, _, _, _), _| p != &pid || b != &bname);
-        self.sorted_folder_cache_order
-            .retain(|(p, b, _, _, _)| p != &pid || b != &bname);
+        self.sorted_folder_cache.retain(|(p, b, _, _, _), _| {
+            (p != &pid && !p.starts_with(&revision_prefix)) || b != &bname
+        });
+        self.sorted_folder_cache_order.retain(|(p, b, _, _, _)| {
+            (p != &pid && !p.starts_with(&revision_prefix)) || b != &bname
+        });
         self.sorted_folder_cache_items = self
             .sorted_folder_cache
             .values()
@@ -437,6 +443,26 @@ mod tests {
     use aws_config::{Region, SdkConfig};
     use aws_sdk_s3::presigning::PresigningConfig;
     use std::time::Duration;
+
+    #[test]
+    fn bucket_regions_are_isolated_by_profile_and_revision() {
+        let mut manager = S3ClientManager::new();
+        let a = Profile::new("A".into(), CredentialType::Environment, None);
+        let b = Profile::new("B".into(), CredentialType::Environment, None);
+        manager.set_bucket_region(&a, "shared", "region-a".into());
+        manager.set_bucket_region(&b, "shared", "region-b".into());
+        assert_eq!(
+            manager.get_bucket_region(&a, "shared").as_deref(),
+            Some("region-a")
+        );
+        assert_eq!(
+            manager.get_bucket_region(&b, "shared").as_deref(),
+            Some("region-b")
+        );
+        let mut edited = a.clone();
+        edited.updated_at = a.updated_at.map(|date| date + chrono::Duration::seconds(1));
+        assert!(manager.get_bucket_region(&edited, "shared").is_none());
+    }
 
     #[test]
     fn normalize_endpoint_url_preserves_existing_scheme() {

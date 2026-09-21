@@ -59,7 +59,7 @@ import { useProfileStore } from '@/store/profileStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
 import PermissionsDialog from '@/components/dialogs/PermissionsDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
-import { canObjectBeEdited, getObjectName } from '@/lib/objectCapabilities';
+import { canObjectBeEdited, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
 import PresignedUrlDialog from '@/components/dialogs/PresignedUrlDialog';
 import { VirtualizedObjectTable } from '@/components/common/VirtualizedObjectTable';
 import { toast } from '@/store/toastStore';
@@ -302,6 +302,18 @@ function BucketContent() {
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [previewSize, setPreviewSize] = useState<number | undefined>(undefined);
   const [startInEditMode, setStartInEditMode] = useState(false);
+
+  const imageSequence = useMemo(() => {
+    const images = (displayData?.objects || []).filter(object => getObjectKind(object.key) === 'image');
+    return images.sort((a, b) => {
+      let comparison = 0;
+      if (sortField === 'name') comparison = getObjectName(a.key).localeCompare(getObjectName(b.key));
+      else if (sortField === 'size') comparison = a.size - b.size;
+      else if (sortField === 'date') comparison = (a.last_modified ? new Date(a.last_modified).getTime() : 0) - (b.last_modified ? new Date(b.last_modified).getTime() : 0);
+      else comparison = (a.storage_class || 'STANDARD').localeCompare(b.storage_class || 'STANDARD');
+      return sortDirection === 'asc' ? comparison : -comparison;
+    }).map(object => object.key);
+  }, [displayData, sortField, sortDirection]);
 
   // Presigned URL Dialog State
   const [presignedUrlOpen, setPresignedUrlOpen] = useState(false);
@@ -615,7 +627,7 @@ function BucketContent() {
            const filename = file.split(/[/\\]/).pop() || 'uploaded-file';
            const key = prefix + filename;
 
-           const jobId = await transferApi.queueUpload(bucketName, bucketRegion, key, file, 0);
+           const jobId = await transferApi.queueUpload(bucketName, bucketRegion, key, file, 0, activeProfileId);
 
            addJob({
               id: jobId,
@@ -657,7 +669,7 @@ function BucketContent() {
          let totalFiles = 0;
 
          for (const folder of folders) {
-             const count = await transferApi.queueFolderUpload(bucketName, bucketRegion, prefix, folder);
+             const count = await transferApi.queueFolderUpload(bucketName, bucketRegion, prefix, folder, activeProfileId);
              totalFiles += count;
          }
 
@@ -728,12 +740,12 @@ function BucketContent() {
           if (isSelectedFolder) {
             const folderName = key.split('/').filter(Boolean).pop() || 'folder';
             const localPath = joinLocalPath(downloadDir, folderName);
-            await transferApi.queueFolderDownload(bucketName || '', bucketRegion, key, localPath);
+            await transferApi.queueFolderDownload(bucketName || '', bucketRegion, key, localPath, activeProfileId);
             count++;
           } else if (selectedObjectSize !== undefined) {
             const fileName = key.split('/').pop() || 'file';
             const localPath = joinLocalPath(downloadDir, fileName);
-            await transferApi.queueDownload(bucketName || '', bucketRegion, key, localPath, selectedObjectSize);
+            await transferApi.queueDownload(bucketName || '', bucketRegion, key, localPath, selectedObjectSize, false, activeProfileId);
             count++;
           }
         }));
@@ -768,14 +780,23 @@ function BucketContent() {
             // Must use: empty delimiter (to get all nested objects) AND bypassCache (to avoid cached folder structure)
             try {
               let continuationToken: string | undefined;
+              const seenTokens = new Set<string>();
+              let pages = 0;
               do {
                 // Empty delimiter = flat list of ALL objects, bypassCache = true = skip folder-structured cache
-                const result = await objectApi.listObjects(bucketName, bucketRegion, key, '', continuationToken, true);
+                const result = await objectApi.listObjects(bucketName, bucketRegion, key, '', continuationToken, true, undefined, undefined, activeProfileId);
+                if (useProfileStore.getState().activeProfileId !== activeProfileId) {
+                  throw new Error('The active profile changed. Nothing was deleted.');
+                }
                 // Add all objects under this prefix (since delimiter is empty, no common_prefixes will be returned)
                 for (const obj of result.objects) {
                   keysToDelete.add(obj.key);
                 }
                 continuationToken = result.next_continuation_token || undefined;
+                if (++pages > 100 || keysToDelete.size > 100_000 || (result.is_truncated && !continuationToken) || (continuationToken && seenTokens.has(continuationToken))) {
+                  throw new Error("Folder listing is incomplete or exceeds the safety limit. Select a smaller prefix.");
+                }
+                if (continuationToken) seenTokens.add(continuationToken);
               } while (continuationToken);
               // Also delete the folder marker itself
               keysToDelete.add(key);
@@ -797,7 +818,10 @@ function BucketContent() {
 
         // Delete all collected keys
         const keysToDeleteList = Array.from(keysToDelete);
-        await operationsApi.deleteObjects(bucketName, bucketRegion, keysToDeleteList);
+        if (useProfileStore.getState().activeProfileId !== activeProfileId) {
+          throw new Error('The active profile changed. Nothing was deleted.');
+        }
+        await operationsApi.deleteObjects(bucketName, bucketRegion, keysToDeleteList, activeProfileId);
         displaySuccess(`Successfully deleted ${keysToDeleteList.length} items`);
         setSelectedKeys(new Set());
         refresh();
@@ -841,7 +865,7 @@ function BucketContent() {
             const dir = Array.isArray(downloadDir) ? downloadDir[0] : downloadDir;
             const folderName = target.key.split('/').filter(Boolean).pop() || 'folder';
             const localPath = joinLocalPath(dir, folderName);
-            await transferApi.queueFolderDownload(bucketName, bucketRegion, target.key, localPath);
+            await transferApi.queueFolderDownload(bucketName, bucketRegion, target.key, localPath, activeProfileId);
             displaySuccess('Folder download queued', '/downloads');
         }
       } else {
@@ -859,7 +883,8 @@ function BucketContent() {
               target.key,
               savePath,
               selectedFileSize || 0,
-              true
+              true,
+              activeProfileId
           );
           displaySuccess('Download queued', '/downloads');
         }
@@ -1260,7 +1285,7 @@ function BucketContent() {
           const filename = key.split('/').pop() || 'download';
           const savePath = await save({ defaultPath: filename, title: 'Save file as' });
           if (savePath && bucketName) {
-            const jobId = await transferApi.queueDownload(bucketName, bucketRegion, key, savePath, objectSize, true);
+            const jobId = await transferApi.queueDownload(bucketName, bucketRegion, key, savePath, objectSize, true, activeProfileId);
             // Add to transfer store so it shows in the panel
             addJob({
               id: jobId,
@@ -1569,6 +1594,12 @@ function BucketContent() {
         bucketRegion={bucketRegion}
         objectKey={previewKey || ''}
         objectSize={previewSize}
+        imageSequence={imageSequence}
+        onNavigateImage={key => {
+          setPreviewKey(key);
+          setPreviewSize(currentObjectSizeMap.get(key));
+          setStartInEditMode(false);
+        }}
         onSave={() => refresh()}
         startInEditMode={startInEditMode}
       />

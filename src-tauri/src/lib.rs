@@ -231,7 +231,13 @@ pub fn run() {
             }
 
             // Initialize credentials manager synchronously before any profile commands can run.
-            credentials::init(app.handle())?;
+            let data_dir = credentials::init(app.handle())?;
+            let transfers = app.state::<Arc<TransferManager>>();
+            let journal = data_dir.join("transfers.json");
+            if let Err(error) = tauri::async_runtime::block_on(transfers.configure_journal(journal))
+            {
+                log::error!("Transfer recovery is unavailable: {error}");
+            }
 
             // Show the main window after initialization to prevent white flash
             if let Some(window) = app.get_webview_window("main") {

@@ -16,39 +16,19 @@ async fn list_folder_objects(
     bucket_name: &str,
     prefix: &str,
 ) -> Result<Vec<(String, u64)>> {
-    let mut all_objects = Vec::new();
-    let mut continuation_token = None;
-
-    loop {
-        let mut req = client.list_objects_v2().bucket(bucket_name).prefix(prefix);
-
-        if let Some(ref token) = continuation_token {
-            req = req.continuation_token(token);
-        }
-
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
-
-        if let Some(contents) = resp.contents {
-            for obj in contents {
-                if let (Some(key), Some(size)) = (obj.key, obj.size) {
-                    if !key.ends_with('/') {
-                        all_objects.push((key, size as u64));
-                    }
+    Ok(
+        crate::s3::listing::list_recursive(client, bucket_name, prefix)
+            .await?
+            .into_iter()
+            .filter_map(|object| {
+                let key = object.key?;
+                if key.ends_with('/') {
+                    return None;
                 }
-            }
-        }
-
-        if resp.is_truncated.unwrap_or(false) {
-            continuation_token = resp.next_continuation_token;
-        } else {
-            break;
-        }
-    }
-
-    Ok(all_objects)
+                Some((key, object.size.unwrap_or(0).max(0) as u64))
+            })
+            .collect(),
+    )
 }
 
 fn validate_path(path: &std::path::Path) -> Result<()> {
@@ -129,12 +109,14 @@ fn safe_relative_download_path(key: &str) -> Result<PathBuf> {
     Ok(relative_path)
 }
 
-async fn require_active_profile(profile_state: &ProfileState) -> Result<Profile> {
+async fn require_active_profile(profile_state: &ProfileState, expected: &str) -> Result<Profile> {
     let profile_manager = profile_state.read().await;
-    profile_manager
+    let profile = profile_manager
         .get_active_profile()
         .await?
-        .ok_or_else(|| crate::error::AppError::ConfigError("No active profile".to_string()))
+        .ok_or_else(|| crate::error::AppError::ConfigError("No active profile".to_string()))?;
+    super::operations::validate_operation_profile(Some(expected), &profile.id)?;
+    Ok(profile)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -145,6 +127,7 @@ pub async fn queue_upload(
     key: String,
     local_path: String,
     total_bytes: u64,
+    expected_profile_id: String,
     app_handle: AppHandle,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
@@ -153,7 +136,9 @@ pub async fn queue_upload(
     // Basic validation
     let path = PathBuf::from(&local_path);
     validate_path(&path)?;
-    let profile_id = require_active_profile(profile_state.inner()).await?.id;
+    let profile_id = require_active_profile(profile_state.inner(), &expected_profile_id)
+        .await?
+        .id;
 
     // Fallback for 0 bytes: try to get size from filesystem
     let mut actual_size = total_bytes;
@@ -200,6 +185,7 @@ pub async fn queue_download(
     local_path: String,
     total_bytes: u64,
     overwrite: Option<bool>,
+    expected_profile_id: String,
     app_handle: AppHandle,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
@@ -207,7 +193,9 @@ pub async fn queue_download(
 ) -> Result<String> {
     let path = PathBuf::from(&local_path);
     validate_path(&path)?;
-    let profile_id = require_active_profile(profile_state.inner()).await?.id;
+    let profile_id = require_active_profile(profile_state.inner(), &expected_profile_id)
+        .await?
+        .id;
 
     let destination = DownloadDestination::from_path(&path, overwrite.unwrap_or(false))?;
     let mut job = TransferJob::new(
@@ -245,50 +233,88 @@ pub async fn list_transfers(transfer_state: State<'_, TransferState>) -> Result<
 }
 
 #[allow(clippy::too_many_arguments)]
+fn collect_upload_files(
+    root: &std::path::Path,
+    prefix: &str,
+) -> Result<Vec<(PathBuf, u64, String)>> {
+    let parent = root
+        .parent()
+        .ok_or_else(|| crate::error::AppError::ConfigError("Choose a folder".into()))?;
+    let mut files = Vec::new();
+    let mut keys = std::collections::HashSet::new();
+    for entry in walkdir::WalkDir::new(root).follow_links(false) {
+        let entry = entry.map_err(|error| {
+            crate::error::AppError::IoError(format!("Folder upload was not queued: {error}"))
+        })?;
+        if entry.path_is_symlink() {
+            return Err(crate::error::AppError::IoError(format!(
+                "Folder upload contains a symbolic link: {}. Select its target explicitly instead.",
+                entry.path().display()
+            )));
+        }
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let relative = entry
+            .path()
+            .strip_prefix(parent)
+            .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
+        let parts: Option<Vec<_>> = relative
+            .components()
+            .map(|part| part.as_os_str().to_str())
+            .collect();
+        let key = format!(
+            "{}{}",
+            prefix,
+            parts
+                .ok_or_else(|| crate::error::AppError::IoError(format!(
+                    "Filename is not valid Unicode: {}",
+                    entry.path().display()
+                )))?
+                .join("/")
+        );
+        if !keys.insert(key.clone()) {
+            return Err(crate::error::AppError::IoError(format!(
+                "Multiple files map to {key}"
+            )));
+        }
+        let size = entry
+            .metadata()
+            .map_err(|e| crate::error::AppError::IoError(e.to_string()))?
+            .len();
+        files.push((entry.path().to_path_buf(), size, key));
+        if files.len() > 100_000 {
+            return Err(crate::error::AppError::ConfigError(
+                "Folder upload exceeds 100,000 files. Select smaller folders.".into(),
+            ));
+        }
+    }
+    Ok(files)
+}
+
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn queue_folder_upload(
     bucket_name: String,
     bucket_region: Option<String>,
     prefix: String,
     local_path: String,
+    expected_profile_id: String,
     app_handle: AppHandle,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<u32> {
-    use walkdir::WalkDir;
-
     let root = PathBuf::from(&local_path);
     validate_path(&root)?;
-    let profile_id = require_active_profile(profile_state.inner()).await?.id;
-    // Calculate parent to determine relative key prefix
-    let parent = root.parent().unwrap_or(&root).to_path_buf();
-
-    let walker = WalkDir::new(&root).into_iter();
-
-    // Blocking walk to gather files
-    let prefix_clone = prefix.clone();
-    let jobs_data = tauri::async_runtime::spawn_blocking(move || {
-        let mut found = Vec::new();
-        for entry in walker.filter_map(|e| e.ok()) {
-            if entry.path().is_file() {
-                let path = entry.path().to_path_buf();
-                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-
-                // key = prefix + relative_path_from_parent
-                // e.g. root=/foo/bar, file=/foo/bar/baz.txt. parent=/foo.
-                // relative = bar/baz.txt
-                let rel_path = path.strip_prefix(&parent).unwrap_or(&path);
-                let rel_str = rel_path.to_string_lossy().replace("\\", "/");
-                let key = format!("{}{}", prefix_clone, rel_str);
-
-                found.push((path, size, key));
-            }
-        }
-        found
-    })
-    .await
-    .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
+    let profile_id = require_active_profile(profile_state.inner(), &expected_profile_id)
+        .await?
+        .id;
+    let upload_prefix = prefix.clone();
+    let jobs_data =
+        tauri::async_runtime::spawn_blocking(move || collect_upload_files(&root, &upload_prefix))
+            .await
+            .map_err(|e| crate::error::AppError::IoError(e.to_string()))??;
 
     let current_manager = transfer_state.clone();
     current_manager.set_app_handle(app_handle.clone()).await;
@@ -297,6 +323,7 @@ pub async fn queue_folder_upload(
     let group_id = uuid::Uuid::new_v4().to_string();
     let group_name = format!("s3://{}/{}", bucket_name, prefix);
 
+    let mut queued = Vec::with_capacity(jobs_data.len());
     for (path, size, key) in jobs_data {
         let job = TransferJob::new(
             TransferType::Upload,
@@ -309,8 +336,9 @@ pub async fn queue_folder_upload(
         )
         .with_group(group_id.clone(), group_name.clone());
 
-        current_manager.add_job(job).await;
+        queued.push(job);
     }
+    current_manager.add_jobs(queued).await;
 
     // Trigger processing
     let t_state = transfer_state.inner().clone();
@@ -331,6 +359,7 @@ pub async fn queue_folder_download(
     bucket_region: Option<String>,
     prefix: String,
     local_path: String,
+    expected_profile_id: String,
     app_handle: AppHandle,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
@@ -340,12 +369,12 @@ pub async fn queue_folder_download(
     validate_path(&root_path)?;
 
     // 1. List all objects in the prefix
-    let profile = require_active_profile(profile_state.inner()).await?;
+    let profile = require_active_profile(profile_state.inner(), &expected_profile_id).await?;
 
     let objects = {
         let resolved_region = {
             let s3 = s3_state.read().await;
-            s3.get_bucket_region(&bucket_name)
+            s3.get_bucket_region(&profile, &bucket_name)
         }
         .or(bucket_region.clone());
 
@@ -375,7 +404,7 @@ pub async fn queue_folder_download(
                 {
                     {
                         let mut s3 = s3_state.write().await;
-                        s3.set_bucket_region(&bucket_name, new_region.clone());
+                        s3.set_bucket_region(&profile, &bucket_name, new_region.clone());
                     }
 
                     let retry_client = {
@@ -434,6 +463,7 @@ pub async fn queue_folder_download(
 
     transfer_state.set_app_handle(app_handle.clone()).await;
 
+    let mut queued = Vec::with_capacity(jobs_data.len());
     for (key, size, file_path) in jobs_data {
         let relative_path = file_path
             .strip_prefix(selected_root)
@@ -452,8 +482,9 @@ pub async fn queue_folder_download(
         .with_group(group_id.clone(), group_name.clone());
         job.download_destination = Some(Arc::new(destination));
 
-        transfer_state.add_job(job).await;
+        queued.push(job);
     }
+    transfer_state.add_jobs(queued).await;
 
     // Trigger processing
     let t_state = transfer_state.inner().clone();
@@ -483,6 +514,13 @@ pub async fn retry_transfer(
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<Option<String>> {
+    if transfer_state.get_job(&job_id).await.is_some_and(|job| {
+        matches!(job.transfer_type, TransferType::Download) && job.download_destination.is_none()
+    }) {
+        return Err(crate::error::AppError::ConfigError(
+            "Queue this download again to choose its destination after restarting.".into(),
+        ));
+    }
     let new_id = transfer_state.retry_job(&job_id).await;
 
     // If retry created a new job, trigger processing
@@ -502,6 +540,25 @@ pub async fn retry_transfer(
 #[cfg(test)]
 mod tests {
     use super::safe_relative_download_path;
+
+    #[test]
+    fn missing_upload_folder_fails_instead_of_queuing_zero_files() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(super::collect_upload_files(&root.path().join("missing"), "").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn upload_preflight_rejects_symlinks_and_preserves_literal_backslashes() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("folder");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("a\\b"), "content").unwrap();
+        let files = super::collect_upload_files(&folder, "").unwrap();
+        assert_eq!(files[0].2, "folder/a\\b");
+        std::os::unix::fs::symlink(folder.join("a\\b"), folder.join("link")).unwrap();
+        assert!(super::collect_upload_files(&folder, "").is_err());
+    }
 
     #[test]
     fn folder_download_rejects_keys_that_would_be_normalized() {

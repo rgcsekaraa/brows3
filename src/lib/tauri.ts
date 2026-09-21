@@ -17,12 +17,16 @@ const getTauriInvoke = async () => {
 
 // Monitored invoke wrapper
 const invoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
+  const scopedArgs = { expectedProfileId: useProfileStore.getState().activeProfileId, ...args };
   const store = useMonitorStore.getState();
   store.incrementRequests();
   
   try {
     const tauriInvoke = await getTauriInvoke();
-    const result = await tauriInvoke<T>(cmd, args);
+    if (scopedArgs.expectedProfileId && scopedArgs.expectedProfileId !== useProfileStore.getState().activeProfileId) {
+      throw new Error('The active profile changed. Select the items again.');
+    }
+    const result = await tauriInvoke<T>(cmd, scopedArgs);
     store.addLog('success', cmd);
     return result;
   } catch (err) {
@@ -252,7 +256,8 @@ export const objectApi = {
     continuationToken?: string,
     bypassCache = false,
     sortField?: 'name' | 'size' | 'date' | 'class',
-    sortDirection?: 'asc' | 'desc'
+    sortDirection?: 'asc' | 'desc',
+    expectedProfileId = useProfileStore.getState().activeProfileId
   ): Promise<ListObjectsResult> {
     return invoke<ListObjectsResult>('list_objects', { 
       bucketName, 
@@ -262,7 +267,7 @@ export const objectApi = {
       continuationToken: continuationToken || null,
       bypassCache,
       sortField: sortField || null,
-      sortDirection: sortDirection || null
+      sortDirection: sortDirection || null, expectedProfileId
     });
   },
 
@@ -310,21 +315,23 @@ export const operationsApi = {
     if (!expectedProfileId || expectedProfileId !== useProfileStore.getState().activeProfileId) {
       throw new Error('The active profile changed. Copy or select the items again.');
     }
-    await invoke<void>('copy_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey, expectedProfileId });
-    invalidateCache(); // Auto-refresh after copy
+    try {
+      await invoke<void>('copy_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey, expectedProfileId });
+    } finally { invalidateCache(); }
   },
 
   async moveObject(sourceBucket: string, sourceRegion: string | undefined, sourceKey: string, destinationBucket: string, destinationRegion: string | undefined, destinationKey: string, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<void> {
     if (!expectedProfileId || expectedProfileId !== useProfileStore.getState().activeProfileId) {
       throw new Error('The active profile changed. Copy or select the items again.');
     }
-    await invoke<void>('move_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey, expectedProfileId });
-    invalidateCache(); // Auto-refresh after move
+    try {
+      await invoke<void>('move_object', { sourceBucket, sourceRegion, sourceKey, destinationBucket, destinationRegion, destinationKey, expectedProfileId });
+    } finally { invalidateCache(); }
   },
 
-  async deleteObjects(bucketName: string, bucketRegion: string | undefined, keys: string[]): Promise<void> {
+  async deleteObjects(bucketName: string, bucketRegion: string | undefined, keys: string[], expectedProfileId = useProfileStore.getState().activeProfileId): Promise<void> {
     try {
-      await invoke<void>('delete_objects', { bucketName, bucketRegion, keys });
+      await invoke<void>('delete_objects', { bucketName, bucketRegion, keys, expectedProfileId });
     } finally {
       invalidateCache();
     }
@@ -426,20 +433,20 @@ export interface TransferEvent {
 }
 
 export const transferApi = {
-  async queueUpload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number): Promise<string> {
-    return invoke<string>('queue_upload', { bucketName, bucketRegion, key, localPath, totalBytes });
+  async queueUpload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<string> {
+    return invoke<string>('queue_upload', { bucketName, bucketRegion, key, localPath, totalBytes, expectedProfileId });
   },
 
-  async queueDownload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number, overwrite = false): Promise<string> {
-    return invoke<string>('queue_download', { bucketName, bucketRegion, key, localPath, totalBytes, overwrite });
+  async queueDownload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number, overwrite = false, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<string> {
+    return invoke<string>('queue_download', { bucketName, bucketRegion, key, localPath, totalBytes, overwrite, expectedProfileId });
   },
 
-  async queueFolderUpload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string): Promise<number> {
-    return invoke<number>('queue_folder_upload', { bucketName, bucketRegion, prefix, localPath });
+  async queueFolderUpload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<number> {
+    return invoke<number>('queue_folder_upload', { bucketName, bucketRegion, prefix, localPath, expectedProfileId });
   },
 
-  async queueFolderDownload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string): Promise<number> {
-    return invoke<number>('queue_folder_download', { bucketName, bucketRegion, prefix, localPath });
+  async queueFolderDownload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<number> {
+    return invoke<number>('queue_folder_download', { bucketName, bucketRegion, prefix, localPath, expectedProfileId });
   },
 
   async listTransfers(): Promise<TransferJob[]> {

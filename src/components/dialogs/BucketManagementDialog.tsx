@@ -89,7 +89,7 @@ export default function BucketManagementDialog({ action, onClose }: { action: Bu
         </> : <>
           <Typography sx={{ mb: 2, overflowWrap: 'anywhere' }}>{action.bucket}</Typography>
           {action.mode === 'delete' ? <Alert severity="warning" sx={{ mb: 2 }}>Only empty buckets can be deleted. Remove all objects, versions and delete markers first. Deletion cannot be undone.</Alert> : <>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Changing a policy changes access to this bucket. Clear the policy field to remove the current policy.</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Changing a policy changes access to this bucket. Clear the policy field to remove the current policy. Avoid editing it elsewhere while saving; your provider cannot atomically reject simultaneous policy changes.</Typography>
             <TextField fullWidth multiline minRows={10} maxRows={20} label="Policy JSON" value={policy} disabled={!loaded || busy} onChange={event => setPolicy(event.target.value)} sx={{ mb: 2 }} />
             {!loaded && !error && <Typography role="status">Loading policy...</Typography>}
           </>}

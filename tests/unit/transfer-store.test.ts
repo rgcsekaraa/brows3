@@ -49,6 +49,22 @@ test('failed refreshes preserve the existing transfer list', async () => {
   expect(useTransferStore.getState().jobs.map(item => item.id)).toEqual(['one']);
 });
 
+test('a delayed snapshot cannot regress completion, remove additions, or resurrect removals', async () => {
+  const pending = Promise.withResolvers<TransferJob[]>();
+  useTransferStore.getState().setJobs([job('one'), job('removed')]);
+  vi.mocked(transferApi.listTransfers).mockReturnValueOnce(pending.promise);
+  const refresh = useTransferStore.getState().refreshJobs();
+  useTransferStore.getState().updateJob({ job_id: 'one', processed_bytes: 100, total_bytes: 100, status: 'Completed' });
+  useTransferStore.getState().addJob(job('new'));
+  vi.mocked(transferApi.removeTransfer).mockResolvedValueOnce(true);
+  await useTransferStore.getState().removeJob('removed');
+  pending.resolve([job('one'), job('removed')]);
+  await refresh;
+  expect(useTransferStore.getState().jobsMap.get('one')?.status).toBe('Completed');
+  expect(useTransferStore.getState().jobsMap.has('new')).toBe(true);
+  expect(useTransferStore.getState().jobsMap.has('removed')).toBe(false);
+});
+
 test('history is only removed after the backend accepts removal', async () => {
   useTransferStore.getState().setJobs([job('one'), job('two')]);
   vi.mocked(transferApi.removeTransfer).mockRejectedValueOnce(new Error('Removal failed'));

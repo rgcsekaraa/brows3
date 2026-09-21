@@ -1,5 +1,6 @@
 use crate::commands::profiles::ProfileState;
 use crate::s3::{self, BucketInfo, S3State};
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -34,10 +35,12 @@ pub async fn list_buckets(
     let client = s3_manager
         .get_client(&active_profile)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .clone();
+    drop(s3_manager);
 
     // List buckets
-    let buckets = s3::client::list_buckets(client)
+    let buckets = s3::client::list_buckets(&client)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -65,10 +68,12 @@ pub async fn list_buckets_with_regions(
     let client = s3_manager
         .get_client(&active_profile)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .clone();
+    drop(s3_manager);
 
     // List buckets
-    let buckets = s3::client::list_buckets(client)
+    let buckets = s3::client::list_buckets(&client)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -86,7 +91,8 @@ pub async fn list_buckets_with_regions(
 
     if is_custom_endpoint {
         // Skip GetBucketLocation entirely for custom endpoints
-        s3_manager.set_bucket_regions(
+        s3_state.write().await.set_bucket_regions(
+            &active_profile,
             buckets.iter().map(|bucket| bucket.name.as_str()),
             &profile_region,
         );
@@ -131,7 +137,10 @@ pub async fn list_buckets_with_regions(
         })
         .collect();
 
-    let buckets_with_regions = futures::future::join_all(futures).await;
+    let buckets_with_regions = futures::stream::iter(futures)
+        .buffered(8)
+        .collect::<Vec<_>>()
+        .await;
 
     Ok(buckets_with_regions)
 }
@@ -162,7 +171,7 @@ pub async fn get_bucket_region(
             .clone()
             .unwrap_or_else(|| "us-east-1".to_string());
         let mut s3_manager = s3_state.write().await;
-        s3_manager.set_bucket_region(&bucket_name, region.clone());
+        s3_manager.set_bucket_region(&active_profile, &bucket_name, region.clone());
         return Ok(region);
     }
 
@@ -171,10 +180,12 @@ pub async fn get_bucket_region(
     let client = s3_manager
         .get_client(&active_profile)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .clone();
+    drop(s3_manager);
 
     // Get region
-    s3::client::get_bucket_region(client, &bucket_name)
+    s3::client::get_bucket_region(&client, &bucket_name)
         .await
         .map_err(|e| e.to_string())
 }

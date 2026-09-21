@@ -83,7 +83,7 @@ test.each([0, 42])('downloads a selected deep result with size %s', async size =
   search();
   fireEvent.click(await screen.findByText('nested/match.txt'));
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
-  await waitFor(() => expect(transferApi.queueDownload).toHaveBeenCalledWith('a', 'us-east-1', 'nested/match.txt', '/tmp/downloads/match.txt', size));
+  await waitFor(() => expect(transferApi.queueDownload).toHaveBeenCalledWith('a', 'us-east-1', 'nested/match.txt', '/tmp/downloads/match.txt', size, false, 'a'));
 });
 
 
@@ -103,6 +103,23 @@ test('a failed recursive listing prevents all deletion', async () => {
   await waitFor(() => expect(loggedError).toHaveBeenCalled());
   expect(operationsApi.deleteObjects).not.toHaveBeenCalled();
   expect(screen.getByText('1 selected')).toBeTruthy();
+  loggedError.mockRestore();
+});
+
+test('a profile change during recursive enumeration cannot redirect deletion', async () => {
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof objectApi.listObjects>>>();
+  vi.mocked(objectApi.searchObjects).mockResolvedValue({ ...result, objects: [{ ...result.objects[0], key: 'folder/' }] });
+  vi.mocked(objectApi.listObjects).mockReturnValueOnce(pending.promise);
+  const loggedError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  render(<BucketPage />);
+  search();
+  fireEvent.click(await screen.findByText('folder/'));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /Delete/ }));
+  await waitFor(() => expect(objectApi.listObjects).toHaveBeenCalledTimes(1));
+  act(() => useProfileStore.getState().setActiveProfileId('b'));
+  await act(async () => pending.resolve({ objects: result.objects, common_prefixes: [], next_continuation_token: null, is_truncated: false, prefix: 'folder/' }));
+  expect(operationsApi.deleteObjects).not.toHaveBeenCalled();
   loggedError.mockRestore();
 });
 

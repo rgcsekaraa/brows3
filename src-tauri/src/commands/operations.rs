@@ -12,7 +12,7 @@ use std::path::Path;
 use tauri::State;
 
 pub(super) fn validate_operation_profile(expected: Option<&str>, actual: &str) -> Result<()> {
-    if expected.is_some_and(|id| id != actual) {
+    if expected != Some(actual) {
         return Err(crate::error::AppError::ConfigError(
             "The active profile changed. Copy or select the items again.".to_string(),
         ));
@@ -36,7 +36,7 @@ async fn detect_and_cache_bucket_region(
 
     if let Some(ref new_region) = detected_region {
         let mut s3_manager = s3_state.write().await;
-        s3_manager.set_bucket_region(bucket_name, new_region.clone());
+        s3_manager.set_bucket_region(active_profile, bucket_name, new_region.clone());
     }
 
     Ok(detected_region)
@@ -429,6 +429,7 @@ async fn multipart_copy_object(
 
         client
             .complete_multipart_upload()
+            .set_if_none_match((source_bucket != bucket_name || source_key != key).then(|| "*".to_string()))
             .bucket(bucket_name)
             .key(key)
             .upload_id(guard.upload_id())
@@ -470,35 +471,11 @@ async fn list_keys_for_permission_target(
         return Ok(vec![key.to_string()]);
     }
 
-    let mut keys = Vec::new();
-    let mut continuation_token = None;
-
-    loop {
-        let mut request = client.list_objects_v2().bucket(bucket_name).prefix(key);
-        if let Some(token) = continuation_token {
-            request = request.continuation_token(token);
-        }
-
-        let output = request
-            .send()
-            .await
-            .map_err(|err| crate::error::AppError::S3Error(err.to_string()))?;
-
-        for object in output.contents() {
-            if let Some(object_key) = object.key() {
-                keys.push(object_key.to_string());
-            }
-        }
-
-        if output.is_truncated().unwrap_or(false) {
-            continuation_token = output
-                .next_continuation_token()
-                .map(|token| token.to_string());
-        } else {
-            break;
-        }
-    }
-
+    let mut keys: Vec<String> = crate::s3::listing::list_recursive(client, bucket_name, key)
+        .await?
+        .into_iter()
+        .filter_map(|object| object.key)
+        .collect();
     if keys.is_empty() {
         keys.push(key.to_string());
     }
@@ -512,6 +489,7 @@ pub async fn put_object(
     bucket_region: Option<String>,
     key: String,
     local_path: Option<String>,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
@@ -522,6 +500,7 @@ pub async fn put_object(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
     put_object_with_profile(
         bucket_name,
         bucket_region,
@@ -544,7 +523,7 @@ async fn put_object_with_profile(
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -566,6 +545,7 @@ async fn put_object_with_profile(
         .map(|_| crate::s3::infer_content_type(&key));
     let mut request = client
         .put_object()
+        .if_none_match("*")
         .bucket(&bucket_name)
         .key(&key)
         .set_content_type(content_type.clone());
@@ -606,6 +586,7 @@ async fn put_object_with_profile(
 
             let mut retry_request = new_client
                 .put_object()
+                .if_none_match("*")
                 .bucket(&bucket_name)
                 .key(&key)
                 .set_content_type(content_type);
@@ -649,6 +630,7 @@ pub async fn get_object(
     bucket_region: Option<String>,
     key: String,
     local_path: String,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
@@ -659,11 +641,12 @@ pub async fn get_object(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -746,6 +729,7 @@ pub async fn delete_object(
     bucket_name: String,
     bucket_region: Option<String>,
     key: String,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
@@ -756,6 +740,7 @@ pub async fn delete_object(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
     delete_object_with_profile(bucket_name, bucket_region, key, active_profile, &s3_state).await
 }
 
@@ -769,7 +754,7 @@ async fn delete_object_with_profile(
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -897,7 +882,7 @@ async fn copy_object_with_profile(
         // Get client for listing source bucket
         let source_region_resolved = {
             let s3_manager = s3_state.read().await;
-            s3_manager.get_bucket_region(&source_bucket)
+            s3_manager.get_bucket_region(&active_profile, &source_bucket)
         }
         .or(source_region.clone());
 
@@ -913,39 +898,12 @@ async fn copy_object_with_profile(
             }
         };
 
-        // List all objects under the source prefix
-        let mut continuation_token = None;
-        let mut all_keys = Vec::new();
-
-        loop {
-            let mut req = client
-                .list_objects_v2()
-                .bucket(&source_bucket)
-                .prefix(&source_key);
-
-            if let Some(token) = continuation_token {
-                req = req.continuation_token(token);
-            }
-
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
-
-            if let Some(contents) = resp.contents {
-                for obj in contents {
-                    if let Some(key) = obj.key {
-                        all_keys.push(key);
-                    }
-                }
-            }
-
-            if resp.is_truncated.unwrap_or(false) {
-                continuation_token = resp.next_continuation_token;
-            } else {
-                break;
-            }
-        }
+        let all_keys: Vec<String> =
+            crate::s3::listing::list_recursive(&client, &source_bucket, &source_key)
+                .await?
+                .into_iter()
+                .filter_map(|object| object.key)
+                .collect();
 
         log::info!("Found {} objects to copy in folder", all_keys.len());
         let has_folder_marker = all_keys.iter().any(|key| key == &source_key);
@@ -1022,11 +980,11 @@ async fn copy_single_object(
     destination_key: &str,
     active_profile: &crate::credentials::Profile,
     s3_state: &S3State,
-) -> Result<()> {
+) -> Result<String> {
     // Check cache for bucket region first
     let destination_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(destination_bucket)
+        s3_manager.get_bucket_region(active_profile, destination_bucket)
     }
     .or(destination_region);
 
@@ -1045,7 +1003,9 @@ async fn copy_single_object(
 
     let source_client = {
         let mut manager = s3_state.write().await;
-        let region = manager.get_bucket_region(source_bucket).or(source_region);
+        let region = manager
+            .get_bucket_region(active_profile, source_bucket)
+            .or(source_region);
         if let Some(region) = region {
             manager
                 .get_client_for_region(active_profile, &region)
@@ -1062,10 +1022,40 @@ async fn copy_single_object(
         .send()
         .await
         .map_err(|error| crate::error::AppError::S3Error(error.to_string()))?;
+    let etag = head
+        .e_tag()
+        .ok_or_else(|| {
+            crate::error::AppError::S3Error("Cannot safely copy an object without an ETag".into())
+        })?
+        .to_string();
+    let acl = match source_client
+        .get_object_acl()
+        .bucket(source_bucket)
+        .key(source_key)
+        .set_version_id(head.version_id.clone())
+        .send()
+        .await
+    {
+        Ok(output) => Some(copy_acl_headers(&output)?),
+        Err(error)
+            if matches!(
+                classify_acl_error(&s3_error_message(&error)),
+                Some(("unsupported", _))
+            ) =>
+        {
+            None
+        }
+        Err(error) => {
+            return Err(crate::error::AppError::S3Error(format!(
+                "Cannot preserve source permissions: {error}"
+            )))
+        }
+    };
     copy_object_from_head(
         (&source_client, source_bucket, source_key),
         (&client, destination_bucket, destination_key),
         &head,
+        acl.as_ref(),
     )
     .await?;
 
@@ -1074,13 +1064,14 @@ async fn copy_single_object(
         s3_manager.remove_bucket_cache(&active_profile.id, destination_bucket);
     }
 
-    Ok(())
+    Ok(etag)
 }
 
 async fn copy_object_from_head(
     source: (&Client, &str, &str),
     destination: (&Client, &str, &str),
     head: &aws_sdk_s3::operation::head_object::HeadObjectOutput,
+    acl: Option<&CopyAclHeaders>,
 ) -> Result<()> {
     let size = head
         .content_length()
@@ -1094,20 +1085,44 @@ async fn copy_object_from_head(
             destination,
             head.content_type().unwrap_or("application/octet-stream"),
             head,
-            None,
+            acl,
         )
         .await
     } else {
-        destination
-            .0
-            .copy_object()
-            .bucket(destination.1)
-            .key(destination.2)
-            .copy_source(copy_source(source.1, source.2, head.version_id()))
-            .set_copy_source_if_match(head.e_tag.clone())
-            .send()
-            .await
-            .map_err(|error| crate::error::AppError::S3Error(error.to_string()))?;
+        let build = |acl: Option<&CopyAclHeaders>| {
+            let mut request = destination
+                .0
+                .copy_object()
+                .if_none_match("*")
+                .bucket(destination.1)
+                .key(destination.2)
+                .copy_source(copy_source(source.1, source.2, head.version_id()))
+                .set_copy_source_if_match(head.e_tag.clone())
+                .set_storage_class(head.storage_class.clone())
+                .set_server_side_encryption(head.server_side_encryption.clone())
+                .set_ssekms_key_id(head.ssekms_key_id.clone())
+                .set_bucket_key_enabled(head.bucket_key_enabled);
+            if let Some(acl) = acl {
+                request = request
+                    .set_grant_full_control(CopyAclHeaders::joined(&acl.full_control))
+                    .set_grant_read(CopyAclHeaders::joined(&acl.read))
+                    .set_grant_read_acp(CopyAclHeaders::joined(&acl.read_acp))
+                    .set_grant_write_acp(CopyAclHeaders::joined(&acl.write_acp));
+            }
+            request
+        };
+        let mut result = build(acl).send().await;
+        if let Err(error) = &result {
+            if acl.is_some()
+                && matches!(
+                    classify_acl_error(&s3_error_message(error)),
+                    Some(("unsupported", _))
+                )
+            {
+                result = build(None).send().await;
+            }
+        }
+        result.map_err(|error| crate::error::AppError::S3Error(error.to_string()))?;
         Ok(())
     }
 }
@@ -1186,6 +1201,7 @@ pub async fn delete_objects(
     bucket_name: String,
     bucket_region: Option<String>,
     keys: Vec<String>,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
@@ -1199,6 +1215,7 @@ pub async fn delete_objects(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
     delete_objects_with_profile(bucket_name, bucket_region, keys, active_profile, &s3_state).await
 }
 
@@ -1212,7 +1229,7 @@ async fn delete_objects_with_profile(
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -1262,7 +1279,7 @@ async fn delete_objects_with_profile(
                     if let Some(new_region) = detected_region {
                         let new_client = {
                             let mut s3_manager = s3_state.write().await;
-                            s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                            s3_manager.set_bucket_region(&active_profile, &bucket_name, new_region.clone());
                             s3_manager
                                 .get_client_for_region(&active_profile, &new_region)
                                 .await?
@@ -1369,7 +1386,7 @@ async fn move_object_with_profile(
         // Get client for listing source bucket
         let source_region_resolved = {
             let s3_manager = s3_state.read().await;
-            s3_manager.get_bucket_region(&source_bucket)
+            s3_manager.get_bucket_region(&active_profile, &source_bucket)
         }
         .or(source_region.clone());
 
@@ -1385,39 +1402,12 @@ async fn move_object_with_profile(
             }
         };
 
-        // List all objects under the source prefix
-        let mut continuation_token = None;
-        let mut all_keys = Vec::new();
-
-        loop {
-            let mut req = client
-                .list_objects_v2()
-                .bucket(&source_bucket)
-                .prefix(&source_key);
-
-            if let Some(token) = continuation_token {
-                req = req.continuation_token(token);
-            }
-
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
-
-            if let Some(contents) = resp.contents {
-                for obj in contents {
-                    if let Some(key) = obj.key {
-                        all_keys.push(key);
-                    }
-                }
-            }
-
-            if resp.is_truncated.unwrap_or(false) {
-                continuation_token = resp.next_continuation_token;
-            } else {
-                break;
-            }
-        }
+        let all_keys: Vec<String> =
+            crate::s3::listing::list_recursive(&client, &source_bucket, &source_key)
+                .await?
+                .into_iter()
+                .filter_map(|object| object.key)
+                .collect();
 
         let unique_keys: HashSet<String> = all_keys.into_iter().collect();
         let mut all_keys: Vec<String> = unique_keys.into_iter().collect();
@@ -1429,11 +1419,12 @@ async fn move_object_with_profile(
             format!("{}/", destination_key)
         };
 
+        let mut copied = Vec::new();
         // Move each object individually
         for key in &all_keys {
             // Calculate destination key by replacing source prefix with destination prefix
             if key == &source_key {
-                copy_single_object(
+                let etag = copy_single_object(
                     &source_bucket,
                     source_region.clone(),
                     key,
@@ -1444,11 +1435,12 @@ async fn move_object_with_profile(
                     s3_state,
                 )
                 .await?;
+                copied.push((key.clone(), etag));
             } else {
                 let relative_path = key.strip_prefix(&source_key).unwrap_or(key);
                 let new_key = format!("{}{}", destination_key, relative_path);
 
-                copy_single_object(
+                let etag = copy_single_object(
                     &source_bucket,
                     source_region.clone(),
                     key,
@@ -1459,49 +1451,63 @@ async fn move_object_with_profile(
                     s3_state,
                 )
                 .await?;
+                copied.push((key.clone(), etag));
             }
         }
 
-        // Delete all source objects at once
-        if !all_keys.is_empty() {
-            delete_objects_with_profile(
-                source_bucket,
-                source_region_resolved,
-                all_keys,
-                active_profile,
-                s3_state,
-            )
-            .await?;
+        let deletion = async {
+            for (key, etag) in copied {
+                delete_copied_source(&client, &source_bucket, &key, &etag).await?;
+            }
+            Ok(())
         }
+        .await;
+        s3_state
+            .write()
+            .await
+            .remove_bucket_cache(&active_profile.id, &source_bucket);
 
-        Ok(())
+        deletion
     } else {
-        // Single file move (original behavior)
-        // 1. Copy
-        copy_object_with_profile(
-            source_bucket.clone(),
+        let etag = copy_single_object(
+            &source_bucket,
             source_region.clone(),
-            source_key.clone(),
-            destination_bucket.clone(),
-            destination_region.clone(),
-            destination_key.clone(),
-            active_profile.clone(),
+            &source_key,
+            &destination_bucket,
+            destination_region,
+            &destination_key,
+            &active_profile,
             s3_state,
         )
         .await?;
-
-        // 2. Delete source
-        delete_object_with_profile(
-            source_bucket,
-            source_region,
-            source_key,
-            active_profile,
-            s3_state,
-        )
-        .await?;
-
-        Ok(())
+        let client = {
+            let mut manager = s3_state.write().await;
+            let region = manager
+                .get_bucket_region(&active_profile, &source_bucket)
+                .or(source_region);
+            match region {
+                Some(region) => manager
+                    .get_client_for_region(&active_profile, &region)
+                    .await?
+                    .clone(),
+                None => manager.get_client(&active_profile).await?.clone(),
+            }
+        };
+        let result = delete_copied_source(&client, &source_bucket, &source_key, &etag).await;
+        s3_state
+            .write()
+            .await
+            .remove_bucket_cache(&active_profile.id, &source_bucket);
+        result
     }
+}
+
+async fn delete_copied_source(client: &Client, bucket: &str, key: &str, etag: &str) -> Result<()> {
+    client.delete_object().bucket(bucket).key(key).if_match(etag).send().await
+        .map_err(|error| crate::error::AppError::S3Error(format!(
+            "Copied {key}, but could not conditionally remove the source. It may have changed, or the provider may not support conditional deletion. The destination copy remains: {error}"
+        )))?;
+    Ok(())
 }
 
 pub(super) async fn save_object_text(
@@ -1645,6 +1651,7 @@ pub async fn set_object_content_type(
     bucket_region: Option<String>,
     key: String,
     content_type: String,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
@@ -1657,10 +1664,11 @@ pub async fn set_object_content_type(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     let resolved_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -1865,6 +1873,7 @@ pub async fn get_object_permissions(
     bucket_region: Option<String>,
     key: String,
     is_folder: bool,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<ObjectPermissions> {
@@ -1874,10 +1883,11 @@ pub async fn get_object_permissions(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -1989,12 +1999,14 @@ pub async fn get_object_permissions(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn set_object_permissions(
     bucket_name: String,
     bucket_region: Option<String>,
     key: String,
     is_folder: bool,
     canned_acl: String,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<SetObjectPermissionsResult> {
@@ -2005,10 +2017,11 @@ pub async fn set_object_permissions(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -2076,6 +2089,7 @@ pub async fn get_object_metadata(
     bucket_name: String,
     bucket_region: Option<String>,
     key: String,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<ObjectMetadata> {
@@ -2085,11 +2099,12 @@ pub async fn get_object_metadata(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -2137,7 +2152,7 @@ pub async fn get_object_metadata(
             if let Some(new_region) = detected_region {
                 let new_client = {
                     let mut s3_manager = s3_state.write().await;
-                    s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                    s3_manager.set_bucket_region(&active_profile, &bucket_name, new_region.clone());
                     s3_manager
                         .get_client_for_region(&active_profile, &new_region)
                         .await?
@@ -2415,7 +2430,7 @@ mod operation_profile_tests {
     fn rejects_operations_from_a_different_profile() {
         assert!(validate_operation_profile(Some("profile-a"), "profile-b").is_err());
         assert!(validate_operation_profile(Some("profile-a"), "profile-a").is_ok());
-        assert!(validate_operation_profile(None, "profile-a").is_ok());
+        assert!(validate_operation_profile(None, "profile-a").is_err());
     }
 }
 
@@ -2427,6 +2442,24 @@ mod move_profile_tests {
     use std::sync::Arc;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::RwLock;
+
+    #[tokio::test]
+    async fn changed_move_source_is_never_deleted_unconditionally() {
+        let (client, server) =
+            crate::commands::test_s3::scripted_client(vec![crate::commands::test_s3::response(
+                412,
+                "",
+                "<Error><Code>PreconditionFailed</Code></Error>",
+            )])
+            .await;
+        let error = delete_copied_source(&client, "bucket", "source", "\"copied\"")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("destination copy remains"));
+        let requests = server.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].contains("if-match: \"copied\""));
+    }
 
     #[tokio::test]
     async fn move_keeps_its_profile_when_selection_changes_after_copy() {
@@ -2463,7 +2496,7 @@ mod move_profile_tests {
         let other_id = other.id.clone();
         let server = tokio::spawn(async move {
             let mut requests = Vec::new();
-            for index in 0..3 {
+            for index in 0..4 {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 let mut request = Vec::new();
                 let mut byte = [0];
@@ -2472,7 +2505,7 @@ mod move_profile_tests {
                     request.push(byte[0]);
                 }
                 requests.push(String::from_utf8(request).unwrap());
-                let body = if index == 1 {
+                let body = if index == 2 {
                     server_profiles
                         .write()
                         .await
@@ -2480,11 +2513,13 @@ mod move_profile_tests {
                         .await
                         .unwrap();
                     "<CopyObjectResult><ETag>&quot;test&quot;</ETag><LastModified>2026-01-01T00:00:00Z</LastModified></CopyObjectResult>"
+                } else if index == 1 {
+                    "<AccessControlPolicy><AccessControlList/></AccessControlPolicy>"
                 } else {
                     ""
                 };
                 let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    "HTTP/1.1 200 OK\r\nETag: \"test\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     body.len(),
                     body
                 );
@@ -2511,8 +2546,9 @@ mod move_profile_tests {
         .unwrap();
         let requests = server.await.unwrap();
         assert!(requests[0].starts_with("HEAD /bucket/source.txt"));
-        assert!(requests[1].starts_with("PUT /bucket/dest.txt"));
-        assert!(requests[2].starts_with("DELETE /bucket/source.txt"));
+        assert!(requests[2].starts_with("PUT /bucket/dest.txt"));
+        assert!(requests[3].starts_with("DELETE /bucket/source.txt"));
+        assert!(requests[3].contains("if-match: \"test\""));
         assert!(requests
             .iter()
             .all(|request| request.contains("Credential=TEST-A/")));
@@ -2672,6 +2708,32 @@ mod large_copy_tests {
 
     const LARGE_SIZE: u64 = 5 * 1024 * 1024 * 1024 + 1;
 
+    #[tokio::test]
+    async fn ordinary_copy_preserves_acl_and_refuses_destination_replacement() {
+        let (client, server) = scripted_client(vec![response(
+            200,
+            "",
+            "<CopyObjectResult><ETag>&quot;copy&quot;</ETag></CopyObjectResult>",
+        )])
+        .await;
+        let acl = super::CopyAclHeaders {
+            read: vec!["uri=\"http://acs.amazonaws.com/groups/global/AllUsers\"".into()],
+            ..Default::default()
+        };
+        copy_object_from_head(
+            (&client, "source", "file"),
+            (&client, "dest", "file"),
+            &head(10),
+            Some(&acl),
+        )
+        .await
+        .unwrap();
+        let requests = server.await.unwrap();
+        assert!(requests[0].contains("if-none-match: *"));
+        assert!(requests[0]
+            .contains("x-amz-grant-read: uri=\"http://acs.amazonaws.com/groups/global/AllUsers\""));
+    }
+
     fn head(size: u64) -> HeadObjectOutput {
         HeadObjectOutput::builder()
             .content_length(size as i64)
@@ -2707,6 +2769,7 @@ mod large_copy_tests {
             (&client, "source", "original.txt"),
             (&client, "destination", "renamed.txt"),
             &head(LARGE_SIZE),
+            None,
         )
         .await
         .unwrap();
@@ -2751,7 +2814,8 @@ mod large_copy_tests {
         assert!(copy_object_from_head(
             (&client, "source", "original.txt"),
             (&client, "destination", "renamed.txt"),
-            &head(LARGE_SIZE)
+            &head(LARGE_SIZE),
+            None,
         )
         .await
         .is_err());
@@ -2773,6 +2837,7 @@ mod large_copy_tests {
             (&client, "source", "original.txt"),
             (&client, "destination", "renamed.txt"),
             &head(LARGE_SIZE - 1),
+            None,
         )
         .await
         .unwrap();

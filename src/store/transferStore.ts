@@ -119,14 +119,25 @@ export const useTransferStore = create<TransferState>((set, get) => ({
   
   refreshJobs: async () => {
     const requestId = ++latestRefreshRequestId;
+    const before = get().jobsMap;
     try {
       const jobs = await transferApi.listTransfers();
       if (requestId !== latestRefreshRequestId) {
         return;
       }
-      set({ 
-        jobs,
-        jobsMap: new Map(jobs.map(j => [j.id, j]))
+      set(state => {
+        const merged = new Map(jobs.map(job => [job.id, job]));
+        // Events and removals after the request started are newer than its snapshot.
+        for (const [id, job] of state.jobsMap) {
+          if (job !== before.get(id)) merged.set(id, job);
+        }
+        for (const id of before.keys()) {
+          if (!state.jobsMap.has(id)) merged.delete(id);
+        }
+        return {
+          jobs: Array.from(merged.values()).sort((a, b) => b.created_at - a.created_at),
+          jobsMap: merged,
+        };
       });
     } catch (err) {
       console.error('Failed to refresh jobs:', err);

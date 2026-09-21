@@ -272,6 +272,7 @@ pub async fn list_objects(
     bypass_cache: Option<bool>,
     sort_field: Option<String>,
     sort_direction: Option<String>,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<ListObjectsResult> {
@@ -293,17 +294,18 @@ pub async fn list_objects(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     // 1. Try Read Lock first for Cache (highly concurrent)
     {
         let s3_manager = s3_state.read().await;
         let cached_bucket_region = s3_manager
-            .get_bucket_region(&bucket_name)
+            .get_bucket_region(&active_profile, &bucket_name)
             .or(requested_bucket_region.clone());
         if uses_complete_sort && !bypass_cache.unwrap_or(false) {
             if let Some(field) = sort_field.as_deref() {
                 if let Some(content) = s3_manager.get_sorted_folder_content(
-                    &active_profile.id,
+                    &active_profile.cache_identity(),
                     &bucket_name,
                     &prefix_str,
                     field,
@@ -336,7 +338,7 @@ pub async fn list_objects(
     // Check cache for bucket region first
     let mut resolved_bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -381,7 +383,11 @@ pub async fn list_objects(
                     if let Some(new_region) = detected_region {
                         let new_client = {
                             let mut s3_manager = s3_state.write().await;
-                            s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                            s3_manager.set_bucket_region(
+                                &active_profile,
+                                &bucket_name,
+                                new_region.clone(),
+                            );
                             s3_manager
                                 .get_client_for_region(&active_profile, &new_region)
                                 .await?
@@ -406,7 +412,7 @@ pub async fn list_objects(
         {
             let mut s3_manager = s3_state.write().await;
             s3_manager.set_sorted_folder_content(
-                &active_profile.id,
+                &active_profile.cache_identity(),
                 &bucket_name,
                 &prefix_str,
                 &field,
@@ -512,7 +518,7 @@ pub async fn list_objects(
                 // Cache the discovered region for future requests
                 {
                     let mut s3_manager = s3_state.write().await;
-                    s3_manager.set_bucket_region(&bucket_name, new_region);
+                    s3_manager.set_bucket_region(&active_profile, &bucket_name, new_region);
                 }
 
                 retry_req
@@ -609,6 +615,7 @@ pub async fn search_objects(
     bucket_region: Option<String>,
     prefix: Option<String>,
     query: String,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<SearchObjectsResult> {
@@ -618,6 +625,7 @@ pub async fn search_objects(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     let prefix_str = prefix.unwrap_or_default();
     let query_lower = query.to_lowercase();
@@ -625,7 +633,7 @@ pub async fn search_objects(
     // Check cache for bucket region first
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -686,7 +694,11 @@ pub async fn search_objects(
                 if let Some(new_region) = detected_region {
                     let new_client = {
                         let mut s3_manager = s3_state.write().await;
-                        s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                        s3_manager.set_bucket_region(
+                            &active_profile,
+                            &bucket_name,
+                            new_region.clone(),
+                        );
                         s3_manager
                             .get_client_for_region(&active_profile, &new_region)
                             .await?
@@ -786,6 +798,7 @@ pub async fn get_presigned_url(
     bucket_region: Option<String>,
     key: String,
     expires_in: u64,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<String> {
@@ -798,10 +811,11 @@ pub async fn get_presigned_url(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -856,7 +870,7 @@ pub async fn get_presigned_url(
             if let Some(new_region) = detected_region {
                 let new_client = {
                     let mut s3_manager = s3_state.write().await;
-                    s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                    s3_manager.set_bucket_region(&active_profile, &bucket_name, new_region.clone());
                     s3_manager
                         .get_client_for_region(&active_profile, &new_region)
                         .await?
@@ -901,6 +915,7 @@ pub async fn get_object_content(
     bucket_region: Option<String>,
     key: String,
     max_bytes: Option<u64>,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<ObjectText> {
@@ -911,10 +926,11 @@ pub async fn get_object_content(
         .await?
         .ok_or_else(|| crate::error::AppError::ProfileNotFound("No active profile".into()))?;
     drop(profile_manager);
+    super::operations::validate_operation_profile(Some(&expected_profile_id), &active_profile.id)?;
 
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 
@@ -957,7 +973,7 @@ pub async fn get_object_content(
             if let Some(new_region) = detected_region {
                 let new_client = {
                     let mut s3_manager = s3_state.write().await;
-                    s3_manager.set_bucket_region(&bucket_name, new_region.clone());
+                    s3_manager.set_bucket_region(&active_profile, &bucket_name, new_region.clone());
                     s3_manager
                         .get_client_for_region(&active_profile, &new_region)
                         .await?
@@ -1046,7 +1062,7 @@ pub async fn put_object_content(
 
     let bucket_region = {
         let s3_manager = s3_state.read().await;
-        s3_manager.get_bucket_region(&bucket_name)
+        s3_manager.get_bucket_region(&active_profile, &bucket_name)
     }
     .or(bucket_region);
 

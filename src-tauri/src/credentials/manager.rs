@@ -35,6 +35,8 @@ pub enum CredentialType {
 pub struct Profile {
     #[serde(default)]
     pub id: String,
+    #[serde(default)]
+    pub secret_ref: Option<String>,
     pub name: String,
     pub credential_type: CredentialType,
     pub region: Option<String>,
@@ -46,11 +48,22 @@ pub struct Profile {
 }
 
 impl Profile {
+    pub fn cache_identity(&self) -> String {
+        format!(
+            "{}:{}",
+            self.id,
+            self.updated_at
+                .map(|date| date.to_rfc3339())
+                .unwrap_or_default()
+        )
+    }
+
     pub fn new(name: String, credential_type: CredentialType, region: Option<String>) -> Self {
         let now = chrono::Utc::now();
         Self {
             id: Uuid::new_v4().to_string(),
             name,
+            secret_ref: None,
             credential_type,
             region,
             is_default: false,
@@ -60,11 +73,12 @@ impl Profile {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 struct ProfilesData {
     profiles: HashMap<String, Profile>,
     active_profile_id: Option<String>,
+    pending_secret_deletions: Vec<String>,
 }
 
 pub struct ProfileManager {
@@ -118,11 +132,13 @@ impl ProfileManager {
 
         let keychain = super::KeychainStorage::new("brows3", &config_dir, force_secret_fallback);
 
-        Ok(Self {
+        let mut manager = Self {
             config_dir,
             data,
             keychain,
-        })
+        };
+        manager.cleanup_pending_secrets();
+        Ok(manager)
     }
 
     fn load_profiles_data(content: &str) -> std::result::Result<ProfilesData, serde_json::Error> {
@@ -135,6 +151,7 @@ impl ProfileManager {
                     .map(|profile| (profile.id.clone(), profile))
                     .collect(),
                 active_profile_id: None,
+                pending_secret_deletions: Vec::new(),
             }));
         }
 
@@ -148,6 +165,7 @@ impl ProfileManager {
         Ok(Self::normalize_profiles_data(ProfilesData {
             profiles,
             active_profile_id: None,
+            pending_secret_deletions: Vec::new(),
         }))
     }
 
@@ -190,6 +208,7 @@ impl ProfileManager {
         ProfilesData {
             profiles: normalized_profiles,
             active_profile_id,
+            pending_secret_deletions: data.pending_secret_deletions,
         }
     }
 
@@ -198,6 +217,14 @@ impl ProfileManager {
         for profile in self.data.profiles.values_mut() {
             profile.is_default = active_profile_id.as_ref() == Some(&profile.id);
         }
+    }
+
+    fn commit(&mut self, previous: ProfilesData) -> Result<()> {
+        if let Err(error) = self.save() {
+            self.data = previous;
+            return Err(error);
+        }
+        Ok(())
     }
 
     fn save(&self) -> Result<()> {
@@ -233,7 +260,11 @@ impl ProfileManager {
             return Err(AppError::ProfileExists(profile.name.clone()));
         }
 
-        // Store secret in keychain for manual/custom endpoint credentials
+        if self.data.profiles.contains_key(&profile.id) {
+            return Err(AppError::ProfileExists(profile.id));
+        }
+        let previous = self.data.clone();
+        profile.secret_ref = Some(Uuid::new_v4().to_string());
         self.store_secret(&profile)?;
 
         // Set timestamps
@@ -251,7 +282,10 @@ impl ProfileManager {
             .profiles
             .insert(profile.id.clone(), profile.clone());
         self.sync_default_flags();
-        self.save()?;
+        if let Err(error) = self.commit(previous) {
+            self.remove_secret(&profile);
+            return Err(error);
+        }
 
         Ok(self.hydrate_profile(
             self.data
@@ -337,38 +371,31 @@ impl ProfileManager {
             _ => {}
         }
 
-        let existing_used_keychain = matches!(
-            existing_profile.credential_type,
-            CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. }
-        );
-        let new_uses_keychain = matches!(
-            profile.credential_type,
-            CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. }
-        );
-
-        if existing_used_keychain && !new_uses_keychain {
-            self.remove_secret(&existing_profile);
-        }
-
+        let previous = self.data.clone();
+        profile.secret_ref = Some(Uuid::new_v4().to_string());
         self.store_secret(&profile)?;
 
+        self.queue_secret_cleanup(&existing_profile);
         self.data.profiles.insert(id.to_string(), profile.clone());
         self.sync_default_flags();
-        self.save()?;
+        if let Err(error) = self.commit(previous) {
+            self.remove_secret(&profile);
+            return Err(error);
+        }
 
+        self.cleanup_pending_secrets();
         Ok(self.hydrate_profile(profile))
     }
 
     pub async fn delete_profile(&mut self, id: &str) -> Result<()> {
+        let previous = self.data.clone();
         let profile = self
             .data
             .profiles
             .remove(id)
             .ok_or_else(|| AppError::ProfileNotFound(id.to_string()))?;
 
-        // Remove secret from keychain
-        self.remove_secret(&profile);
-
+        self.queue_secret_cleanup(&profile);
         // If this was the active profile, clear it
         if self.data.active_profile_id.as_deref() == Some(id) {
             self.data.active_profile_id = self.data.profiles.keys().next().cloned();
@@ -376,7 +403,8 @@ impl ProfileManager {
 
         self.sync_default_flags();
 
-        self.save()?;
+        self.commit(previous)?;
+        self.cleanup_pending_secrets();
         Ok(())
     }
 
@@ -385,9 +413,10 @@ impl ProfileManager {
             return Err(AppError::ProfileNotFound(id.to_string()));
         }
 
+        let previous = self.data.clone();
         self.data.active_profile_id = Some(id.to_string());
         self.sync_default_flags();
-        self.save()?;
+        self.commit(previous)?;
         Ok(())
     }
 
@@ -403,7 +432,8 @@ impl ProfileManager {
 
     /// Get a profile and populate its secret from the keychain if applicable
     pub fn hydrate_profile(&self, mut profile: Profile) -> Profile {
-        if let Some(secret) = self.load_secret(&profile).ok().flatten() {
+        let stored = self.data.profiles.get(&profile.id).unwrap_or(&profile);
+        if let Some(secret) = self.load_secret(stored).ok().flatten() {
             match &mut profile.credential_type {
                 CredentialType::Manual {
                     secret_access_key, ..
@@ -428,18 +458,62 @@ impl ProfileManager {
             }
             | CredentialType::CustomEndpoint {
                 secret_access_key, ..
-            } if !secret_access_key.is_empty() => {
-                self.keychain.store(&profile.id, secret_access_key)?;
+            } => {
+                if secret_access_key.is_empty() {
+                    return Err(AppError::InvalidCredentials(
+                        "Enter a secret access key; the stored secret could not be read.".into(),
+                    ));
+                }
+                self.keychain.store(
+                    profile.secret_ref.as_deref().unwrap_or(&profile.id),
+                    secret_access_key,
+                )?;
             }
             _ => {}
         }
         Ok(())
     }
 
+    fn queue_secret_cleanup(&mut self, profile: &Profile) {
+        if matches!(
+            profile.credential_type,
+            CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. }
+        ) {
+            self.data.pending_secret_deletions.push(
+                profile
+                    .secret_ref
+                    .clone()
+                    .unwrap_or_else(|| profile.id.clone()),
+            );
+        }
+    }
+
+    fn cleanup_pending_secrets(&mut self) {
+        if self.data.pending_secret_deletions.is_empty() {
+            return;
+        }
+        self.data.pending_secret_deletions.retain(|key| {
+            if let Err(error) = self.keychain.delete(key) {
+                log::error!("Secret cleanup pending; will retry on next startup: {error}");
+                true
+            } else {
+                false
+            }
+        });
+        if let Err(error) = self.save() {
+            log::warn!("Could not persist secret cleanup progress: {error}");
+        }
+    }
+
     fn remove_secret(&self, profile: &Profile) {
         match &profile.credential_type {
             CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. } => {
-                let _ = self.keychain.delete(&profile.id);
+                if let Err(error) = self
+                    .keychain
+                    .delete(profile.secret_ref.as_deref().unwrap_or(&profile.id))
+                {
+                    log::error!("Profile secret cleanup failed: {error}");
+                }
             }
             _ => {}
         }
@@ -447,9 +521,10 @@ impl ProfileManager {
 
     pub fn load_secret(&self, profile: &Profile) -> Result<Option<String>> {
         match &profile.credential_type {
-            CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. } => {
-                Ok(self.keychain.get(&profile.id).ok())
-            }
+            CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. } => Ok(self
+                .keychain
+                .get(profile.secret_ref.as_deref().unwrap_or(&profile.id))
+                .ok()),
             _ => Ok(None),
         }
     }
@@ -459,6 +534,70 @@ impl ProfileManager {
 mod tests {
     use super::{CredentialType, Profile, ProfileManager};
     use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn failed_metadata_commit_preserves_selection_profile_and_secret() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(dir.path().to_path_buf(), true).unwrap();
+        let first = manager
+            .add_profile(Profile::new(
+                "first".into(),
+                CredentialType::Manual {
+                    access_key_id: "key".into(),
+                    secret_access_key: "original".into(),
+                },
+                None,
+            ))
+            .await
+            .unwrap();
+        let second = manager
+            .add_profile(Profile::new(
+                "second".into(),
+                CredentialType::Environment,
+                None,
+            ))
+            .await
+            .unwrap();
+        // A directory at the metadata filename deterministically fails atomic replacement.
+        std::fs::rename(
+            dir.path().join("profiles.json"),
+            dir.path().join("saved.json"),
+        )
+        .unwrap();
+        std::fs::create_dir(dir.path().join("profiles.json")).unwrap();
+        assert!(manager.set_active_profile(&second.id).await.is_err());
+        assert_eq!(
+            manager.get_active_profile().await.unwrap().unwrap().id,
+            first.id
+        );
+        let mut edited = first.clone();
+        edited.name = "changed".into();
+        edited.credential_type = CredentialType::Manual {
+            access_key_id: "new-key".into(),
+            secret_access_key: "new-secret".into(),
+        };
+        assert!(manager.update_profile(&first.id, edited).await.is_err());
+        assert_eq!(manager.get_profile(&first.id).await.unwrap().name, "first");
+        assert_eq!(
+            manager.load_secret(&first).unwrap().as_deref(),
+            Some("original")
+        );
+        assert!(manager.delete_profile(&first.id).await.is_err());
+        assert!(manager.get_profile(&first.id).await.is_ok());
+        assert_eq!(
+            manager.load_secret(&first).unwrap().as_deref(),
+            Some("original")
+        );
+        assert!(manager
+            .add_profile(Profile::new(
+                "third".into(),
+                CredentialType::Environment,
+                None
+            ))
+            .await
+            .is_err());
+        assert_eq!(manager.list_profiles().await.unwrap().len(), 2);
+    }
     use std::path::PathBuf;
 
     fn temp_config_dir(name: &str) -> PathBuf {
@@ -612,6 +751,7 @@ mod tests {
         profiles.insert(
             "legacy-key".to_string(),
             Profile {
+                secret_ref: None,
                 id: String::new(),
                 name: "Legacy".to_string(),
                 credential_type: CredentialType::Environment,
@@ -625,6 +765,7 @@ mod tests {
         let data = ProfileManager::normalize_profiles_data(super::ProfilesData {
             profiles,
             active_profile_id: None,
+            pending_secret_deletions: Vec::new(),
         });
 
         assert_eq!(data.profiles.len(), 1);
@@ -763,13 +904,11 @@ mod tests {
                 ),
             )
             .await
-            .expect("profile should be updated");
+            .expect_err("a removed secret must not be reused");
 
-        match manual_again.credential_type {
-            CredentialType::Manual {
-                secret_access_key, ..
-            } => assert!(secret_access_key.is_empty()),
-            _ => panic!("expected manual credentials"),
-        }
+        assert!(manual_again
+            .to_string()
+            .contains("Enter a secret access key"));
+        assert!(manager.load_secret(&created).unwrap().is_none());
     }
 }
