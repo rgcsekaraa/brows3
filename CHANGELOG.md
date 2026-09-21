@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.46] - 2026-09-21
+
+### Added
+- Image viewer with zoom, pan, previous/next navigation, keyboard controls, and compact rounded controls. Thanks to @antonp2k for the contribution in PR [#36](https://github.com/rgcsekaraa/brows3/pull/36).
+- Live upload and download speeds, including combined rates in the floating transfer panel. ([#35](https://github.com/rgcsekaraa/brows3/issues/35))
+- Self-contained crates.io source packaging and dedicated cargo-binstall binaries for macOS Intel/Apple Silicon, Linux x86_64/ARM64, and Windows x64. Cargo-managed builds use Cargo for updates. ([#37](https://github.com/rgcsekaraa/brows3/issues/37))
+- Experimental Intel/AMD 32-bit Linux Debian installer (`i386`, targeting i686). Verified in CI with 90 backend tests and an installed-app startup check. Real-device testing is still outstanding; WebKitGTK 4.1 is required and in-app updates are disabled for this build.
+
+### Fixed
+- Show confirmation before cancelling transfers, keep transfer tables within the viewport, and put filenames before status.
+- Show only active transfer directions in the floating panel, remove the redundant badge, and improve upload/download activity indicators.
+- Harden S3 operations, transfer retries and cancellation, credential persistence, cache invalidation, and partial-failure handling.
+
+### Changed
+- Clarify that `amd64`, `x86_64`, and `x64` Linux downloads work on both Intel and AMD 64-bit systems. A 32-bit system needs the separate `i386` installer.
+- Validate source packaging, binary installation, and startup on all five Cargo release targets before publication.
+
 ## [0.2.45] - 2026-09-12
 
 ### Added

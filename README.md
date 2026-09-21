@@ -187,6 +187,7 @@ Brows3 is available for all major desktop platforms. Download the latest version
 | **macOS** | `.dmg` (Apple Silicon/Intel), `.app.tar.gz` updater archives |
 | **Windows** | `.msi`, `.exe`, portable `.zip` |
 | **Linux** | `.deb`, `.AppImage` for Intel/AMD 64-bit (x86_64/amd64) and ARM64 |
+| **Linux 32-bit (experimental)** | `.deb` for Intel/AMD x86 (i686, Debian package architecture `i386`) |
 
 ### Choosing a Linux download
 
@@ -194,9 +195,10 @@ Brows3 is available for all major desktop platforms. Download the latest version
 `amd64` downloads work on compatible **Intel and AMD** systems, not just AMD.
 Choose `arm64` or `aarch64` only for a 64-bit ARM system.
 
-Brows3 does not currently provide 32-bit x86 (`i386`/`i686`) release builds.
-An isolated [32-bit Linux build trial](docs/LINUX_32_BIT.md) is being prepared;
-support will be announced only after build and runtime validation pass.
+Version 0.2.46 introduces an experimental [32-bit Linux Debian installer](docs/LINUX_32_BIT.md).
+It passed CI build, backend tests, package installation, and startup checks, but
+real-device testing remains outstanding. It requires WebKitGTK 4.1 and manual
+updates; there is no 32-bit AppImage or Windows installer in this release.
 If you are unsure which download to choose, include the output of `uname -m`
 and `getconf LONG_BIT`, along with your Linux distribution, in a support request.
 
