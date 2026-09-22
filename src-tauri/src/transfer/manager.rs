@@ -318,6 +318,7 @@ impl TransferManager {
                     new_job.download_destination = job.download_destination.clone();
                     new_job.sync_source = job.sync_source.clone();
                     new_job.remote_source = job.remote_source.clone();
+                    new_job.restore_guard = job.restore_guard.clone();
 
                     // Preserve grouping info
                     new_job.parent_group_id = job.parent_group_id.clone();
@@ -641,10 +642,7 @@ impl TransferManager {
         content_type: &str,
         attributes: Option<&super::sync::Attributes>,
     ) -> crate::error::Result<()> {
-        let expected_etag = job
-            .sync_source
-            .as_ref()
-            .and_then(|s| s.expected_etag.as_deref());
+        let expected_etag = job.destination_etag();
         let offset = job.remote_source.as_ref().map_or(0, |s| s.size);
         let metadata = tokio::fs::metadata(&job.local_path)
             .await
@@ -667,6 +665,10 @@ impl TransferManager {
         }
 
         if file_size < MULTIPART_UPLOAD_THRESHOLD {
+            if let Some(guard) = &job.restore_guard {
+                crate::s3::versions::validate_restore(client, &job.bucket, &job.key, guard).await?;
+                self.ensure_multipart_job_active(&job.id).await?;
+            }
             let body = ByteStream::from_path(&job.local_path)
                 .await
                 .map_err(|error| crate::error::AppError::IoError(error.to_string()))?;
@@ -892,10 +894,14 @@ impl TransferManager {
             let completed_upload = CompletedMultipartUpload::builder()
                 .set_parts(Some(completed_parts))
                 .build();
+            if let Some(guard) = &job.restore_guard {
+                crate::s3::versions::validate_restore(client, &job.bucket, &job.key, guard).await?;
+                self.ensure_multipart_job_active(&job.id).await?;
+            }
             let complete_send = client
                 .complete_multipart_upload()
-                .set_if_none_match(job.sync_source.as_ref().and_then(|s| s.expected_etag.as_ref()).is_none().then(|| "*".into()))
-                .set_if_match(job.sync_source.as_ref().and_then(|s| s.expected_etag.clone()))
+                .set_if_none_match(job.destination_etag().is_none().then(|| "*".into()))
+                .set_if_match(job.destination_etag().map(str::to_owned))
                 .bucket(&job.bucket)
                 .key(&job.key)
                 .upload_id(guard.upload_id())
@@ -965,22 +971,60 @@ impl TransferManager {
             };
             (source_client, destination_client)
         };
-        let (temporary, attributes) =
-            super::remote::stage(&source_client, source, job, self).await?;
+        self.execute_remote_copy(&source_client, &destination_client, job)
+            .await?;
+        s3_manager
+            .write()
+            .await
+            .remove_bucket_cache(&destination.id, &job.bucket);
+        Ok(())
+    }
+
+    async fn execute_remote_copy(
+        &self,
+        source_client: &Client,
+        destination_client: &Client,
+        job: &TransferJob,
+    ) -> crate::error::Result<()> {
+        let source = job
+            .remote_source
+            .as_ref()
+            .ok_or_else(|| crate::error::AppError::ConfigError("Missing remote source.".into()))?;
+        if let Some(guard) = &job.restore_guard {
+            crate::s3::versions::validate_restore(destination_client, &job.bucket, &job.key, guard)
+                .await?;
+        }
+        let (temporary, mut attributes) =
+            super::remote::stage(source_client, source, job, self).await?;
         self.ensure_multipart_job_active(&job.id).await?;
+        if let Some(guard) = &job.restore_guard {
+            if let Some(etag) = &guard.current_etag {
+                let mut current =
+                    super::sync::attributes(destination_client, &job.bucket, &job.key, etag)
+                        .await?;
+                if current.head.version_id() != Some(guard.current_version.as_str()) {
+                    return Err(crate::error::AppError::S3Error(
+                        "Current version changed. Refresh history and confirm again.".into(),
+                    ));
+                }
+                current.head.content_type = attributes.head.content_type;
+                current.head.cache_control = attributes.head.cache_control;
+                current.head.content_disposition = attributes.head.content_disposition;
+                current.head.content_encoding = attributes.head.content_encoding;
+                current.head.content_language = attributes.head.content_language;
+                current.head.metadata = attributes.head.metadata;
+                attributes = current;
+            }
+        }
         let mut prepared = job.clone();
         prepared.local_path = temporary.path().to_string_lossy().into_owned();
         self.upload_prepared(
-            &destination_client,
+            destination_client,
             &prepared,
             "application/octet-stream",
             Some(&attributes),
         )
         .await?;
-        s3_manager
-            .write()
-            .await
-            .remove_bucket_cache(&destination.id, &job.bucket);
         Ok(())
     }
 
@@ -1206,6 +1250,199 @@ impl TransferManager {
 #[cfg(test)]
 mod tests {
     #[tokio::test]
+    #[ignore = "requires a disposable versioned S3-compatible endpoint"]
+    async fn version_restore_real_endpoint_preserves_history_and_rejects_stale_guards() {
+        use aws_sdk_s3::{
+            primitives::ByteStream,
+            types::{BucketVersioningStatus, VersioningConfiguration},
+        };
+        let profile = Profile::new(
+            "version-test".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: std::env::var("BROWS3_VERSION_TEST_ENDPOINT")
+                    .expect("disposable endpoint required"),
+                access_key_id: "versiontest".into(),
+                secret_access_key: "version-test-only".into(),
+            },
+            Some("us-east-1".into()),
+        );
+        let sdk = crate::s3::client::load_sdk_config(&profile, None).await;
+        let client = crate::s3::client::client_from_sdk_config(&sdk, &profile);
+        let bucket = format!("brows3-version-test-{}", uuid::Uuid::new_v4().simple());
+        client.create_bucket().bucket(&bucket).send().await.unwrap();
+        client
+            .put_bucket_versioning()
+            .bucket(&bucket)
+            .versioning_configuration(
+                VersioningConfiguration::builder()
+                    .status(BucketVersioningStatus::Enabled)
+                    .build(),
+            )
+            .send()
+            .await
+            .unwrap();
+        for size in [0u64, 5, 129 * 1024 * 1024] {
+            let root = tempfile::tempdir().unwrap();
+            let path = root.path().join("old");
+            std::fs::File::create(&path).unwrap().set_len(size).unwrap();
+            let key = format!("nested/{size}");
+            let old = client
+                .put_object()
+                .bucket(&bucket)
+                .key(&key)
+                .content_type("application/x-version-test")
+                .metadata("owner", "old")
+                .body(ByteStream::from_path(&path).await.unwrap())
+                .send()
+                .await
+                .unwrap()
+                .version_id()
+                .unwrap()
+                .to_owned();
+            let mut current = client
+                .put_object()
+                .bucket(&bucket)
+                .key(&key)
+                .tagging("keep=current")
+                .body(ByteStream::from_static(b"current"))
+                .send()
+                .await
+                .unwrap()
+                .version_id()
+                .unwrap()
+                .to_owned();
+            for deleted in [false, true] {
+                if deleted {
+                    current = client
+                        .delete_object()
+                        .bucket(&bucket)
+                        .key(&key)
+                        .send()
+                        .await
+                        .unwrap()
+                        .version_id()
+                        .unwrap()
+                        .to_owned();
+                }
+                let (guard, etag, length) = crate::commands::versions::prepare_restore(
+                    &client, &bucket, &key, &old, &current, true,
+                )
+                .await
+                .unwrap();
+                assert_eq!(guard.deleted, deleted);
+                let manager = TransferManager::new();
+                let mut job = remote_job();
+                job.bucket = bucket.clone();
+                job.key = key.clone();
+                job.total_bytes = length * 2;
+                job.restore_guard = Some(guard);
+                let source = job.remote_source.as_mut().unwrap();
+                source.bucket = bucket.clone();
+                source.key = key.clone();
+                source.etag = etag;
+                source.size = length;
+                source.version_id = Some(old.clone());
+                manager.add_job(job.clone()).await;
+                manager
+                    .execute_remote_copy(&client, &client, &job)
+                    .await
+                    .unwrap();
+                let mut restored = client
+                    .get_object()
+                    .bucket(&bucket)
+                    .key(&key)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_ne!(restored.version_id(), Some(current.as_str()));
+                assert_eq!(restored.content_length(), Some(size as i64));
+                assert_eq!(restored.content_type(), Some("application/x-version-test"));
+                assert_eq!(restored.metadata().unwrap().get("owner").unwrap(), "old");
+                let mut received = 0u64;
+                while let Some(chunk) = restored.body.try_next().await.unwrap() {
+                    received += chunk.len() as u64;
+                    assert!(chunk.iter().all(|b| *b == 0));
+                }
+                assert_eq!(received, size);
+                if !deleted {
+                    let tags = client
+                        .get_object_tagging()
+                        .bucket(&bucket)
+                        .key(&key)
+                        .send()
+                        .await
+                        .unwrap();
+                    assert!(tags
+                        .tag_set()
+                        .iter()
+                        .any(|t| t.key() == "keep" && t.value() == "current"));
+                }
+                assert!(manager
+                    .execute_remote_copy(&client, &client, &job)
+                    .await
+                    .is_err());
+                let history = client
+                    .list_object_versions()
+                    .bucket(&bucket)
+                    .prefix(&key)
+                    .send()
+                    .await
+                    .unwrap();
+                assert!(history
+                    .versions()
+                    .iter()
+                    .any(|v| v.version_id() == Some(old.as_str())));
+                if deleted {
+                    assert!(history
+                        .delete_markers()
+                        .iter()
+                        .any(|v| v.version_id() == Some(current.as_str())));
+                } else {
+                    assert!(history
+                        .versions()
+                        .iter()
+                        .any(|v| v.version_id() == Some(current.as_str())));
+                }
+                assert!(client
+                    .list_multipart_uploads()
+                    .bucket(&bucket)
+                    .send()
+                    .await
+                    .unwrap()
+                    .uploads()
+                    .is_empty());
+            }
+        }
+        let history = client
+            .list_object_versions()
+            .bucket(&bucket)
+            .send()
+            .await
+            .unwrap();
+        for (key, id) in history
+            .versions()
+            .iter()
+            .map(|v| (v.key().unwrap(), v.version_id().unwrap()))
+            .chain(
+                history
+                    .delete_markers()
+                    .iter()
+                    .map(|v| (v.key().unwrap(), v.version_id().unwrap())),
+            )
+        {
+            client
+                .delete_object()
+                .bucket(&bucket)
+                .key(key)
+                .version_id(id)
+                .send()
+                .await
+                .unwrap();
+        }
+        client.delete_bucket().bucket(&bucket).send().await.unwrap();
+    }
+
+    #[tokio::test]
     #[ignore = "requires two disposable S3-compatible endpoints"]
     async fn cross_profile_real_endpoints_round_trip_and_conflicts() {
         use aws_sdk_s3::primitives::ByteStream;
@@ -1372,6 +1609,7 @@ mod tests {
             region: "us-east-1".into(),
             key: "file".into(),
             etag: "\"source-etag\"".into(),
+            version_id: None,
             size: 5,
             current_session: true,
         });
@@ -1429,6 +1667,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn restore_download_requires_the_selected_version_even_with_matching_etag() {
+        use crate::commands::test_s3::{response, scripted_client};
+        for returned in ["old+version", "different-version"] {
+            let (client, server) = scripted_client(vec![response(
+                200,
+                &format!("ETag: \"source-etag\"\r\nx-amz-version-id: {returned}\r\n"),
+                "hello",
+            )])
+            .await;
+            let manager = TransferManager::new();
+            let mut job = remote_job();
+            job.remote_source.as_mut().unwrap().version_id = Some("old+version".into());
+            manager.add_job(job.clone()).await;
+            let result = crate::transfer::remote::stage(
+                &client,
+                job.remote_source.as_ref().unwrap(),
+                &job,
+                &manager,
+            )
+            .await;
+            assert_eq!(result.is_ok(), returned == "old+version");
+            let requests = server.await.unwrap();
+            assert!(requests[0].contains("versionId=old%2Bversion"));
+            assert!(requests[0].contains("if-match: \"source-etag\""));
+        }
+    }
+
+    #[tokio::test]
     async fn cross_profile_source_changes_and_cancellation_prevent_staging() {
         use crate::commands::test_s3::{response, scripted_client};
         for (status, headers, content, cancelled) in [
@@ -1466,9 +1732,24 @@ mod tests {
         let manager = TransferManager::new();
         let mut job = remote_job();
         job.status = crate::transfer::TransferStatus::Failed("network".into());
+        job.remote_source.as_mut().unwrap().version_id = Some("older-version".into());
+        job.restore_guard = Some(crate::s3::versions::RestoreGuard {
+            current_version: "confirmed-current".into(),
+            current_etag: Some("\"current\"".into()),
+            deleted: false,
+        });
         manager.add_job(job.clone()).await;
         let id = manager.retry_job(&job.id).await.unwrap();
         let retry = manager.get_job(&id).await.unwrap();
+        assert_eq!(
+            retry.remote_source.as_ref().unwrap().version_id.as_deref(),
+            Some("older-version")
+        );
+        assert_eq!(
+            retry.restore_guard.as_ref().unwrap().current_version,
+            "confirmed-current"
+        );
+        assert_eq!(retry.destination_etag(), Some("\"current\""));
         assert_eq!(
             retry.remote_source.as_ref().unwrap().etag,
             "\"source-etag\""
@@ -1724,6 +2005,35 @@ mod tests {
         let requests = server.await.unwrap();
         assert!(requests[2].to_lowercase().contains("if-match: \"old\""));
         assert!(!requests[2].to_lowercase().contains("if-none-match"));
+        assert!(requests[3].starts_with("DELETE ") && requests[3].contains("uploadId=id"));
+    }
+
+    #[tokio::test]
+    async fn multipart_restore_rechecks_versioning_and_aborts_before_completion() {
+        use crate::commands::test_s3::{response, scripted_client};
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("file"), b"hello").unwrap();
+        let mut job = remote_job();
+        job.local_path = root.path().join("file").to_string_lossy().into_owned();
+        job.restore_guard = Some(crate::s3::versions::RestoreGuard {
+            current_version: "confirmed-current".into(),
+            current_etag: Some("\"current\"".into()),
+            deleted: false,
+        });
+        let (client, server) = scripted_client(vec![
+            response(200, "", "<InitiateMultipartUploadResult><UploadId>id</UploadId></InitiateMultipartUploadResult>"),
+            response(200, "ETag: \"part\"\r\n", ""),
+            response(200, "", "<VersioningConfiguration><Status>Suspended</Status></VersioningConfiguration>"),
+            response(204, "", ""),
+        ]).await;
+        let manager = TransferManager::new();
+        manager.add_job(job.clone()).await;
+        assert!(manager
+            .multipart_upload_file(&client, &job, "text/plain", 5, None)
+            .await
+            .is_err());
+        let requests = server.await.unwrap();
+        assert!(requests[2].starts_with("GET ") && requests[2].contains("versioning"));
         assert!(requests[3].starts_with("DELETE ") && requests[3].contains("uploadId=id"));
     }
 
