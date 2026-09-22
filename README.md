@@ -47,6 +47,7 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 ## Feature Deep Dive
 
 ### File Management
+- **Local Folder Sync**: Preview new, changed and unchanged files before copying a local folder's contents into an S3 prefix. Replacements require explicit confirmation and conditional writes; remote-only objects are never deleted. See [comparison rules and safety limits](docs/FOLDER_SYNC.md).
 - **Bucket Management**: Create buckets, edit bucket policies and delete empty buckets from All Buckets. Policy changes and deletion require typing the bucket name. Availability depends on the provider and your credentials.
 - **Bucket Favorites**: Star a bucket from the sidebar or bucket header to open its root from Favorites. Favorites stay with their profile.
 - **Breadcrumb Navigation**: Path-based navigation for rapid traversal of complex hierarchies.

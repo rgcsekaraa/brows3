@@ -61,6 +61,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Arc::new(RwLock::new(S3ClientManager::new())))
         .manage(Arc::new(TransferManager::new()))
+        .manage(commands::sync::SyncPlans::default())
         .setup(|app| {
             // Add native menu on macOS to enable Copy/Paste/Cut/SelectAll/Undo/Redo shortcuts
             // Add native menu to enable standard shortcuts and window controls
@@ -313,6 +314,8 @@ pub fn run() {
             operations::get_object_permissions,
             operations::set_object_permissions,
             // Transfer commands
+            commands::sync::preview_folder_sync,
+            commands::sync::start_folder_sync,
             transfer_cmd::queue_upload,
             transfer_cmd::queue_download,
             transfer_cmd::list_transfers,

@@ -3,6 +3,7 @@ pub mod buckets;
 pub mod objects;
 pub mod operations;
 pub mod profiles;
+pub mod sync;
 pub mod transfer;
 
 #[cfg(test)]

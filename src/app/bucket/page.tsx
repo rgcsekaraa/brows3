@@ -57,6 +57,7 @@ import { useTransferStore } from '@/store/transferStore';
 import { useClipboardStore } from '@/store/clipboardStore';
 import { useProfileStore } from '@/store/profileStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
+import FolderSyncDialog from '@/components/dialogs/FolderSyncDialog';
 import PermissionsDialog from '@/components/dialogs/PermissionsDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
 import { canObjectBeEdited, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
@@ -279,6 +280,8 @@ function BucketContent() {
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMenuAnchor, setUploadMenuAnchor] = useState<null | HTMLElement>(null);
+  const [syncDestination, setSyncDestination] = useState<string | null>(null);
+  useEffect(() => { setSyncDestination(null); }, [viewKey]);
 
   // Create Folder State
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
@@ -1231,6 +1234,10 @@ function BucketContent() {
                 <ListItemIcon><FolderIcon fontSize="small" /></ListItemIcon>
                 Folder
             </MenuItem>
+            <MenuItem onClick={() => { setUploadMenuAnchor(null); setSyncDestination(`${activeProfileId}:${bucketName}:${prefix}`); }} disabled={!activeProfileId}>
+                <ListItemIcon><FolderIcon fontSize="small" /></ListItemIcon>
+                Sync local folder...
+            </MenuItem>
         </Menu>
           </>
         )}
@@ -1569,6 +1576,7 @@ function BucketContent() {
       </Dialog>
 
       {/* Properties Dialog */}
+      {activeProfileId && syncDestination === `${activeProfileId}:${bucketName}:${prefix}` && <FolderSyncDialog key={syncDestination} bucket={bucketName} region={bucketRegion} prefix={prefix} profileId={activeProfileId} onClose={() => setSyncDestination(null)} />}
       <PropertiesDialog
         open={propertiesOpen}
         onClose={() => setPropertiesOpen(false)}

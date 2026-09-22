@@ -84,6 +84,17 @@ export class DesktopBackend {
       }
       case 'delete_objects': this.objects = this.objects.filter(item => !(args.keys as string[]).includes(item.key)); return null;
       case 'list_transfers': return this.transfers;
+      case 'preview_folder_sync': return {
+        id: 'sync-plan', new_files: 1, changed_files: 1, unverified_files: 0, unchanged_files: 1, remote_only_files: 2, upload_bytes: 40,
+        entries: [
+          { key: 'new.txt', size: 20, action: 'New' },
+          { key: 'changed.txt', size: 20, action: 'Changed' },
+          { key: 'same.txt', size: 20, action: 'Unchanged' },
+        ],
+      };
+      case 'start_folder_sync':
+        if (args.expectedProfileId !== this.activeProfile || args.replaceExisting !== true) throw new Error('Sync confirmation or profile mismatch');
+        return 2;
       case 'plugin:dialog|save': return '/virtual/downloads/notes.txt';
       case 'plugin:dialog|open': return (args.options as Args)?.directory ? '/virtual/downloads' : ['/virtual/upload.txt'];
       case 'queue_download':

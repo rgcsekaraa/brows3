@@ -86,7 +86,7 @@ fn parse_object_canned_acl(value: &str) -> Result<ObjectCannedAcl> {
     }
 }
 
-fn classify_acl_error(error: &str) -> Option<(&'static str, &'static str)> {
+pub(crate) fn classify_acl_error(error: &str) -> Option<(&'static str, &'static str)> {
     let normalized = error.to_ascii_lowercase();
 
     if normalized.contains("accesscontrollistnotsupported")
@@ -121,7 +121,7 @@ fn classify_acl_error(error: &str) -> Option<(&'static str, &'static str)> {
     None
 }
 
-fn s3_error_message<E: aws_sdk_s3::error::ProvideErrorMetadata>(
+pub(crate) fn s3_error_message<E: aws_sdk_s3::error::ProvideErrorMetadata>(
     error: &aws_sdk_s3::error::SdkError<E>,
 ) -> String {
     match error.as_service_error() {
@@ -146,15 +146,15 @@ fn map_acl_error<E: aws_sdk_s3::error::ProvideErrorMetadata>(
 }
 
 #[derive(Debug, Default)]
-struct CopyAclHeaders {
-    full_control: Vec<String>,
-    read: Vec<String>,
-    read_acp: Vec<String>,
-    write_acp: Vec<String>,
+pub(crate) struct CopyAclHeaders {
+    pub(crate) full_control: Vec<String>,
+    pub(crate) read: Vec<String>,
+    pub(crate) read_acp: Vec<String>,
+    pub(crate) write_acp: Vec<String>,
 }
 
 impl CopyAclHeaders {
-    fn joined(values: &[String]) -> Option<String> {
+    pub(crate) fn joined(values: &[String]) -> Option<String> {
         (!values.is_empty()).then(|| values.join(", "))
     }
 }
@@ -202,7 +202,7 @@ fn acl_grantee_header(grantee: &aws_sdk_s3::types::Grantee) -> Result<String> {
     }
 }
 
-fn copy_acl_headers(
+pub(crate) fn copy_acl_headers(
     output: &aws_sdk_s3::operation::get_object_acl::GetObjectAclOutput,
 ) -> Result<CopyAclHeaders> {
     let mut headers = CopyAclHeaders::default();
@@ -239,7 +239,7 @@ fn copy_source(bucket_name: &str, key: &str, version_id: Option<&str>) -> String
     }
 }
 
-fn encode_object_tags(tags: &[aws_sdk_s3::types::Tag]) -> Option<String> {
+pub(crate) fn encode_object_tags(tags: &[aws_sdk_s3::types::Tag]) -> Option<String> {
     (!tags.is_empty()).then(|| {
         tags.iter()
             .map(|tag| {

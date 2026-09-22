@@ -51,6 +51,24 @@ const invoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T
 };
 
 // Cache invalidation helper - hooks can subscribe to write-driven invalidation
+export interface SyncPreview {
+  id: string;
+  entries: { key: string; size: number; action: 'New' | 'Changed' | 'Unverified' | 'Unchanged' }[];
+  new_files: number;
+  changed_files: number;
+  unverified_files: number;
+  unchanged_files: number;
+  remote_only_files: number;
+  upload_bytes: number;
+}
+
+export const syncApi = {
+  preview: (localPath: string, bucketName: string, bucketRegion: string | undefined, prefix: string, expectedProfileId: string) =>
+    invoke<SyncPreview>('preview_folder_sync', { localPath, bucketName, bucketRegion, prefix, expectedProfileId }),
+  start: (planId: string, replaceExisting: boolean, expectedProfileId: string) =>
+    invoke<number>('start_folder_sync', { planId, replaceExisting, expectedProfileId }),
+};
+
 type CacheScope = 'objects' | 'buckets';
 const cacheInvalidators = new Set<(scope: CacheScope) => void>();
 

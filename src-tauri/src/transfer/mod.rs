@@ -1,6 +1,7 @@
 pub mod download;
 pub mod manager;
 mod speed;
+pub mod sync;
 
 pub use manager::TransferManager;
 
@@ -33,6 +34,8 @@ pub struct TransferJob {
     pub bucket_region: Option<String>,
     pub key: String,
     pub local_path: String,
+    #[serde(default)]
+    pub sync_source: Option<sync::SyncSource>,
     #[serde(skip)]
     pub download_destination: Option<std::sync::Arc<download::DownloadDestination>>,
     pub transfer_type: TransferType,
@@ -78,6 +81,7 @@ impl TransferJob {
             bucket_region,
             key,
             local_path: local_path.to_string_lossy().to_string(),
+            sync_source: None,
             download_destination: None,
             transfer_type,
             status: TransferStatus::Pending,
