@@ -3,7 +3,7 @@ use crate::credentials::{Profile, ProfileManager};
 use crate::s3::{
     plan_multipart_upload, MultipartUploadGuard, S3ClientManager, MULTIPART_UPLOAD_THRESHOLD,
 };
-use aws_sdk_s3::error::DisplayErrorContext;
+use aws_sdk_s3::error::{DisplayErrorContext, ProvideErrorMetadata};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
@@ -653,7 +653,43 @@ impl TransferManager {
             if let Some(attributes) = &attributes {
                 request = super::sync::apply_put(request, attributes);
             }
-            let send = request.send();
+            let without_acl = if let Some(attributes) = &attributes {
+                let body = ByteStream::from_path(&job.local_path)
+                    .await
+                    .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
+                let request = client
+                    .put_object()
+                    .bucket(&job.bucket)
+                    .key(&job.key)
+                    .set_if_match(expected_etag.map(str::to_owned))
+                    .body(super::speed::track(body, job.progress.clone(), 0));
+                Some(
+                    super::sync::apply_put(request, attributes)
+                        .set_grant_full_control(None)
+                        .set_grant_read(None)
+                        .set_grant_read_acp(None)
+                        .set_grant_write_acp(None),
+                )
+            } else {
+                None
+            };
+            let send = async {
+                let result = request.send().await;
+                if result.as_ref().err().is_some_and(|e| {
+                    e.as_service_error().and_then(|s| s.code())
+                        == Some("AccessControlListNotSupported")
+                }) && attributes.as_ref().is_some_and(|a| a.acl.is_some())
+                {
+                    // Explicit bucket-owner-enforced rejection: retry without ACL grants,
+                    // preserving the same If-Match and every other object attribute.
+                    without_acl
+                        .expect("replacement attributes were checked")
+                        .send()
+                        .await
+                } else {
+                    result
+                }
+            };
             match tokio::time::timeout(timeout, send).await {
                 Ok(Ok(_)) => {}
                 Ok(Err(error)) => {
@@ -700,7 +736,23 @@ impl TransferManager {
         if let Some(attributes) = attributes {
             create_request = super::sync::apply_multipart(create_request, attributes);
         }
-        let create_send = create_request.send();
+        let create_send = async {
+            let result = create_request.clone().send().await;
+            if result.as_ref().err().is_some_and(|e| {
+                e.as_service_error().and_then(|s| s.code()) == Some("AccessControlListNotSupported")
+            }) && attributes.is_some_and(|a| a.acl.is_some())
+            {
+                create_request
+                    .set_grant_full_control(None)
+                    .set_grant_read(None)
+                    .set_grant_read_acp(None)
+                    .set_grant_write_acp(None)
+                    .send()
+                    .await
+            } else {
+                result
+            }
+        };
         let created = match tokio::time::timeout(METADATA_REQUEST_TIMEOUT, create_send).await {
             Ok(Ok(output)) => output,
             Ok(Err(error)) => {
@@ -1164,11 +1216,22 @@ mod tests {
         let acl = "<AccessControlPolicy><Owner><ID>owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>owner</ID></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>";
         let tags =
             "<Tagging><TagSet><Tag><Key>team</Key><Value>docs</Value></Tag></TagSet></Tagging>";
-        for status in [200, 412] {
-            let (client, server) = scripted_client(vec![
+        for (status, disabled_acl) in [(200, false), (412, false), (200, true)] {
+            let mut responses = vec![
                 "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nETag: \"old\"\r\nContent-Type: text/plain\r\nCache-Control: max-age=60\r\nx-amz-meta-owner: original\r\nConnection: close\r\n\r\n".into(),
                 response(200,"",acl), response(200,"",tags), response(status,"", if status == 412 { "<Error><Code>PreconditionFailed</Code></Error>" } else { "" })
-            ]).await;
+            ];
+            if disabled_acl {
+                responses.insert(
+                    3,
+                    response(
+                        400,
+                        "",
+                        "<Error><Code>AccessControlListNotSupported</Code></Error>",
+                    ),
+                );
+            }
+            let (client, server) = scripted_client(responses).await;
             let manager = TransferManager::new();
             assert_eq!(
                 manager
@@ -1187,10 +1250,13 @@ mod tests {
                 "cache-control: max-age=60",
                 "x-amz-meta-owner: original",
                 "x-amz-tagging: team=docs",
-                "x-amz-grant-full-control: id=\"owner\"",
             ] {
                 assert!(put.contains(header), "missing {header}");
             }
+            assert_eq!(
+                put.contains("x-amz-grant-full-control: id=\"owner\""),
+                !disabled_acl
+            );
             // AWS SDK may wrap the payload with aws-chunked checksum trailers.
             assert!(put.contains("hello"));
         }

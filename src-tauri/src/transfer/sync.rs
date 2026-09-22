@@ -206,6 +206,32 @@ pub struct Attributes {
     pub tags: Option<String>,
 }
 
+fn permission_headers(
+    output: &aws_sdk_s3::operation::get_object_acl::GetObjectAclOutput,
+) -> Result<Option<CopyAclHeaders>> {
+    // MinIO's documented dummy ACL has exactly one anonymous CanonicalUser
+    // FULL_CONTROL grant and an empty owner. It carries no per-object grants.
+    // Do not relax parsing of any real or additional grant.
+    // https://github.com/minio/minio/blob/master/cmd/acl-handlers.go
+    let empty_owner = output.owner().is_none_or(|o| {
+        o.id().unwrap_or("").is_empty() && o.display_name().unwrap_or("").is_empty()
+    });
+    let placeholder = output.grants().len() == 1
+        && output.grants()[0].permission() == Some(&aws_sdk_s3::types::Permission::FullControl)
+        && output.grants()[0].grantee().is_some_and(|g| {
+            g.r#type() == &aws_sdk_s3::types::Type::CanonicalUser
+                && g.id().unwrap_or("").is_empty()
+                && g.display_name().unwrap_or("").is_empty()
+                && g.uri().is_none()
+                && g.email_address().is_none()
+        });
+    if empty_owner && placeholder {
+        Ok(None)
+    } else {
+        copy_acl_headers(output).map(Some)
+    }
+}
+
 pub async fn attributes(
     client: &Client,
     bucket: &str,
@@ -238,7 +264,7 @@ pub async fn attributes(
             .send()
             .await
         {
-            Ok(a) => Some(copy_acl_headers(&a)?),
+            Ok(a) => permission_headers(&a)?,
             Err(e)
                 if matches!(
                     classify_acl_error(&s3_error_message(&e)),
@@ -335,6 +361,44 @@ pub fn apply_multipart(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_exact_minio_placeholder_acl_is_omitted() {
+        use aws_sdk_s3::{
+            operation::get_object_acl::GetObjectAclOutput,
+            types::{Grant, Grantee, Permission, Type},
+        };
+        let grant = Grant::builder()
+            .permission(Permission::FullControl)
+            .grantee(
+                Grantee::builder()
+                    .r#type(Type::CanonicalUser)
+                    .build()
+                    .unwrap(),
+            )
+            .build();
+        let placeholder = GetObjectAclOutput::builder().grants(grant.clone()).build();
+        assert!(permission_headers(&placeholder).unwrap().is_none());
+        let additional = GetObjectAclOutput::builder()
+            .grants(grant.clone())
+            .grants(grant)
+            .build();
+        assert!(permission_headers(&additional).is_err());
+        let real = GetObjectAclOutput::builder()
+            .grants(
+                Grant::builder()
+                    .permission(Permission::FullControl)
+                    .grantee(
+                        Grantee::builder()
+                            .r#type(Type::CanonicalUser)
+                            .id("owner")
+                            .build()
+                            .unwrap(),
+                    )
+                    .build(),
+            )
+            .build();
+        assert!(permission_headers(&real).unwrap().is_some());
+    }
     #[test]
     fn maps_contents_not_parent_and_snapshots_exact_bytes() {
         let root = tempfile::tempdir().unwrap();
