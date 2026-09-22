@@ -58,6 +58,8 @@ import { useClipboardStore } from '@/store/clipboardStore';
 import { useProfileStore } from '@/store/profileStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
 import FolderSyncDialog from '@/components/dialogs/FolderSyncDialog';
+import CrossProfileCopyDialog from '@/components/dialogs/CrossProfileCopyDialog';
+import type { ClipboardItem } from '@/store/clipboardStore';
 import PermissionsDialog from '@/components/dialogs/PermissionsDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
 import { canObjectBeEdited, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
@@ -281,6 +283,8 @@ function BucketContent() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMenuAnchor, setUploadMenuAnchor] = useState<null | HTMLElement>(null);
   const [syncDestination, setSyncDestination] = useState<string | null>(null);
+  const [crossCopy, setCrossCopy] = useState<{ viewKey: string; items: ClipboardItem[] } | null>(null);
+  useEffect(() => { setCrossCopy(null); }, [viewKey]);
   useEffect(() => { setSyncDestination(null); }, [viewKey]);
 
   // Create Folder State
@@ -510,6 +514,10 @@ function BucketContent() {
   const handlePaste = async () => {
     if (!bucketName || clipboardItems.length === 0) return;
     if (!activeProfileId || clipboardItems.some(item => item.profileId !== activeProfileId)) {
+      if (activeProfileId && clipboardMode === 'copy' && clipboardItems.every(item => !!item.profileId && item.profileId === clipboardItems[0].profileId && item.profileId !== activeProfileId)) {
+        setCrossCopy({ viewKey, items: [...clipboardItems] });
+        return;
+      }
       clearClipboard();
       displayError('The clipboard belongs to another profile. Copy the items again.');
       return;
@@ -1577,6 +1585,7 @@ function BucketContent() {
 
       {/* Properties Dialog */}
       {activeProfileId && syncDestination === `${activeProfileId}:${bucketName}:${prefix}` && <FolderSyncDialog key={syncDestination} bucket={bucketName} region={bucketRegion} prefix={prefix} profileId={activeProfileId} onClose={() => setSyncDestination(null)} />}
+      {activeProfileId && crossCopy?.viewKey === viewKey && <CrossProfileCopyDialog key={viewKey} items={crossCopy.items} bucket={bucketName} region={bucketRegion} prefix={prefix} profileId={activeProfileId} onClose={() => setCrossCopy(null)} />}
       <PropertiesDialog
         open={propertiesOpen}
         onClose={() => setPropertiesOpen(false)}

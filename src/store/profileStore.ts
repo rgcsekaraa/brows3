@@ -30,7 +30,8 @@ export const useProfileStore = create<ProfileState>()((set) => ({
   
   setActiveProfileId: (id) => {
     const clipboard = useClipboardStore.getState();
-    if (clipboard.items.some(item => item.profileId !== id)) clipboard.clear();
+    // Copy survives profile switches; cut must never become a cross-profile move.
+    if (!id || (clipboard.mode === 'move' && clipboard.items.some(item => item.profileId !== id))) clipboard.clear();
     set({ activeProfileId: id });
   },
   
@@ -42,10 +43,14 @@ export const useProfileStore = create<ProfileState>()((set) => ({
     profiles: state.profiles.map((p) => p.id === id ? profile : p)
   })),
   
-  removeProfile: (id) => set((state) => ({
+  removeProfile: (id) => {
+    const clipboard = useClipboardStore.getState();
+    if (clipboard.items.some(item => item.profileId === id)) clipboard.clear();
+    set((state) => ({
     profiles: state.profiles.filter((p) => p.id !== id),
     activeProfileId: state.activeProfileId === id ? null : state.activeProfileId
-  })),
+    }));
+  },
   
   setLoading: (isLoading) => set({ isLoading }),
   

@@ -1,5 +1,6 @@
 pub mod download;
 pub mod manager;
+pub mod remote;
 mod speed;
 pub mod sync;
 
@@ -36,6 +37,8 @@ pub struct TransferJob {
     pub local_path: String,
     #[serde(default)]
     pub sync_source: Option<sync::SyncSource>,
+    #[serde(default)]
+    pub remote_source: Option<remote::RemoteSource>,
     #[serde(skip)]
     pub download_destination: Option<std::sync::Arc<download::DownloadDestination>>,
     pub transfer_type: TransferType,
@@ -82,6 +85,7 @@ impl TransferJob {
             key,
             local_path: local_path.to_string_lossy().to_string(),
             sync_source: None,
+            remote_source: None,
             download_destination: None,
             transfer_type,
             status: TransferStatus::Pending,

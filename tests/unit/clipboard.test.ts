@@ -15,15 +15,31 @@ beforeEach(() => {
   useProfileStore.getState().setActiveProfileId('a');
 });
 
-test('copy and cut retain their profile and clear when switching profiles', () => {
+test('copy survives switching profiles but cut is cleared', () => {
   for (const action of ['copy', 'cut'] as const) {
     useClipboardStore.getState()[action]([item]);
     useProfileStore.getState().setActiveProfileId('a');
     expect(useClipboardStore.getState().items).toEqual([item]);
     useProfileStore.getState().setActiveProfileId('b');
-    expect(useClipboardStore.getState().items).toEqual([]);
+    expect(useClipboardStore.getState().items).toEqual(action === 'copy' ? [item] : []);
     useProfileStore.getState().setActiveProfileId('a');
   }
+});
+
+test('deleting the source profile or clearing the active profile clears copies', () => {
+  useClipboardStore.getState().copy([item]);
+  useProfileStore.getState().removeProfile('a');
+  expect(useClipboardStore.getState().items).toEqual([]);
+  useClipboardStore.getState().copy([item]);
+  useProfileStore.getState().setActiveProfileId(null);
+  expect(useClipboardStore.getState().items).toEqual([]);
+});
+
+test('cross-profile copy sends both identities and rejects a stale destination', async () => {
+  useProfileStore.getState().setActiveProfileId('b');
+  await operationsApi.copyBetweenProfiles([item], 'destination', 'auto', 'copies/', 'b');
+  expect(invoke).toHaveBeenLastCalledWith('copy_between_profiles', { items: [item], destinationBucket: 'destination', destinationRegion: 'auto', destinationPrefix: 'copies/', expectedProfileId: 'b' });
+  await expect(operationsApi.copyBetweenProfiles([item], 'destination', 'auto', '', 'a')).rejects.toThrow('destination profile changed');
 });
 
 test('legacy clipboard entries without a profile are discarded on hydration', async () => {
