@@ -75,6 +75,9 @@ export class DesktopBackend {
         this.etag = '"v2"';
         return this.etag;
       case 'get_presigned_url': return `https://media.brows3.test/${args.key}`;
+      case 'copy_between_profiles':
+        if (args.expectedProfileId !== this.activeProfile) throw new Error('The destination profile changed.');
+        return (args.items as unknown[]).length;
       case 'copy_object':
       case 'move_object': {
         if (args.expectedProfileId !== this.activeProfile) throw new Error('The active profile changed.');

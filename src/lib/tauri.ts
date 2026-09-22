@@ -315,6 +315,12 @@ export const objectApi = {
 };
 
 export const operationsApi = {
+  async copyBetweenProfiles(items: import('@/store/clipboardStore').ClipboardItem[], destinationBucket: string, destinationRegion: string, destinationPrefix: string, expectedProfileId: string): Promise<number> {
+    if (expectedProfileId !== useProfileStore.getState().activeProfileId) {
+      throw new Error('The destination profile changed. Paste again.');
+    }
+    return invoke<number>('copy_between_profiles', { items, destinationBucket, destinationRegion, destinationPrefix, expectedProfileId });
+  },
   async putObject(bucketName: string, bucketRegion: string | undefined, key: string, localPath?: string): Promise<void> {
     await invoke<void>('put_object', { bucketName, bucketRegion, key, localPath });
     invalidateCache(); // Auto-refresh after upload

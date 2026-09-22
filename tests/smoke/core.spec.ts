@@ -43,7 +43,7 @@ test('deep search selection is cleared when changing profiles', async ({ page, b
   await expect.poll(() => backend.activeProfile).toBe('b');
   await expect(result).toHaveCount(0);
   await expect(page.getByText('1 selected', { exact: true })).toHaveCount(0);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('brows3-clipboard') || '{}').state.items)).toEqual([]);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('brows3-clipboard') || '{}').state.items)).toMatchObject([{ profileId: 'a', key: 'nested/match.txt' }]);
 });
 
 test('copy and paste through a selected row retain the source profile', async ({ page, backend }) => {

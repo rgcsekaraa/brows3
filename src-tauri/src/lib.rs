@@ -316,6 +316,7 @@ pub fn run() {
             // Transfer commands
             commands::sync::preview_folder_sync,
             commands::sync::start_folder_sync,
+            commands::cross_copy::copy_between_profiles,
             transfer_cmd::queue_upload,
             transfer_cmd::queue_download,
             transfer_cmd::list_transfers,

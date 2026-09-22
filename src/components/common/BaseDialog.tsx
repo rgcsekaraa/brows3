@@ -20,6 +20,7 @@ import { Close as CloseIcon } from '@mui/icons-material';
 export interface BaseDialogProps {
   open: boolean;
   onClose: () => void;
+  closeDisabled?: boolean;
   title: React.ReactNode;
   children: React.ReactNode;
   actions?: React.ReactNode;
@@ -32,6 +33,7 @@ export interface BaseDialogProps {
 export const BaseDialog: React.FC<BaseDialogProps> = ({
   open,
   onClose,
+  closeDisabled = false,
   title,
   children,
   actions,
@@ -46,7 +48,7 @@ export const BaseDialog: React.FC<BaseDialogProps> = ({
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={closeDisabled ? undefined : onClose}
       maxWidth={maxWidth}
       fullWidth={fullWidth}
       TransitionProps={{ unmountOnExit: true }}
@@ -98,6 +100,7 @@ export const BaseDialog: React.FC<BaseDialogProps> = ({
           </Typography>
           <IconButton
             aria-label="close"
+            disabled={closeDisabled}
             onClick={onClose}
             sx={{
               color: (theme) => theme.palette.grey[500],
