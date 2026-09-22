@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Saved local-folder-to-S3 sync jobs with manual runs or in-app interval schedules, explicit future-upload approval, filters, saved bandwidth limits, pause/resume, confirmed cancellation and deletion, and completion/failure notifications.
+- Durable job recovery that pauses interrupted, failed, or missed-while-closed runs, prevents overlapping runs, and prevents multiple Brows3 instances from executing the same schedules. Jobs always compare fresh content and retain the existing guarded upload behavior.
+
 ## [0.2.46] - 2026-09-21
 
 ### Added

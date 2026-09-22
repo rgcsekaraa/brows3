@@ -1,6 +1,6 @@
 import { test as base, expect } from '@playwright/test';
 import packageJson from '../../package.json';
-import type { Profile, S3Object, TransferJob } from '../../src/lib/tauri';
+import type { Profile, S3Object, TransferJob, SavedJob, SavedJobConfig } from '../../src/lib/tauri';
 
 type Args = Record<string, unknown>;
 const object = (key: string, size = 20): S3Object => ({ key, size, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' });
@@ -18,6 +18,8 @@ export class DesktopBackend {
   calls: { command: string; args: Args }[] = [];
   unexpected: string[] = [];
   transfers: TransferJob[] = [];
+  savedJobs: SavedJob[] = [];
+  jobError = '';
   content = 'original text';
   contentType = 'text/plain';
   etag = '"v1"';
@@ -88,6 +90,33 @@ export class DesktopBackend {
       }
       case 'delete_objects': this.objects = this.objects.filter(item => !(args.keys as string[]).includes(item.key)); return null;
       case 'list_transfers': return this.transfers;
+      case 'list_saved_jobs': return this.savedJobs;
+      case 'save_sync_job': {
+        if (this.jobError) throw new Error(this.jobError);
+        if (!args.approved) throw new Error('Approval required');
+        const config = args.config as SavedJobConfig;
+        const job: SavedJob = { id: `saved-${this.savedJobs.length}`, config, enabled: !!config.interval_minutes, next_run: config.interval_minutes ? Date.now() / 1000 + config.interval_minutes * 60 : null, last_run: null };
+        this.savedJobs.push(job); return job;
+      }
+      case 'run_saved_job': {
+        if (this.jobError) throw new Error(this.jobError);
+        const job = this.savedJobs.find(job => job.id === args.id)!;
+        job.last_run = { id: 'run', status: 'Preparing', started_at: Date.now() / 1000, finished_at: null, message: 'Scanning and comparing fresh content.', transfer_ids: [], cancel_requested: false };
+        job.next_run = null; return null;
+      }
+      case 'cancel_saved_job': {
+        const job = this.savedJobs.find(job => job.id === args.id)!;
+        job.enabled = false; job.next_run = null;
+        job.last_run = { ...job.last_run!, finished_at: Date.now() / 1000, status: 'Cancelled', message: 'Schedule paused.', cancel_requested: true };
+        return null;
+      }
+      case 'set_saved_job_enabled': {
+        const job = this.savedJobs.find(job => job.id === args.id)!;
+        job.enabled = !!args.enabled; job.next_run = job.enabled ? Date.now() / 1000 + 900 : null; return null;
+      }
+      case 'delete_saved_job':
+        if (this.jobError) throw new Error(this.jobError);
+        this.savedJobs = this.savedJobs.filter(job => job.id !== args.id); return null;
       case 'list_object_versions': return {
         versioning: 'Enabled', next: null, versions: [
           { version_id: 'current-delete-marker', is_latest: true, is_delete_marker: true, size: null, modified: '2026-01-03T00:00:00Z', etag: null },

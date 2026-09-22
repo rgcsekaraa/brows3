@@ -140,7 +140,7 @@ async fn compare(
     compare_options(client, bucket_name, prefix, local, &SyncOptions::default()).await
 }
 
-async fn compare_options(
+pub(crate) async fn compare_options(
     client: &aws_sdk_s3::Client,
     bucket_name: &str,
     prefix: &str,
