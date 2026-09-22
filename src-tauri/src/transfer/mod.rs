@@ -1,3 +1,4 @@
+pub mod controls;
 pub mod download;
 pub mod manager;
 pub mod remote;
@@ -41,6 +42,8 @@ pub struct TransferJob {
     pub remote_source: Option<remote::RemoteSource>,
     #[serde(default)]
     pub restore_guard: Option<crate::s3::versions::RestoreGuard>,
+    #[serde(default)]
+    pub bandwidth_limit: Option<u64>,
     #[serde(skip)]
     pub download_destination: Option<std::sync::Arc<download::DownloadDestination>>,
     pub transfer_type: TransferType,
@@ -98,6 +101,7 @@ impl TransferJob {
             sync_source: None,
             remote_source: None,
             restore_guard: None,
+            bandwidth_limit: None,
             download_destination: None,
             transfer_type,
             status: TransferStatus::Pending,

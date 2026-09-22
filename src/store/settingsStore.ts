@@ -8,6 +8,8 @@ export const MAX_TEXT_PREVIEW_SIZE_MB = 100;
 interface SettingsState {
   defaultRegion: string;
   maxConcurrentTransfers: number;
+  transferBandwidthKiB: number;
+  setTransferBandwidthKiB: (value: number) => void;
   maxTextPreviewSizeMb: number;
   autoRefreshOnFocus: boolean;
   setDefaultRegion: (region: string) => void;
@@ -21,6 +23,8 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       defaultRegion: 'us-east-1',
       maxConcurrentTransfers: 5,
+      transferBandwidthKiB: 0,
+      setTransferBandwidthKiB: (value) => { if (Number.isInteger(value) && (value === 0 || (value >= 64 && value <= 1048576))) set({ transferBandwidthKiB: value }); },
       maxTextPreviewSizeMb: 2,
       autoRefreshOnFocus: false, // Disabled by default - can cause freezing on Ubuntu
       setDefaultRegion: (defaultRegion) => set({ defaultRegion }),

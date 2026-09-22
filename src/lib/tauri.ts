@@ -53,7 +53,9 @@ const invoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T
 // Cache invalidation helper - hooks can subscribe to write-driven invalidation
 export interface SyncPreview {
   id: string;
-  entries: { key: string; size: number; action: 'New' | 'Changed' | 'Unverified' | 'Unchanged' }[];
+  entries: { key: string; size: number; action: 'New' | 'Changed' | 'Unverified' | 'Unchanged' | 'Filtered' | 'Skipped' }[];
+  filtered_files?: number;
+  skipped_files?: number;
   new_files: number;
   changed_files: number;
   unverified_files: number;
@@ -63,8 +65,8 @@ export interface SyncPreview {
 }
 
 export const syncApi = {
-  preview: (localPath: string, bucketName: string, bucketRegion: string | undefined, prefix: string, expectedProfileId: string) =>
-    invoke<SyncPreview>('preview_folder_sync', { localPath, bucketName, bucketRegion, prefix, expectedProfileId }),
+  preview: (localPath: string, bucketName: string, bucketRegion: string | undefined, prefix: string, expectedProfileId: string, options?: { include: string[]; exclude: string[]; skip_existing: boolean }) =>
+    invoke<SyncPreview>('preview_folder_sync', { localPath, bucketName, bucketRegion, prefix, expectedProfileId, options }),
   start: (planId: string, replaceExisting: boolean, expectedProfileId: string) =>
     invoke<number>('start_folder_sync', { planId, replaceExisting, expectedProfileId }),
 };
@@ -480,6 +482,9 @@ export interface TransferEvent {
 }
 
 export const transferApi = {
+  async setBandwidth(bytesPerSecond: number): Promise<void> {
+    return invoke<void>('set_transfer_bandwidth', { bytesPerSecond });
+  },
   async queueUpload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<string> {
     return invoke<string>('queue_upload', { bucketName, bucketRegion, key, localPath, totalBytes, expectedProfileId });
   },

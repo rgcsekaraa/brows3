@@ -124,7 +124,10 @@ pub async fn stage(
                 "Source exceeded its declared size.".into(),
             ));
         }
-        file.write_all(&chunk).await?;
+        for bytes in chunk.chunks(16 * 1024) {
+            manager.pace_download(job, bytes.len() as u64).await?;
+            file.write_all(bytes).await?;
+        }
         job.progress.lock().unwrap().position = copied;
     }
     if copied != source.size {

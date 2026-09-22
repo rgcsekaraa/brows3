@@ -329,6 +329,7 @@ pub fn run() {
             transfer_cmd::remove_transfer,
             transfer_cmd::clear_completed_transfers,
             transfer_cmd::set_transfer_concurrency,
+            transfer_cmd::set_transfer_bandwidth,
             get_log_file_info,
         ])
         .run(tauri::generate_context!())
