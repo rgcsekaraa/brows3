@@ -29,6 +29,11 @@ test('closing a sync preview does not enqueue uploads', async ({ page, backend }
   await page.getByRole('button', { name: 'Choose folder' }).click();
   await page.getByRole('button', { name: 'Preview changes' }).click();
   await expect(page.getByRole('table', { name: 'Sync preview' })).toBeVisible();
+  // WebKit can move focus to BODY when Preview is disabled during the request.
+  // MUI restores that focus asynchronously; keyboard input must target the modal.
+  await expect.poll(() => page.getByRole('dialog').evaluate(el =>
+    el.closest('.MuiModal-root')?.contains(document.activeElement) ?? false
+  )).toBe(true);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(backend.calls.filter(c => c.command === 'start_folder_sync')).toHaveLength(0);
