@@ -22,3 +22,13 @@ Select files or folders, Copy, switch to another profile, open the destination f
 Automated tests cover key mapping, source identity/size validation, independent endpoints, portable metadata, create-only requests, source changes, cancellation, temporary-file cleanup, restart/retry safety, confirmation and keyboard clipboard navigation. The opt-in `cross_profile_real_endpoints_round_trip_and_conflicts` test uses two disposable S3 endpoints with different credentials, covering zero-byte, small and multipart copies and destination/source conflicts. It must never target production buckets.
 
 AWS documents [conditional destination writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html). Provider capabilities differ; see [Cloudflare R2 compatibility](https://developers.cloudflare.com/r2/api/s3/api/). No universal provider or network-failure guarantee is implied.
+
+## UI implementation notes
+
+The confirmation extends the existing MUI theme and `BaseDialog`, retaining its full-width, small dialog layout and footer. Source profile and destination profile plus exact S3 path appear first, followed by the selection count, up to five object paths, and any remaining count. Long names and paths wrap. Transfer safeguards and metadata limitations remain visible before confirmation. Both footer buttons use compact sizing and fully rounded corners (`999px`); Cancel uses `text.primary`, and Copy to destination is the contained primary action.
+
+While preparation is busy, a progress indicator and status message explain source checking and queueing. Both actions, the close icon, Escape, and backdrop dismissal are disabled through `BaseDialog.closeDisabled`; a pending guard prevents duplicate submissions. Preparation errors appear inline and allow retry. Missing source or destination profiles show recovery guidance and disable copying. Successful preparation closes the dialog and reports the queued count, or that selected folders contained no objects; ongoing progress and cancellation live in Uploads.
+
+The bucket page captures the clipboard selection with a destination view key containing profile, bucket, region, and prefix. It mounts the dialog only while that key matches the current destination and clears the confirmation when the destination changes, preventing stale confirmation from targeting a newly opened location.
+
+The finish review returned **ship** after resolving its sole material finding: Cancel text contrast, corrected with `text.primary`. Review covered light-theme captures at 1440px and 800px; those development-only captures are not distributed with the repository. These notes describe this surface only; the existing application design system remains the visual authority.
