@@ -18,7 +18,7 @@ async function imageBox(image: Locator) {
 }
 
 test.beforeEach(async ({ page, backend }) => {
-  backend.objects.push({ key: 'photo.svg', size: 2048, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' });
+  backend.objects = [{ key: 'photo.svg', size: 2048, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' }];
   await page.route('https://media.brows3.test/photo.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: photo }));
 });
 
@@ -161,14 +161,14 @@ test('image sequence follows listing order and supports buttons and keyboard wit
   }
   await openImage(page);
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByLabel('Image position')).toHaveText('3 / 3');
-  await expect(dialog.getByRole('button', { name: 'Next image', exact: true })).toBeDisabled();
-  await dialog.getByRole('button', { name: 'Previous image', exact: true }).click();
+  await expect(dialog.getByLabel('Preview position')).toHaveText('3 / 3');
+  await expect(dialog.getByRole('button', { name: 'Next file', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Previous file', exact: true }).click();
   await expect(dialog).toHaveAccessibleName('beta.svg');
   await expect(dialog.getByRole('img', { name: 'beta.svg' })).toBeVisible();
   await page.keyboard.press('ArrowLeft');
   await expect(dialog).toHaveAccessibleName('alpha.svg');
-  await expect(dialog.getByRole('button', { name: 'Previous image', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Previous file', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Actual size', exact: true }).click();
   const image = dialog.getByRole('img', { name: 'alpha.svg' });
   const original = await imageBox(image);
@@ -179,7 +179,7 @@ test('image sequence follows listing order and supports buttons and keyboard wit
   await expect(dialog).toHaveAccessibleName('beta.svg');
   await expect(dialog.getByRole('button', { name: 'Fit to screen', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.screenshot({ path: testInfo.outputPath('sequence-controls.png') });
-  await dialog.getByRole('button', { name: 'Next image', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Next file', exact: true }).click();
   await expect(dialog).toHaveAccessibleName('photo.svg');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('row').filter({ hasText: 'photo.svg' }).getByTitle('Preview', { exact: true })).toBeFocused();
@@ -189,8 +189,8 @@ test('single-image controls are compact, round, and omit unavailable navigation'
   const dialog = await openImage(page);
   const controls = dialog.getByRole('group', { name: 'Image zoom controls' });
   await expect(controls).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Next image', exact: true })).toHaveCount(0);
-  await expect(dialog.getByRole('button', { name: 'Previous image', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Next file', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Previous file', exact: true })).toHaveCount(0);
   await expect(controls).toHaveCSS('border-radius', '999px');
   await expect(controls.getByRole('button', { name: 'Zoom in', exact: true })).toHaveCSS('width', '32px');
   await expect(controls.getByRole('button', { name: 'Zoom in', exact: true })).toHaveCSS('border-radius', '50%');

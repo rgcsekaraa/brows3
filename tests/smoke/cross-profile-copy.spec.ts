@@ -8,7 +8,10 @@ test('cross-profile paste requires confirmation and retains both profile identit
   await page.getByRole('combobox').filter({ hasText: 'Development' }).click();
   await page.getByRole('option', { name: /Production/ }).click();
   await expect.poll(() => backend.activeProfile).toBe('b');
-  await page.goto('/bucket?name=demo-bucket&region=us-east-1');
+  // Follow the completed profile-switch route instead of aborting its chunk load.
+  await expect(page).toHaveURL(/\/$/);
+  await page.getByPlaceholder('s3://bucket/prefix/').fill('s3://demo-bucket/');
+  await page.getByPlaceholder('s3://bucket/prefix/').press('Enter');
   await expect(page.getByRole('checkbox', { name: 'Select production.txt', exact: true })).toBeVisible();
   await page.locator('body').press('Control+v');
   const dialog = page.getByRole('dialog');

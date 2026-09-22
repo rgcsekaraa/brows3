@@ -64,7 +64,8 @@ import VersionHistoryDialog from '@/components/dialogs/VersionHistoryDialog';
 import type { ClipboardItem } from '@/store/clipboardStore';
 import PermissionsDialog from '@/components/dialogs/PermissionsDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
-import { canObjectBeEdited, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
+import { canObjectBeEdited, getObjectName } from '@/lib/objectCapabilities';
+import { usePreviewNavigation } from '@/hooks/usePreviewNavigation';
 import PresignedUrlDialog from '@/components/dialogs/PresignedUrlDialog';
 import { VirtualizedObjectTable } from '@/components/common/VirtualizedObjectTable';
 import { toast } from '@/store/toastStore';
@@ -313,18 +314,15 @@ function BucketContent() {
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [previewSize, setPreviewSize] = useState<number | undefined>(undefined);
   const [startInEditMode, setStartInEditMode] = useState(false);
+  const [previewScope, setPreviewScope] = useState('');
 
-  const imageSequence = useMemo(() => {
-    const images = (displayData?.objects || []).filter(object => getObjectKind(object.key) === 'image');
-    return images.sort((a, b) => {
-      let comparison = 0;
-      if (sortField === 'name') comparison = getObjectName(a.key).localeCompare(getObjectName(b.key));
-      else if (sortField === 'size') comparison = a.size - b.size;
-      else if (sortField === 'date') comparison = (a.last_modified ? new Date(a.last_modified).getTime() : 0) - (b.last_modified ? new Date(b.last_modified).getTime() : 0);
-      else comparison = (a.storage_class || 'STANDARD').localeCompare(b.storage_class || 'STANDARD');
-      return sortDirection === 'asc' ? comparison : -comparison;
-    }).map(object => object.key);
-  }, [displayData, sortField, sortDirection]);
+  const previewNavigation = usePreviewNavigation({
+    objects: displayData?.objects || [], field: sortField, direction: sortDirection,
+    context: JSON.stringify([viewKey, sortField, sortDirection, deferredSearchQuery, isDeepSearch]),
+    objectKey: previewKey, open: previewOpen && previewScope === viewKey,
+    hasMore: !isDeepSearch && hasMore, query: isDeepSearch ? '' : deferredSearchQuery.trim(), loadMore,
+    onNavigate: object => { setPreviewKey(object.key); setPreviewSize(object.size); setStartInEditMode(false); },
+  });
 
   // Presigned URL Dialog State
   const [presignedUrlOpen, setPresignedUrlOpen] = useState(false);
@@ -1004,7 +1002,7 @@ function BucketContent() {
 
   // Show error state if bucket failed to load
   // Show error state if bucket failed to load
-  if (initialError && !isLoading) {
+  if (initialError && !isLoading && !data) {
     // Check if this might be a prefix-restricted access issue
     const isAccessDenied = initialError.toLowerCase().includes('access') ||
                            initialError.toLowerCase().includes('denied') ||
@@ -1333,12 +1331,14 @@ function BucketContent() {
           setDeleteConfirmOpen(true);
         }}
         onPreview={(key, size) => {
+          setPreviewScope(viewKey);
           setStartInEditMode(false);
           setPreviewKey(key);
           setPreviewSize(size);
           setPreviewOpen(true);
         }}
         onEdit={(key) => {
+          setPreviewScope(viewKey);
           setStartInEditMode(true);
           setPreviewKey(key);
           setPreviewSize(currentObjectSizeMap.get(key));
@@ -1369,6 +1369,7 @@ function BucketContent() {
           <MenuItem onClick={() => {
             if (selectedObject) {
               setStartInEditMode(true);
+              setPreviewScope(viewKey);
               setPreviewKey(selectedObject.key);
               setPreviewSize(currentObjectSizeMap.get(selectedObject.key));
               setPreviewOpen(true);
@@ -1616,18 +1617,18 @@ function BucketContent() {
 
       {/* Preview/Edit Dialog */}
       <ObjectPreviewDialog
-        open={previewOpen}
+        key={`preview:${viewKey}`}
+        open={previewOpen && previewScope === viewKey}
         onClose={handlePreviewClose}
         bucketName={bucketName}
         bucketRegion={bucketRegion}
         objectKey={previewKey || ''}
         objectSize={previewSize}
-        imageSequence={imageSequence}
-        onNavigateImage={key => {
-          setPreviewKey(key);
-          setPreviewSize(currentObjectSizeMap.get(key));
-          setStartInEditMode(false);
-        }}
+        navigation={{ index: previewNavigation.index, total: previewNavigation.total, busy: previewNavigation.busy, error: previewNavigation.error,
+          onPrevious: previewNavigation.previous ? () => void previewNavigation.navigate('prev') : undefined,
+          onNext: previewNavigation.next ? () => void previewNavigation.navigate('next') : undefined }}
+        isSelected={!!previewKey && selectedKeys.has(previewKey)}
+        onToggleSelect={previewKey && previewScope === viewKey ? () => handleSelect(previewKey, !selectedKeys.has(previewKey)) : undefined}
         onSave={() => refresh()}
         startInEditMode={startInEditMode}
       />

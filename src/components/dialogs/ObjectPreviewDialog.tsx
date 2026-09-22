@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   Button,
   Box,
@@ -14,10 +14,11 @@ import {
   ContentCopy as CopyIcon,
 } from '@mui/icons-material';
 import { copyToClipboard, objectApi } from '@/lib/tauri';
-import Editor, { OnMount } from '@monaco-editor/react';
+import Editor from '@monaco-editor/react';
 import { toast } from '@/store/toastStore';
 import { BaseDialog } from '../common/BaseDialog';
 import ImagePreviewViewer from './ImagePreviewViewer';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { getEditorLanguage, getObjectExtension, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
 import { useSettingsStore } from '@/store/settingsStore';
 
@@ -32,6 +33,9 @@ interface ObjectPreviewDialogProps {
   startInEditMode?: boolean;
   imageSequence?: string[];
   onNavigateImage?: (key: string) => void;
+  navigation?: { index: number; total: number; busy: boolean; error: string; onPrevious?: () => void; onNext?: () => void };
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export default function ObjectPreviewDialog({
@@ -45,6 +49,9 @@ export default function ObjectPreviewDialog({
   startInEditMode = false,
   imageSequence = [],
   onNavigateImage,
+  navigation,
+  isSelected = false,
+  onToggleSelect,
 }: ObjectPreviewDialogProps) {
   const theme = useTheme();
   const maxTextPreviewSizeMb = useSettingsStore((state) => state.maxTextPreviewSizeMb);
@@ -60,12 +67,16 @@ export default function ObjectPreviewDialog({
   const [reloadAttempt, setReloadAttempt] = useState(0);
   const [loadedObjectKey, setLoadedObjectKey] = useState('');
   const [isPdfLoading, setIsPdfLoading] = useState(false);
-  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
-  const initialVersionIdRef = useRef<number>(0);
-  const [currentVersionId, setCurrentVersionId] = useState<number>(0);
+  const [discardAction, setDiscardAction] = useState<'close' | 'cancel' | null>(null);
+  const previewRoot = useRef<HTMLDivElement>(null);
   const loadRequestIdRef = useRef(0);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pdfLoadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    return () => { queueMicrotask(() => { if (opener?.isConnected) opener.focus({ preventScroll: true }); }); };
+  }, [open]);
 
   const filename = getObjectName(objectKey);
   const ext = getObjectExtension(filename);
@@ -76,12 +87,9 @@ export default function ObjectPreviewDialog({
   const isPdfFile = objectKind === 'pdf';
   const isText = objectKind === 'text';
   
-  // Compute whether content has actually changed from original
-  // Uses Monaco's version ID for accurate undo/redo tracking when available
-  // Version ID comparison handles undo correctly - when version matches initial, no changes
-  const hasChanges = editorRef.current 
-    ? currentVersionId !== initialVersionIdRef.current 
-    : editedContent !== content;
+  // Content is authoritative across undo, save, and controlled discard resets.
+  // Monaco assigns a new version even when restoring the original text.
+  const hasChanges = editedContent !== content;
 
   useEffect(() => {
     if (!open || !objectKey) return;
@@ -98,9 +106,6 @@ export default function ObjectPreviewDialog({
       setContentType(null);
       setPresignedUrl(null);
       setIsEditing(startInEditMode); // Reset edit mode based on prop
-      // Reset version tracking for fresh content
-      initialVersionIdRef.current = 0;
-      setCurrentVersionId(0);
       if (loadTimeoutRef.current) {
         clearTimeout(loadTimeoutRef.current);
         loadTimeoutRef.current = null;
@@ -134,6 +139,8 @@ export default function ObjectPreviewDialog({
         } catch (metadataErr) {
           console.warn('Failed to load object metadata, falling back to filename-based detection:', metadataErr);
         }
+
+        if (cancelled || requestId !== loadRequestIdRef.current) return;
 
         const resolvedKind = getObjectKind(filename, resolvedContentType);
         if (resolvedKind === 'text' && resolvedObjectSize && resolvedObjectSize > maxPreviewBytes) {
@@ -179,7 +186,7 @@ export default function ObjectPreviewDialog({
           setError(err instanceof Error ? err.message : String(err));
         }
       } finally {
-        if (loadTimeoutRef.current) {
+        if (requestId === loadRequestIdRef.current && loadTimeoutRef.current) {
           clearTimeout(loadTimeoutRef.current);
           loadTimeoutRef.current = null;
         }
@@ -217,15 +224,6 @@ export default function ObjectPreviewDialog({
       if (requestId !== loadRequestIdRef.current) return;
       setTextIdentity({ ...textIdentity, etag });
       setContent(editedContent);
-      // Reset version tracking - current state is now the new baseline
-      if (editorRef.current) {
-        const model = editorRef.current.getModel();
-        if (model) {
-          const newVersionId = model.getAlternativeVersionId();
-          initialVersionIdRef.current = newVersionId;
-          setCurrentVersionId(newVersionId);
-        }
-      }
       toast.success('File Saved', `${filename} saved successfully`);
       onSave?.();
     } catch (err) {
@@ -246,17 +244,7 @@ export default function ObjectPreviewDialog({
     }
   };
 
-  const handleEditorDidMount: OnMount = (editor) => {
-    editorRef.current = editor;
-    // Store the initial version ID when editor mounts with content
-    // This allows us to compare against the original state even after undo
-    const model = editor.getModel();
-    if (model) {
-      initialVersionIdRef.current = model.getAlternativeVersionId();
-    }
-  };
-
-  const handleClose = () => {
+  const closePreview = () => {
     loadRequestIdRef.current += 1;
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
@@ -269,23 +257,35 @@ export default function ObjectPreviewDialog({
     setIsEditing(false);
     onClose();
   };
+  const handleClose = () => {
+    if (isSaving) return;
+    if (isEditing && hasChanges) { setDiscardAction('close'); return; }
+    closePreview();
+  };
+  const navBlocked = isEditing || isSaving || navigation?.busy;
+  useEffect(() => {
+    if (open && !isImageFile && !startInEditMode) previewRoot.current?.focus({ preventScroll: true });
+  }, [open, objectKey, isImageFile, startInEditMode]);
 
   if (isImageFile) {
-    const index = imageSequence.indexOf(objectKey);
+    const index = navigation?.index ?? imageSequence.indexOf(objectKey);
     return <ImagePreviewViewer
       key={JSON.stringify([bucketName, bucketRegion])}
       open={open} name={filename} url={isLoading || loadedObjectKey !== objectKey ? null : presignedUrl} error={loadedObjectKey === objectKey ? error : null} attempt={reloadAttempt}
-      index={index} total={index >= 0 ? imageSequence.length : 0}
-      onPrevious={onNavigateImage && index > 0 ? () => onNavigateImage(imageSequence[index - 1]) : undefined}
-      onNext={onNavigateImage && index >= 0 && index < imageSequence.length - 1 ? () => onNavigateImage(imageSequence[index + 1]) : undefined}
+      index={index} total={navigation?.total ?? (index >= 0 ? imageSequence.length : 0)}
+      onPrevious={navigation ? navigation.onPrevious : onNavigateImage && index > 0 ? () => onNavigateImage(imageSequence[index - 1]) : undefined}
+      onNext={navigation ? navigation.onNext : onNavigateImage && index >= 0 && index < imageSequence.length - 1 ? () => onNavigateImage(imageSequence[index + 1]) : undefined}
+      navigationLabel={navigation ? 'file' : 'image'} navigationBusy={navigation?.busy} navigationError={navigation?.error}
+      isSelected={isSelected} onToggleSelect={onToggleSelect}
       onClose={handleClose} onRetry={() => setReloadAttempt(attempt => attempt + 1)}
     />;
   }
 
-  return (
+  return (<>
     <BaseDialog 
       open={open} 
       onClose={handleClose} 
+      closeDisabled={isSaving}
       title={
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Typography variant="h4" sx={{ 
@@ -347,7 +347,7 @@ export default function ObjectPreviewDialog({
                 <>
                   <Button 
                     disabled={isSaving}
-                    onClick={() => { setIsEditing(false); setEditedContent(content); }} 
+                    onClick={() => { if (hasChanges) setDiscardAction('cancel'); else { setIsEditing(false); setEditedContent(content); } }}
                     sx={{ color: theme.palette.text.secondary, fontWeight: 600 }}
                   >
                     Cancel
@@ -371,7 +371,23 @@ export default function ObjectPreviewDialog({
         ) : null
       }
     >
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 1 }}>
+      <Box ref={previewRoot} tabIndex={-1} sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 1, outline: 'none' }} onKeyDown={event => {
+        if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.repeat || navBlocked) return;
+        if ((event.target as HTMLElement).closest('input,textarea,[contenteditable="true"],video,audio,embed,.monaco-editor')) return;
+        if (event.key === 'ArrowLeft' && navigation?.onPrevious) { event.preventDefault(); event.stopPropagation(); navigation.onPrevious(); }
+        if (event.key === 'ArrowRight' && navigation?.onNext) { event.preventDefault(); event.stopPropagation(); navigation.onNext(); }
+        if (event.key === ' ' && onToggleSelect && !(event.target as HTMLElement).closest('button')) { event.preventDefault(); event.stopPropagation(); onToggleSelect(); }
+      }}>
+        {(navigation || onToggleSelect) && <Box role="group" aria-label="Preview controls" sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', pb: 1.5 }}>
+          {onToggleSelect && <Button size="small" variant="outlined" aria-label="Select file" aria-pressed={isSelected} onClick={onToggleSelect} sx={{ borderRadius: '999px', color: 'text.primary', bgcolor: isSelected ? 'action.selected' : 'transparent' }}>{isSelected ? 'Selected' : 'Select'}</Button>}
+          {navigation && (navigation.total > 1 || navigation.onNext) && <>
+            <Button size="small" sx={{ borderRadius: '999px', color: 'text.primary' }} aria-label="Previous file" disabled={navBlocked || !navigation.onPrevious} onClick={navigation.onPrevious}>Previous</Button>
+            <Typography variant="caption" aria-label="Preview position">{navigation.index + 1} / {navigation.total}</Typography>
+            <Button size="small" sx={{ borderRadius: '999px', color: 'text.primary' }} aria-label="Next file" disabled={navBlocked || !navigation.onNext} onClick={navigation.onNext}>Next</Button>
+          </>}
+          {isEditing && <Typography variant="caption" color="text.secondary">Finish editing before navigating.</Typography>}
+        </Box>}
+        {(navigation?.busy || navigation?.error) && <Typography role="status" variant="body2" sx={{ mb: 1 }}>{navigation.busy ? 'Looking for the next previewable file...' : navigation.error}</Typography>}
         {isLoading && (
           <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
             <CircularProgress size={40} thickness={4} />
@@ -440,7 +456,7 @@ export default function ObjectPreviewDialog({
                  <Editor 
                     height="100%"
                     defaultLanguage={getEditorLanguage(filename, contentType)}
-                    value={isEditing ? editedContent : content}
+                    value={editedContent}
                     options={{ 
                         readOnly: !isEditing || isSaving,
                         minimap: { enabled: true },
@@ -452,23 +468,13 @@ export default function ObjectPreviewDialog({
                         padding: { top: 16, bottom: 16 }
                     }}
                     theme={theme.palette.mode === 'dark' ? 'vs-dark' : 'light'}
-                    onChange={(val) => {
-                      setEditedContent(val || '');
-                      // Track version ID for accurate undo detection
-                      if (editorRef.current) {
-                        const model = editorRef.current.getModel();
-                        if (model) {
-                          setCurrentVersionId(model.getAlternativeVersionId());
-                        }
-                      }
-                    }}
-                    onMount={handleEditorDidMount}
+                    onChange={(val) => setEditedContent(val || '')}
                     loading={<CircularProgress size={32} />}
                  />
                </Box>
             )}
 
-            {!isImageFile && !isVideoFile && !isPdfFile && !isText && (
+            {!isImageFile && !isVideoFile && !isAudioFile && !isPdfFile && !isText && (
               <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 4 }}>
                 <Typography color="text.secondary" variant="body1" sx={{ fontWeight: 500 }}>
                   Preview not available for this file type
@@ -479,5 +485,11 @@ export default function ObjectPreviewDialog({
         )}
       </Box>
     </BaseDialog>
+    <ConfirmDialog open={!!discardAction} title="Discard unsaved changes?" message="Your edits have not been saved. Discard them or keep editing." confirmLabel="Discard changes" cancelLabel="Keep editing" isDestructive onClose={() => setDiscardAction(null)} onConfirm={() => {
+      const action = discardAction; setDiscardAction(null);
+      if (action === 'close') closePreview();
+      else { setIsEditing(false); setEditedContent(content); }
+    }} />
+    </>
   );
 }
