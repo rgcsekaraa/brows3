@@ -14,7 +14,7 @@ interface UseObjectsResult {
   error: string | null;
   stats: BucketStats;
   refresh: () => Promise<void>;
-  loadMore: () => Promise<void>;
+  loadMore: () => Promise<ListObjectsResult | null>;
   isLoadingMore: boolean;
   hasMore: boolean;
 }
@@ -35,7 +35,8 @@ export function useObjects(
   
   const { activeProfileId } = useProfileStore();
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [continuationToken, setContinuationToken] = useState<string | null>(null);
+  const continuationToken = useRef<string | null>(null);
+  const setContinuationToken = (token: string | null) => { continuationToken.current = token; };
   const [hasMore, setHasMore] = useState(false);
   const [cacheRevision, setCacheRevision] = useState(0);
   
@@ -172,12 +173,12 @@ export function useObjects(
   }, [bucketName, activeProfileId, fetchItems, autoRefreshOnFocus]);
 
   const loadMore = useCallback(async () => {
-    if (!bucketName || !activeProfileId || !continuationToken || loadMoreRequest.current || fetchInProgress.current) return;
+    if (!bucketName || !activeProfileId || !continuationToken.current || loadMoreRequest.current || fetchInProgress.current) return null;
     
     const currentViewKey = JSON.stringify([activeProfileId, bucketName, bucketRegion, prefix, sortField, sortDirection]);
     const activeRegion = useAppStore.getState().discoveredRegions[bucketName] || bucketRegion;
     const currentFetchId = fetchIdRef.current;
-    const requestToken = continuationToken;
+    const requestToken = continuationToken.current;
     const request = {};
     loadMoreRequest.current = request;
     setIsLoadingMore(true);
@@ -185,32 +186,38 @@ export function useObjects(
     try {
        const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', requestToken, false, sortField, sortDirection);
        if (currentViewKey !== viewKeyRef.current || currentFetchId !== fetchIdRef.current) {
-         return;
+         return null;
        }
        setData(prev => {
          if (!prev) return result;
          const uniquePrefixes = Array.from(new Set([...prev.common_prefixes, ...result.common_prefixes]));
          return {
            ...result,
-           objects: [...prev.objects, ...result.objects],
+           objects: Array.from(new Map([...prev.objects, ...result.objects].map(object => [object.key, object])).values()),
            common_prefixes: uniquePrefixes,
            prefix: prev.prefix
          };
        });
        setContinuationToken(result.next_continuation_token || null);
        setHasMore(!!result.next_continuation_token);
+       if (result.next_continuation_token === requestToken) {
+         setContinuationToken(null); setHasMore(false);
+         throw new Error('Listing repeated its cursor. Refresh the folder before continuing.');
+       }
+       return result;
     } catch (err) {
        if (currentViewKey === viewKeyRef.current && currentFetchId === fetchIdRef.current) {
          setError(err instanceof Error ? err.message : String(err));
        }
        console.error('Load more error:', err);
+       return null;
     } finally {
        if (loadMoreRequest.current === request) {
          loadMoreRequest.current = null;
          setIsLoadingMore(false);
        }
     }
-  }, [bucketName, bucketRegion, prefix, activeProfileId, continuationToken, sortField, sortDirection]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection]);
 
   const refresh = useCallback(async () => {
     if (!bucketName || !activeProfileId) return;

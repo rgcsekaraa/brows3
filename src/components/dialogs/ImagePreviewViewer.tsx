@@ -19,6 +19,11 @@ interface Props {
   total?: number;
   onPrevious?: () => void;
   onNext?: () => void;
+  navigationLabel?: 'image' | 'file';
+  navigationBusy?: boolean;
+  navigationError?: string;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 const chromeButton = {
@@ -48,7 +53,7 @@ export default function ImagePreviewViewer(props: Props) {
   );
 }
 
-function ImagePreviewCanvas({ open, name, url, error, onClose, onRetry, titleId, index = 0, total = 0, onPrevious, onNext }: Props & { titleId: string }) {
+function ImagePreviewCanvas({ open, name, url, error, onClose, onRetry, titleId, index = 0, total = 0, onPrevious, onNext, navigationLabel = 'image', navigationBusy = false, navigationError, isSelected = false, onToggleSelect }: Props & { titleId: string }) {
   const helpId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -152,12 +157,17 @@ function ImagePreviewCanvas({ open, name, url, error, onClose, onRetry, titleId,
 
   const failure = error || imageError;
   const ready = loaded && !failure;
+  const navigable = total > 1 || !!onNext || !!onPrevious;
   return (
     <Box ref={rootRef} tabIndex={-1} sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, outline: 'none' }}
       onKeyDown={event => {
             if (event.ctrlKey || event.metaKey || event.altKey) return;
-            if (total > 1 && !event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+            if (event.key === ' ' && onToggleSelect && !(event.target as HTMLElement).closest('button')) {
+              event.preventDefault(); event.stopPropagation(); if (!event.repeat) onToggleSelect(); return;
+            }
+            if (navigable && !event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
               event.preventDefault(); event.stopPropagation();
+              if (navigationBusy || event.repeat) return;
               if (event.key === 'ArrowLeft') onPrevious?.();
               else onNext?.();
               return;
@@ -178,7 +188,8 @@ function ImagePreviewCanvas({ open, name, url, error, onClose, onRetry, titleId,
           }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, px: { xs: 1.5, sm: 2.5 }, py: 1, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
         <Typography id={titleId} component="h2" title={name} noWrap sx={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600 }}>{name}</Typography>
-        {total > 1 && <Typography aria-label="Image position" variant="caption" sx={{ color: 'text.secondary', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{index + 1} / {total}</Typography>}
+        {onToggleSelect && <Button size="small" variant="outlined" aria-label="Select file" aria-pressed={isSelected} onClick={onToggleSelect} sx={{ borderRadius: '999px', flexShrink: 0, color: 'text.primary', bgcolor: isSelected ? 'action.selected' : 'transparent' }}>{isSelected ? 'Selected' : 'Select'}</Button>}
+        {navigable && <Typography aria-label={navigationLabel === 'image' ? 'Image position' : 'Preview position'} variant="caption" sx={{ color: 'text.secondary', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{index + 1} / {total}</Typography>}
         <Tooltip title="Close viewer (Esc)"><IconButton aria-label="Close viewer" onClick={onClose} sx={chromeButton}><Close fontSize="small" /></IconButton></Tooltip>
       </Box>
       <Box sx={{ flex: 1, minHeight: 0, px: { xs: 1, sm: 2 }, py: 2, pb: '72px', display: 'flex' }}>
@@ -236,12 +247,13 @@ function ImagePreviewCanvas({ open, name, url, error, onClose, onRetry, titleId,
           )}
         </Box>
       </Box>
-      {total > 1 && <>
-        <Tooltip title="Previous image (Left)"><span style={{ position: 'absolute', left: 20, top: '50%' }}><IconButton aria-label="Previous image" disabled={!onPrevious} onClick={onPrevious} sx={{ ...chromeButton, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}><ChevronLeft fontSize="small" /></IconButton></span></Tooltip>
-        <Tooltip title="Next image (Right)"><span style={{ position: 'absolute', right: 20, top: '50%' }}><IconButton aria-label="Next image" disabled={!onNext} onClick={onNext} sx={{ ...chromeButton, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}><ChevronRight fontSize="small" /></IconButton></span></Tooltip>
+      {(navigationBusy || navigationError) && <Typography role="status" variant="body2" sx={{ px: 2, py: 1, bgcolor: 'background.paper' }}>{navigationBusy ? 'Looking for the next previewable file...' : navigationError}</Typography>}
+      {navigable && <>
+        <Tooltip title={`Previous ${navigationLabel} (Left)`}><span style={{ position: 'absolute', left: 20, top: '50%' }}><IconButton aria-label={`Previous ${navigationLabel}`} disabled={!onPrevious || navigationBusy} onClick={onPrevious} sx={{ ...chromeButton, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}><ChevronLeft fontSize="small" /></IconButton></span></Tooltip>
+        <Tooltip title={`Next ${navigationLabel} (Right)`}><span style={{ position: 'absolute', right: 20, top: '50%' }}><IconButton aria-label={`Next ${navigationLabel}`} disabled={!onNext || navigationBusy} onClick={onNext} sx={{ ...chromeButton, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}><ChevronRight fontSize="small" /></IconButton></span></Tooltip>
       </>}
       <Typography id={helpId} sx={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }}>
-        {total > 1 ? 'Left and Right switch images. Shift plus arrow keys pans the image.' : 'Arrow keys pan the image.'} Scroll or pinch to zoom. Drag to pan. Plus and minus zoom, 0 fits the image, 1 shows actual size. Escape closes.
+        {navigable ? 'Left and Right switch previews. Shift plus arrow keys pans the image.' : 'Arrow keys pan the image.'} {onToggleSelect ? 'Space toggles file selection.' : ''} Scroll or pinch to zoom. Drag to pan. Plus and minus zoom, 0 fits the image, 1 shows actual size. Escape closes.
       </Typography>
       {ready && <Box role="group" aria-label="Image zoom controls" sx={{ position: 'absolute', bottom: 'max(20px, env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: .25, p: .5, borderRadius: '999px', bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', whiteSpace: 'nowrap', zIndex: 1 }}>
         <Tooltip title="Zoom out (-)"><span><IconButton aria-label="Zoom out" disabled={zoom <= minimum + 1e-8} onClick={() => zoomTo(transformRef.current.zoom / IMAGE_ZOOM_STEP)} sx={chromeButton}><ZoomOut fontSize="small" /></IconButton></span></Tooltip>
