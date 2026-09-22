@@ -387,6 +387,27 @@ export const operationsApi = {
   },
 };
 
+export interface ObjectVersion {
+  version_id: string;
+  is_latest: boolean;
+  is_delete_marker: boolean;
+  size: number | null;
+  modified: string | null;
+  etag: string | null;
+}
+export interface VersionCursor { key_marker: string; version_id_marker: string }
+export interface VersionHistory { versioning: string; versions: ObjectVersion[]; next: VersionCursor | null }
+export const versionsApi = {
+  async list(bucket: string, region: string, key: string, cursor: VersionCursor | null, expectedProfileId: string): Promise<VersionHistory> {
+    if (useProfileStore.getState().activeProfileId !== expectedProfileId) throw new Error('Profile changed. Open history again.');
+    return invoke<VersionHistory>('list_object_versions', { bucket, region, key, cursor, expectedProfileId });
+  },
+  async restore(bucket: string, region: string, key: string, versionId: string, expectedCurrentVersion: string, confirmed: boolean, expectedProfileId: string): Promise<string> {
+    if (useProfileStore.getState().activeProfileId !== expectedProfileId) throw new Error('Profile changed. Open history again.');
+    return invoke<string>('restore_object_version', { bucket, region, key, versionId, expectedCurrentVersion, confirmed, expectedProfileId });
+  },
+};
+
 export interface ObjectMetadata {
   key: string;
   size: number;

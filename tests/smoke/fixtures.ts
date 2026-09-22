@@ -87,6 +87,15 @@ export class DesktopBackend {
       }
       case 'delete_objects': this.objects = this.objects.filter(item => !(args.keys as string[]).includes(item.key)); return null;
       case 'list_transfers': return this.transfers;
+      case 'list_object_versions': return {
+        versioning: 'Enabled', next: null, versions: [
+          { version_id: 'current-delete-marker', is_latest: true, is_delete_marker: true, size: null, modified: '2026-01-03T00:00:00Z', etag: null },
+          { version_id: 'older-data-version-with-a-long-identifier-0123456789', is_latest: false, is_delete_marker: false, size: 20, modified: '2026-01-02T00:00:00Z', etag: 'old' },
+        ],
+      };
+      case 'restore_object_version':
+        if (args.expectedProfileId !== this.activeProfile || args.confirmed !== true || args.expectedCurrentVersion !== 'current-delete-marker') throw new Error('Stale restore confirmation');
+        return 'restore-job';
       case 'preview_folder_sync': return {
         id: 'sync-plan', new_files: 1, changed_files: 1, unverified_files: 0, unchanged_files: 1, remote_only_files: 2, upload_bytes: 40,
         entries: [

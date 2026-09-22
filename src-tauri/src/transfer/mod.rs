@@ -39,6 +39,8 @@ pub struct TransferJob {
     pub sync_source: Option<sync::SyncSource>,
     #[serde(default)]
     pub remote_source: Option<remote::RemoteSource>,
+    #[serde(default)]
+    pub restore_guard: Option<crate::s3::versions::RestoreGuard>,
     #[serde(skip)]
     pub download_destination: Option<std::sync::Arc<download::DownloadDestination>>,
     pub transfer_type: TransferType,
@@ -68,6 +70,15 @@ pub struct TransferEvent {
 }
 
 impl TransferJob {
+    pub fn destination_etag(&self) -> Option<&str> {
+        match &self.restore_guard {
+            Some(guard) => guard.current_etag.as_deref(),
+            None => self
+                .sync_source
+                .as_ref()
+                .and_then(|s| s.expected_etag.as_deref()),
+        }
+    }
     pub fn new(
         transfer_type: TransferType,
         profile_id: String,
@@ -86,6 +97,7 @@ impl TransferJob {
             local_path: local_path.to_string_lossy().to_string(),
             sync_source: None,
             remote_source: None,
+            restore_guard: None,
             download_destination: None,
             transfer_type,
             status: TransferStatus::Pending,

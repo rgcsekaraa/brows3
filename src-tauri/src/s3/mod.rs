@@ -2,6 +2,7 @@ pub mod client;
 pub mod content_type;
 pub mod listing;
 pub mod multipart;
+pub mod versions;
 
 pub use client::{
     format_size, get_bucket_region, list_buckets, BucketInfo, FolderContent, S3ClientManager,

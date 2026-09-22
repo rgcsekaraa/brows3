@@ -14,6 +14,8 @@ pub struct RemoteSource {
     pub region: String,
     pub key: String,
     pub etag: String,
+    #[serde(default)]
+    pub version_id: Option<String>,
     pub size: u64,
     #[serde(skip)]
     pub current_session: bool,
@@ -41,7 +43,7 @@ impl RemoteSource {
 pub fn validate_head(head: &HeadObjectOutput) -> Result<(String, u64)> {
     if head.sse_customer_algorithm().is_some() {
         return Err(AppError::ConfigError(
-            "SSE-C objects cannot be copied between profiles.".into(),
+            "SSE-C objects cannot be copied or restored by this workflow.".into(),
         ));
     }
     let etag = head
@@ -71,14 +73,24 @@ pub async fn stage(
             .get_object()
             .bucket(&source.bucket)
             .key(&source.key)
+            .set_version_id(source.version_id.clone())
             .if_match(&source.etag)
             .send(),
     )
     .await
     .map_err(|_| AppError::S3Error("Reading the source timed out.".into()))?
-    .map_err(|e| AppError::S3Error(format!("Cannot read source object: {e}")))?;
+    .map_err(|e| {
+        AppError::S3Error(format!(
+            "Cannot read source object: {}",
+            aws_sdk_s3::error::DisplayErrorContext(&e)
+        ))
+    })?;
     if output.e_tag() != Some(source.etag.as_str())
         || output.content_length() != Some(source.size as i64)
+        || source
+            .version_id
+            .as_ref()
+            .is_some_and(|v| output.version_id() != Some(v.as_str()))
     {
         return Err(AppError::S3Error(
             "Source changed since the copy was queued. Copy again.".into(),
@@ -148,6 +160,7 @@ mod tests {
             region: "us-east-1".into(),
             key: "key".into(),
             etag: "etag".into(),
+            version_id: None,
             size: 5,
             current_session: true,
         };

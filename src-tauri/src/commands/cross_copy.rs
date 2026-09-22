@@ -192,6 +192,7 @@ pub async fn copy_between_profiles(
                     region: item.region.clone(),
                     key,
                     etag,
+                    version_id: None,
                     size,
                     current_session: true,
                 });

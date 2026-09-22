@@ -49,6 +49,7 @@ import {
   ArrowDropDown as ArrowDropDownIcon,
   Edit as EditIcon,
   Lock as LockIcon,
+  History as HistoryIcon,
 } from '@mui/icons-material';
 import { useObjects } from '@/hooks/useObjects';
 import { operationsApi, transferApi, objectApi, S3Object, copyToClipboard } from '@/lib/tauri';
@@ -59,6 +60,7 @@ import { useProfileStore } from '@/store/profileStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
 import FolderSyncDialog from '@/components/dialogs/FolderSyncDialog';
 import CrossProfileCopyDialog from '@/components/dialogs/CrossProfileCopyDialog';
+import VersionHistoryDialog from '@/components/dialogs/VersionHistoryDialog';
 import type { ClipboardItem } from '@/store/clipboardStore';
 import PermissionsDialog from '@/components/dialogs/PermissionsDialog';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
@@ -283,6 +285,8 @@ function BucketContent() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMenuAnchor, setUploadMenuAnchor] = useState<null | HTMLElement>(null);
   const [syncDestination, setSyncDestination] = useState<string | null>(null);
+  const [versionHistory, setVersionHistory] = useState<{ viewKey: string; key: string } | null>(null);
+  useEffect(() => { setVersionHistory(null); }, [viewKey]);
   const [crossCopy, setCrossCopy] = useState<{ viewKey: string; items: ClipboardItem[] } | null>(null);
   useEffect(() => { setCrossCopy(null); }, [viewKey]);
   useEffect(() => { setSyncDestination(null); }, [viewKey]);
@@ -1250,6 +1254,11 @@ function BucketContent() {
           </>
         )}
 
+        <Tooltip title="Version history, including deleted objects">
+            <IconButton size="small" aria-label="Version history" title="Version history, including deleted objects" disabled={!activeProfileId} onClick={() => setVersionHistory({ viewKey, key: selectedKeys.size === 1 ? Array.from(selectedKeys)[0] : prefix })}>
+              <HistoryIcon fontSize="small" />
+            </IconButton>
+        </Tooltip>
         <Tooltip title="Refresh">
             <IconButton
               onClick={() => refresh()}
@@ -1404,6 +1413,7 @@ function BucketContent() {
            <ListItemIcon><InfoIcon fontSize="small" /></ListItemIcon>
            Properties
         </MenuItem>
+        {!selectedObject?.isFolder && <MenuItem onClick={() => { if (selectedObject) setVersionHistory({ viewKey, key: selectedObject.key }); handleMenuClose(); }}><ListItemIcon><HistoryIcon fontSize="small" /></ListItemIcon>Version history</MenuItem>}
         <MenuItem onClick={handlePermissionsOpen}>
            <ListItemIcon><LockIcon fontSize="small" /></ListItemIcon>
            Permissions
@@ -1586,6 +1596,7 @@ function BucketContent() {
       {/* Properties Dialog */}
       {activeProfileId && syncDestination === `${activeProfileId}:${bucketName}:${prefix}` && <FolderSyncDialog key={syncDestination} bucket={bucketName} region={bucketRegion} prefix={prefix} profileId={activeProfileId} onClose={() => setSyncDestination(null)} />}
       {activeProfileId && crossCopy?.viewKey === viewKey && <CrossProfileCopyDialog key={viewKey} items={crossCopy.items} bucket={bucketName} region={bucketRegion} prefix={prefix} profileId={activeProfileId} onClose={() => setCrossCopy(null)} />}
+      {activeProfileId && versionHistory?.viewKey === viewKey && <VersionHistoryDialog key={`${viewKey}:${versionHistory.key}`} bucket={bucketName} region={bucketRegion} profileId={activeProfileId} initialKey={versionHistory.key} onClose={() => setVersionHistory(null)} />}
       <PropertiesDialog
         open={propertiesOpen}
         onClose={() => setPropertiesOpen(false)}
