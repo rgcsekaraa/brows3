@@ -59,10 +59,10 @@ test('pagination carries both markers and Previous restores the cached page', as
   const cursor = { key_marker: 'file', version_id_marker: 'old-version' };
   vi.mocked(versionsApi.list).mockResolvedValueOnce({ ...history, next: cursor }).mockResolvedValueOnce({ ...history, versions: [{ ...history.versions[1], version_id: 'older' }] });
   render(<VersionHistoryDialog {...props} />); await screen.findByText('old-version');
-  fireEvent.click(screen.getByRole('button', { name: 'Next', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
   await screen.findByText('older');
   expect(versionsApi.list).toHaveBeenLastCalledWith('bucket', 'us-east-1', 'file', cursor, 'a');
-  fireEvent.click(screen.getByRole('button', { name: 'Previous', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
   await screen.findByText('old-version');
 });
 test('closing during a read cannot queue a late restore', async () => {
