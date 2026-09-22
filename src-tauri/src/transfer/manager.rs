@@ -1174,6 +1174,22 @@ mod tests {
             .unwrap();
         assert_eq!(std::fs::read_to_string(backup).unwrap(), "broken");
     }
+
+    #[tokio::test]
+    async fn failed_journal_commit_never_enqueues_work() {
+        let root = tempfile::tempdir().unwrap();
+        let blocker = root.path().join("not-a-directory");
+        std::fs::write(&blocker, b"file").unwrap();
+        let manager = TransferManager::new();
+        *manager.journal.lock().await = Some(blocker.join("transfers.json"));
+        let job = test_job(TransferStatus::Pending);
+        manager.add_jobs(vec![job.clone()]).await;
+        assert!(manager.queue.lock().await.is_empty());
+        assert!(matches!(
+            manager.get_job(&job.id).await.unwrap().status,
+            TransferStatus::Failed(_)
+        ));
+    }
     use crate::credentials::{CredentialType, Profile};
     use crate::transfer::{TransferJob, TransferStatus, TransferType};
     use std::path::PathBuf;

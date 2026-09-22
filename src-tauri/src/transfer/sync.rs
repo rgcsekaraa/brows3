@@ -61,7 +61,7 @@ fn open_source(root: &Dir, relative: &Path) -> Result<cap_std::fs::File> {
 
 fn hash_file(
     mut file: cap_std::fs::File,
-    mut output: Option<&mut std::fs::File>,
+    mut output: Option<&mut dyn Write>,
     deadline: Instant,
 ) -> Result<(u64, String, String)> {
     let mut sha = Sha256::new();
@@ -361,6 +361,34 @@ pub fn apply_multipart(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn snapshot_write_failure_and_scan_deadline_are_errors() {
+        struct FullDisk;
+        impl Write for FullDisk {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("simulated full disk"))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("file"), b"hello").unwrap();
+        let dir = Dir::open_ambient_dir(root.path(), cap_std::ambient_authority()).unwrap();
+        let error = hash_file(
+            open_source(&dir, Path::new("file")).unwrap(),
+            Some(&mut FullDisk),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("full disk"));
+        assert!(hash_file(
+            open_source(&dir, Path::new("file")).unwrap(),
+            None,
+            Instant::now() - Duration::from_secs(1)
+        )
+        .is_err());
+    }
     #[test]
     fn only_exact_minio_placeholder_acl_is_omitted() {
         use aws_sdk_s3::{
