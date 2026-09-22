@@ -514,6 +514,15 @@ pub async fn retry_transfer(
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<Option<String>> {
+    if transfer_state
+        .get_job(&job_id)
+        .await
+        .is_some_and(|job| job.sync_source.is_some_and(|s| !s.current_session))
+    {
+        return Err(crate::error::AppError::ConfigError(
+            "Create a fresh folder sync preview after restarting the app.".into(),
+        ));
+    }
     if transfer_state.get_job(&job_id).await.is_some_and(|job| {
         matches!(job.transfer_type, TransferType::Download) && job.download_destination.is_none()
     }) {
