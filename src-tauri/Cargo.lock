@@ -951,6 +951,7 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "futures",
+ "glob",
  "http-body 1.0.1",
  "keyring",
  "log",

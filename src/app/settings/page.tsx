@@ -40,7 +40,7 @@ import { useAppStore } from '@/store/appStore';
 import { useMonitorStore } from '@/store/monitorStore';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
 import { toast } from '@/store/toastStore';
-import { bucketApi, copyToClipboard, invalidateCache, isTauri, logApi, type LogFileInfo } from '@/lib/tauri';
+import { bucketApi, copyToClipboard, invalidateCache, isTauri, logApi, transferApi, type LogFileInfo } from '@/lib/tauri';
 
 export default function SettingsPage() {
   // Theme is controlled by appStore (used by the actual app)
@@ -49,6 +49,7 @@ export default function SettingsPage() {
   const { 
     defaultRegion, setDefaultRegion, 
     maxConcurrentTransfers, setMaxConcurrentTransfers,
+    transferBandwidthKiB, setTransferBandwidthKiB,
     maxTextPreviewSizeMb, setMaxTextPreviewSizeMb,
     autoRefreshOnFocus, setAutoRefreshOnFocus
   } = useSettingsStore();
@@ -59,6 +60,22 @@ export default function SettingsPage() {
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [pendingTransferConcurrency, setPendingTransferConcurrency] = useState(maxConcurrentTransfers);
   const [pendingPreviewLimit, setPendingPreviewLimit] = useState(maxTextPreviewSizeMb);
+  const [bandwidth, setBandwidth] = useState(String(transferBandwidthKiB));
+  const [savingBandwidth, setSavingBandwidth] = useState(false);
+  const [bandwidthError, setBandwidthError] = useState('');
+  const bandwidthValue = Number(bandwidth);
+  const validBandwidth = /^\d+$/.test(bandwidth) && Number.isSafeInteger(bandwidthValue) && (bandwidthValue === 0 || (bandwidthValue >= 64 && bandwidthValue <= 1048576));
+  useEffect(() => { setBandwidth(String(transferBandwidthKiB)); }, [transferBandwidthKiB]);
+  async function applyBandwidth() {
+    if (!validBandwidth || savingBandwidth) return;
+    setSavingBandwidth(true); setBandwidthError('');
+    try {
+      if (isTauri()) await transferApi.setBandwidth(bandwidthValue * 1024);
+      setTransferBandwidthKiB(bandwidthValue);
+      toast.success('Bandwidth limit saved', 'Applies to newly queued transfers. Existing jobs keep their limit.');
+    } catch (e) { setBandwidthError(String(e)); }
+    finally { setSavingBandwidth(false); }
+  }
   
   useEffect(() => {
     if (!isTauri()) {
@@ -225,6 +242,14 @@ export default function SettingsPage() {
                  }}
                />
             </Box>
+          </ListItem>
+          <ListItem divider sx={{ flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
+            <ListItemText primary="Bandwidth per transfer" secondary="Limits each newly queued upload or download, including sync, cross-profile copy and restore. Existing jobs keep their limit. Concurrent jobs each get this allowance; this is not a total app limit." />
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+              <TextField label="Limit (KiB/s)" size="small" value={bandwidth} disabled={savingBandwidth} onChange={e => { setBandwidth(e.target.value); setBandwidthError(''); }} inputProps={{ inputMode: 'numeric' }} error={!validBandwidth} helperText="0 is unlimited. Otherwise 64 to 1,048,576 KiB/s." sx={{ flex: 1 }} />
+              <Button size="small" variant="outlined" sx={{ borderRadius: '999px', color: 'text.primary', mt: 0.5 }} disabled={!validBandwidth || savingBandwidth || bandwidthValue === transferBandwidthKiB} onClick={applyBandwidth}>{savingBandwidth ? 'Saving...' : 'Apply'}</Button>
+            </Box>
+            {bandwidthError && <Alert severity="error">{bandwidthError}</Alert>}
           </ListItem>
           <ListItem divider>
             <ListItemText

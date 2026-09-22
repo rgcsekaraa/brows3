@@ -631,3 +631,11 @@ pub async fn set_transfer_concurrency(
     transfer_state.set_max_concurrency(max_concurrency as usize);
     Ok(())
 }
+
+#[tauri::command]
+pub async fn set_transfer_bandwidth(
+    bytes_per_second: u64,
+    transfer_state: State<'_, TransferState>,
+) -> Result<()> {
+    transfer_state.set_bandwidth_limit(bytes_per_second)
+}

@@ -43,6 +43,7 @@ export default function AppShell({ children }: AppShellProps) {
   const { themeMode, sidebarOpen, setSidebarOpen } = useAppStore();
   const { profiles, setProfiles, setActiveProfileId } = useProfileStore();
   const maxConcurrentTransfers = useSettingsStore((state) => state.maxConcurrentTransfers);
+  const transferBandwidthKiB = useSettingsStore((state) => state.transferBandwidthKiB);
   const [mounted, setMounted] = useState(false);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   // Enable clipboard shortcuts globally
@@ -95,6 +96,12 @@ export default function AppShell({ children }: AppShellProps) {
   }, [mounted, maxConcurrentTransfers]);
 
   // Load profiles on mount (Persistence Fix)
+  useEffect(() => {
+    if (mounted && typeof window !== 'undefined' && '__TAURI__' in window) {
+      transferApi.setBandwidth(transferBandwidthKiB * 1024).catch(error => console.warn('Could not apply transfer bandwidth limit:', error));
+    }
+  }, [mounted, transferBandwidthKiB]);
+
   useEffect(() => {
     const initProfiles = async () => {
       // Only run in Tauri environment

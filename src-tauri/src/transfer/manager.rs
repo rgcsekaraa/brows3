@@ -25,6 +25,16 @@ fn transfer_timeout_for(size_bytes: u64) -> Duration {
     Duration::from_secs(scaled_secs).clamp(MIN_TRANSFER_TIMEOUT, MAX_TRANSFER_TIMEOUT)
 }
 
+fn upload_timeout_for(size: u64, rate: u64) -> Duration {
+    if rate == 0 {
+        return transfer_timeout_for(size);
+    }
+    // Deliberate pacing and retry allowance, in addition to network time.
+    transfer_timeout_for(size).max(Duration::from_secs(
+        size.div_ceil(rate).saturating_mul(4).saturating_add(60),
+    ))
+}
+
 // Define a safe shared state for the manager
 pub struct TransferManager {
     jobs: Arc<RwLock<HashMap<String, TransferJob>>>,
@@ -35,6 +45,7 @@ pub struct TransferManager {
     slot_notify: Arc<Notify>,
     app_handle: Arc<RwLock<Option<AppHandle>>>,
     journal: Mutex<Option<std::path::PathBuf>>,
+    bandwidth_limit: AtomicUsize,
 }
 
 struct ActiveSlotGuard {
@@ -66,6 +77,7 @@ impl TransferManager {
             slot_notify: Arc::new(Notify::new()),
             app_handle: Arc::new(RwLock::new(None)),
             journal: Mutex::new(None),
+            bandwidth_limit: AtomicUsize::new(0),
         }
     }
 
@@ -155,7 +167,11 @@ impl TransferManager {
         self.add_jobs(vec![job]).await;
     }
 
-    pub async fn add_jobs(&self, added: Vec<TransferJob>) {
+    pub async fn add_jobs(&self, mut added: Vec<TransferJob>) {
+        for job in &mut added {
+            job.bandwidth_limit
+                .get_or_insert(self.bandwidth_limit.load(Ordering::Acquire) as u64);
+        }
         {
             let mut jobs = self.jobs.write().await;
             for job in &added {
@@ -190,6 +206,37 @@ impl TransferManager {
         self.slot_notify.notify_waiters();
     }
 
+    pub fn set_bandwidth_limit(&self, rate: u64) -> crate::error::Result<()> {
+        super::controls::validate_bandwidth(rate)?;
+        self.bandwidth_limit.store(rate as usize, Ordering::Release);
+        Ok(())
+    }
+
+    pub(crate) async fn pace_download(
+        &self,
+        job: &TransferJob,
+        bytes: u64,
+    ) -> crate::error::Result<()> {
+        let rate = job.bandwidth_limit.unwrap_or(0);
+        super::controls::validate_bandwidth(rate)?;
+        self.ensure_multipart_job_active(&job.id).await?;
+        if rate > 0 {
+            let deadline = {
+                let mut progress = job.progress.lock().unwrap();
+                let start = *progress
+                    .download_started
+                    .get_or_insert_with(tokio::time::Instant::now);
+                progress.download_bytes =
+                    progress.download_bytes.checked_add(bytes).ok_or_else(|| {
+                        crate::error::AppError::IoError("Download length overflow".into())
+                    })?;
+                start + super::controls::delay(progress.download_bytes, rate)
+            };
+            tokio::time::sleep_until(deadline).await;
+        }
+        self.ensure_multipart_job_active(&job.id).await
+    }
+
     pub async fn get_job(&self, id: &str) -> Option<TransferJob> {
         let jobs = self.jobs.read().await;
         jobs.get(id).cloned()
@@ -210,6 +257,7 @@ impl TransferManager {
             match job.status {
                 TransferStatus::Pending | TransferStatus::InProgress => {
                     job.status = TransferStatus::Cancelled;
+                    job.progress.lock().unwrap().cancelled = true;
                     job.bytes_per_second = 0.0;
                     let job_clone = job.clone();
                     let needs_graceful_cleanup = Self::is_multipart_upload_job(job);
@@ -268,7 +316,10 @@ impl TransferManager {
         drop(handles);
 
         let mut jobs = self.jobs.write().await;
-        let removed = jobs.remove(id).is_some();
+        let removed = jobs.remove(id).is_some_and(|job| {
+            job.progress.lock().unwrap().cancelled = true;
+            true
+        });
         drop(jobs);
         self.persist_or_log().await;
         removed
@@ -319,6 +370,7 @@ impl TransferManager {
                     new_job.sync_source = job.sync_source.clone();
                     new_job.remote_source = job.remote_source.clone();
                     new_job.restore_guard = job.restore_guard.clone();
+                    new_job.bandwidth_limit = job.bandwidth_limit;
 
                     // Preserve grouping info
                     new_job.parent_group_id = job.parent_group_id.clone();
@@ -672,8 +724,13 @@ impl TransferManager {
             let body = ByteStream::from_path(&job.local_path)
                 .await
                 .map_err(|error| crate::error::AppError::IoError(error.to_string()))?;
-            let body = super::speed::track(body, job.progress.clone(), offset);
-            let timeout = transfer_timeout_for(file_size);
+            let body = super::speed::track_limited(
+                body,
+                job.progress.clone(),
+                offset,
+                job.bandwidth_limit.unwrap_or(0),
+            );
+            let timeout = upload_timeout_for(file_size, job.bandwidth_limit.unwrap_or(0));
             let mut request = client
                 .put_object()
                 .bucket(&job.bucket)
@@ -695,7 +752,12 @@ impl TransferManager {
                     .key(&job.key)
                     .set_if_match(expected_etag.map(str::to_owned))
                     .set_if_none_match(expected_etag.is_none().then(|| "*".into()))
-                    .body(super::speed::track(body, job.progress.clone(), offset));
+                    .body(super::speed::track_limited(
+                        body,
+                        job.progress.clone(),
+                        offset,
+                        job.bandwidth_limit.unwrap_or(0),
+                    ));
                 Some(
                     super::sync::apply_put(request, attributes)
                         .set_grant_full_control(None)
@@ -826,7 +888,7 @@ impl TransferManager {
                     .path(&job.local_path)
                     .offset(part.offset)
                     .length(Length::Exact(part.length))
-                    .buffer_size(1024 * 1024)
+                    .buffer_size(if job.bandwidth_limit.unwrap_or(0) == 0 { 1024 * 1024 } else { 16 * 1024 })
                     .build()
                     .await
                     .map_err(|error| {
@@ -837,8 +899,8 @@ impl TransferManager {
                     })?;
 
                 let offset = job.remote_source.as_ref().map_or(0, |s| s.size);
-                let body = super::speed::track(body, job.progress.clone(), offset + part.offset);
-                let part_timeout = transfer_timeout_for(part.length);
+                let body = super::speed::track_limited(body, job.progress.clone(), offset + part.offset, job.bandwidth_limit.unwrap_or(0));
+                let part_timeout = upload_timeout_for(part.length, job.bandwidth_limit.unwrap_or(0));
                 let part_send = client
                     .upload_part()
                     .bucket(&job.bucket)
@@ -950,6 +1012,7 @@ impl TransferManager {
         destination: &Profile,
         profiles: Arc<RwLock<ProfileManager>>,
     ) -> crate::error::Result<()> {
+        super::controls::validate_bandwidth(job.bandwidth_limit.unwrap_or(0))?;
         let Some(source) = &job.remote_source else {
             return self.execute_job(job, s3_manager, destination).await;
         };
@@ -1208,10 +1271,10 @@ impl TransferManager {
                             crate::error::AppError::S3Error(format!("{}", DisplayErrorContext(&e)))
                         })?
                 {
-                    download
-                        .write_all(&bytes)
-                        .await
-                        .map_err(|e| crate::error::AppError::IoError(e.to_string()))?;
+                    for chunk in bytes.chunks(16 * 1024) {
+                        self.pace_download(job, chunk.len() as u64).await?;
+                        download.write_all(chunk).await?;
+                    }
 
                     downloaded += bytes.len() as u64;
 
@@ -1249,6 +1312,156 @@ impl TransferManager {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    #[ignore = "requires a disposable MinIO endpoint"]
+    async fn bandwidth_real_endpoint_upload_download_and_multipart_cancellation() {
+        let profile = Profile::new(
+            "controls-test".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: std::env::var("BROWS3_CONTROLS_TEST_ENDPOINT")
+                    .expect("disposable endpoint required"),
+                access_key_id: "versiontest".into(),
+                secret_access_key: "version-test-only".into(),
+            },
+            Some("us-east-1".into()),
+        );
+        let sdk = crate::s3::client::load_sdk_config(&profile, None).await;
+        let client = crate::s3::client::client_from_sdk_config(&sdk, &profile);
+        let bucket = format!("brows3-controls-test-{}", uuid::Uuid::new_v4().simple());
+        client.create_bucket().bucket(&bucket).send().await.unwrap();
+        for (size, rate) in [
+            (0u64, 65536),
+            (256 * 1024, 65536),
+            (129 * 1024 * 1024, 16 * 1024 * 1024),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let path = root.path().join("source");
+            std::fs::File::create(&path).unwrap().set_len(size).unwrap();
+            let manager = TransferManager::new();
+            let mut job = TransferJob::new(
+                TransferType::Upload,
+                profile.id.clone(),
+                bucket.clone(),
+                Some("us-east-1".into()),
+                format!("file-{size}"),
+                path,
+                size,
+            );
+            job.status = TransferStatus::InProgress;
+            job.bandwidth_limit = Some(rate);
+            manager.add_job(job.clone()).await;
+            let start = std::time::Instant::now();
+            manager
+                .upload_file(&client, &job, "application/octet-stream")
+                .await
+                .unwrap();
+            assert!(start.elapsed().as_secs_f64() >= size as f64 / rate as f64);
+            let target = root.path().join("download");
+            let mut download = TransferJob::new(
+                TransferType::Download,
+                profile.id.clone(),
+                bucket.clone(),
+                Some("us-east-1".into()),
+                job.key.clone(),
+                target.clone(),
+                size,
+            );
+            download.status = TransferStatus::InProgress;
+            download.bandwidth_limit = Some(rate);
+            download.download_destination = Some(Arc::new(
+                crate::transfer::download::DownloadDestination::from_path(&target, false).unwrap(),
+            ));
+            manager.add_job(download.clone()).await;
+            let start = std::time::Instant::now();
+            manager
+                .execute_job(
+                    &download,
+                    Arc::new(tokio::sync::RwLock::new(crate::s3::S3ClientManager::new())),
+                    &profile,
+                )
+                .await
+                .unwrap();
+            assert!(start.elapsed().as_secs_f64() >= size as f64 / rate as f64);
+            let content = std::fs::read(&target).unwrap();
+            assert_eq!(content.len() as u64, size);
+            assert!(content.iter().all(|byte| *byte == 0));
+            client
+                .delete_object()
+                .bucket(&bucket)
+                .key(&job.key)
+                .send()
+                .await
+                .unwrap();
+        }
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("cancel-source");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(129 * 1024 * 1024)
+            .unwrap();
+        let manager = TransferManager::new();
+        let mut job = TransferJob::new(
+            TransferType::Upload,
+            profile.id.clone(),
+            bucket.clone(),
+            None,
+            "cancelled".into(),
+            path,
+            129 * 1024 * 1024,
+        );
+        job.status = TransferStatus::InProgress;
+        job.bandwidth_limit = Some(65536);
+        manager.add_job(job.clone()).await;
+        let upload = manager.upload_file(&client, &job, "application/octet-stream");
+        let cancel = async {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            manager.cancel_job(&job.id).await;
+        };
+        let (result, _) = tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::join!(upload, cancel)
+        })
+        .await
+        .expect("cancel must not wait for the throttled multipart part");
+        assert!(result.is_err());
+        assert!(client
+            .list_multipart_uploads()
+            .bucket(&bucket)
+            .send()
+            .await
+            .unwrap()
+            .uploads()
+            .is_empty());
+        assert!(client
+            .list_objects_v2()
+            .bucket(&bucket)
+            .send()
+            .await
+            .unwrap()
+            .contents()
+            .is_empty());
+        client.delete_bucket().bucket(&bucket).send().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn bandwidth_is_captured_per_job_and_retained_on_retry() {
+        let manager = TransferManager::new();
+        manager.set_bandwidth_limit(65536).unwrap();
+        let job = test_job(TransferStatus::Failed("network".into()));
+        manager.add_job(job.clone()).await;
+        manager.set_bandwidth_limit(0).unwrap();
+        let id = manager.retry_job(&job.id).await.unwrap();
+        let mut retry = manager.get_job(&id).await.unwrap();
+        assert_eq!(retry.bandwidth_limit, Some(65536));
+        retry.status = TransferStatus::InProgress;
+        manager.add_job(retry.clone()).await;
+        let start = tokio::time::Instant::now();
+        manager.pace_download(&retry, 16384).await.unwrap();
+        assert!(start.elapsed() >= Duration::from_millis(250));
+        manager.cancel_job(&id).await;
+        assert!(manager.pace_download(&retry, 16384).await.is_err());
+        assert!(manager.set_bandwidth_limit(1).is_err());
+        assert!(super::upload_timeout_for(128 * 1024 * 1024, 65536) > Duration::from_secs(2048));
+    }
     #[tokio::test]
     #[ignore = "requires a disposable versioned S3-compatible endpoint"]
     async fn version_restore_real_endpoint_preserves_history_and_rejects_stale_guards() {

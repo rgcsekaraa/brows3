@@ -24,7 +24,7 @@ test('preview requires explicit replacement approval and preserves the destinati
   fireEvent.click(screen.getByRole('checkbox', { name: 'Confirm replacement of existing objects' }));
   fireEvent.click(screen.getByRole('button', { name: 'Start sync' }));
   await waitFor(() => expect(syncApi.start).toHaveBeenCalledWith('plan', true, 'a'));
-  expect(syncApi.preview).toHaveBeenCalledWith('/local', 'bucket', undefined, 'dest/', 'a');
+  expect(syncApi.preview).toHaveBeenCalledWith('/local', 'bucket', undefined, 'dest/', 'a', { include: [], exclude: [], skip_existing: false });
   await waitFor(() => expect(close).toHaveBeenCalled());
 });
 test('refreshing preview clears replacement approval', async () => {
@@ -34,6 +34,33 @@ test('refreshing preview clears replacement approval', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Refresh preview' }));
   await screen.findByText('dest/file');
   expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+});
+
+test('editing filter rules invalidates the preview and preserves literal spaces', async () => {
+  render(<FolderSyncDialog bucket="bucket" prefix="dest/" profileId="a" onClose={vi.fn()} />);
+  await showPreview(); fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.change(screen.getByLabelText('Include patterns'), { target: { value: '**/*.txt\n\n spaced name ' } });
+  expect(screen.queryByRole('table')).toBeNull();
+  expect(screen.queryByRole('checkbox')).toBeNull();
+  expect((screen.getByRole('button', { name: 'Start sync' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Exclude patterns'), { target: { value: 'cache/**' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview changes' }));
+  await screen.findByText('dest/file');
+  expect(syncApi.preview).toHaveBeenLastCalledWith('/local', 'bucket', undefined, 'dest/', 'a', { include: ['**/*.txt', ' spaced name '], exclude: ['cache/**'], skip_existing: false });
+});
+
+test('skip existing mode invalidates approval and can queue only new files without replacement', async () => {
+  render(<FolderSyncDialog bucket="bucket" prefix="dest/" profileId="a" onClose={vi.fn()} />);
+  await showPreview(); fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Existing objects' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Skip all existing objects' }));
+  expect(screen.queryByRole('checkbox')).toBeNull();
+  vi.mocked(syncApi.preview).mockResolvedValue({ ...preview, changed_files: 0, skipped_files: 1, new_files: 1, entries: [{ key: 'new', action: 'New', size: 5 }, { key: 'dest/file', action: 'Skipped', size: 5 }] });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview changes' }));
+  await screen.findByText('Skipped');
+  expect(syncApi.preview).toHaveBeenLastCalledWith('/local', 'bucket', undefined, 'dest/', 'a', { include: [], exclude: [], skip_existing: true });
+  fireEvent.click(screen.getByRole('button', { name: 'Start sync' }));
+  await waitFor(() => expect(syncApi.start).toHaveBeenCalledWith('plan', false, 'a'));
 });
 test('late preview after closing never starts uploads', async () => {
   let resolve!: (p: SyncPreview) => void;
@@ -70,7 +97,7 @@ test('unchanged and empty folders never enable Start', async () => {
   vi.mocked(syncApi.preview).mockResolvedValue({ ...preview, changed_files: 0, unchanged_files: 1, upload_bytes: 0, entries: [{ key: 'dest/file', size: 5, action: 'Unchanged' }] });
   render(<FolderSyncDialog bucket="bucket" prefix="dest/" profileId="a" onClose={vi.fn()} />);
   await showPreview();
-  await screen.findByText('All local files match. Nothing to upload.');
+  await screen.findByText('No uploads are needed with these rules. Review the actions below.');
   expect((screen.getByRole('button', { name: 'Start sync' }) as HTMLButtonElement).disabled).toBe(true);
   vi.mocked(syncApi.preview).mockResolvedValue({ ...preview, changed_files: 0, entries: [], upload_bytes: 0 });
   fireEvent.click(screen.getByRole('button', { name: 'Refresh preview' }));

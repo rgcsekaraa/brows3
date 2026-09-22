@@ -35,6 +35,7 @@ export class DesktopBackend {
       case 'set_active_profile': this.activeProfile = String(args.id); return null;
       case 'refresh_s3_client':
       case 'set_transfer_concurrency':
+      case 'set_transfer_bandwidth':
       case 'plugin:event|emit':
       case 'plugin:clipboard-manager|write_text': return null;
       case 'plugin:updater|check': return null;

@@ -1,4 +1,5 @@
 use super::{profiles::ProfileState, transfer::TransferState};
+use crate::transfer::controls::{Filters, SyncOptions};
 use crate::{
     error::{AppError, Result},
     s3::S3State,
@@ -42,6 +43,8 @@ pub struct Preview {
     pub unchanged_files: usize,
     pub remote_only_files: usize,
     pub upload_bytes: u64,
+    pub filtered_files: usize,
+    pub skipped_files: usize,
 }
 
 async fn selected(state: &ProfileState, expected: &str) -> Result<crate::credentials::Profile> {
@@ -63,10 +66,13 @@ pub async fn preview_folder_sync(
     bucket_region: Option<String>,
     prefix: String,
     expected_profile_id: String,
+    options: Option<SyncOptions>,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
     sync_plans: State<'_, SyncPlans>,
 ) -> Result<Preview> {
+    let options = options.unwrap_or_default();
+    Filters::new(&options)?;
     let profile = selected(profile_state.inner(), &expected_profile_id).await?;
     if !prefix.is_empty() && !prefix.ends_with('/') {
         return Err(AppError::ConfigError(
@@ -88,7 +94,8 @@ pub async fn preview_folder_sync(
             None => manager.get_client(&profile).await?.clone(),
         }
     };
-    let (preview, mut uploads) = compare(&client, &bucket_name, &prefix, local).await?;
+    let (preview, mut uploads) =
+        compare_options(&client, &bucket_name, &prefix, local, &options).await?;
     let current = selected(profile_state.inner(), &expected_profile_id).await?;
     if current.cache_identity() != profile.cache_identity() {
         return Err(AppError::ConfigError(
@@ -123,12 +130,24 @@ pub async fn preview_folder_sync(
     Ok(preview)
 }
 
+#[cfg(test)]
 async fn compare(
     client: &aws_sdk_s3::Client,
     bucket_name: &str,
     prefix: &str,
     local: Vec<LocalFile>,
 ) -> Result<(Preview, Vec<LocalFile>)> {
+    compare_options(client, bucket_name, prefix, local, &SyncOptions::default()).await
+}
+
+async fn compare_options(
+    client: &aws_sdk_s3::Client,
+    bucket_name: &str,
+    prefix: &str,
+    local: Vec<LocalFile>,
+    options: &SyncOptions,
+) -> Result<(Preview, Vec<LocalFile>)> {
+    let filters = Filters::new(options)?;
     let remote = crate::s3::listing::list_recursive(client, bucket_name, prefix).await?;
     let mut remote: HashMap<_, _> = remote
         .into_iter()
@@ -143,12 +162,37 @@ async fn compare(
         unchanged_files: 0,
         remote_only_files: 0,
         upload_bytes: 0,
+        filtered_files: 0,
+        skipped_files: 0,
     };
     let mut uploads = vec![];
     // An overall timeout bounds HEAD requests as well as the LIST scan. No writes occur.
     tokio::time::timeout(Duration::from_secs(120), async {
         for mut file in local {
-            let action = if remote.remove(&file.key).is_some() {
+            let exists = remote.remove(&file.key).is_some();
+            if !filters.accepts(
+                file.key
+                    .strip_prefix(prefix)
+                    .ok_or_else(|| AppError::ConfigError("File outside sync prefix".into()))?,
+            ) {
+                preview.filtered_files += 1;
+                preview.entries.push(Entry {
+                    key: file.key,
+                    size: file.source.size,
+                    action: "Filtered".into(),
+                });
+                continue;
+            }
+            if exists && options.skip_existing {
+                preview.skipped_files += 1;
+                preview.entries.push(Entry {
+                    key: file.key,
+                    size: file.source.size,
+                    action: "Skipped".into(),
+                });
+                continue;
+            }
+            let action = if exists {
                 let head = client
                     .head_object()
                     .bucket(bucket_name)
@@ -287,6 +331,49 @@ fn take_plan(
 mod tests {
     use super::*;
     use crate::commands::test_s3::{response, scripted_client};
+    #[tokio::test]
+    async fn filters_and_skip_existing_never_head_or_queue_excluded_objects() {
+        let root = tempfile::tempdir().unwrap();
+        for name in ["new.txt", "existing.txt", "excluded.txt", "image.png"] {
+            std::fs::write(root.path().join(name), b"hello").unwrap();
+        }
+        let local = sync::scan(root.path(), "dest/").unwrap();
+        let (client, server) = scripted_client(vec![response(200, "", "<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>dest/existing.txt</Key></Contents><Contents><Key>dest/excluded.txt</Key></Contents><Contents><Key>dest/remote.txt</Key></Contents></ListBucketResult>")]).await;
+        let options = SyncOptions {
+            include: vec!["**/*.txt".into()],
+            exclude: vec!["excluded.txt".into()],
+            skip_existing: true,
+        };
+        let (preview, jobs) = compare_options(&client, "bucket", "dest/", local, &options)
+            .await
+            .unwrap();
+        assert_eq!(
+            (
+                preview.new_files,
+                preview.filtered_files,
+                preview.skipped_files,
+                preview.remote_only_files
+            ),
+            (1, 2, 1, 1)
+        );
+        assert_eq!(preview.upload_bytes, 5);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].key, "dest/new.txt");
+        assert!(jobs[0].source.expected_etag.is_none());
+        let plan = Plan {
+            created: Instant::now(),
+            profile: "a".into(),
+            bucket: "bucket".into(),
+            region: None,
+            files: jobs,
+            preview,
+        };
+        let mut plans = HashMap::from([("plan".into(), plan)]);
+        assert!(take_plan(&mut plans, "plan", "a", false).is_ok());
+        let requests = server.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].starts_with("GET "));
+    }
     #[test]
     fn plans_require_profile_confirmation_freshness_and_are_single_use() {
         let preview = Preview {
@@ -298,6 +385,8 @@ mod tests {
             unchanged_files: 0,
             remote_only_files: 0,
             upload_bytes: 0,
+            filtered_files: 0,
+            skipped_files: 0,
         };
         let plan = Plan {
             created: Instant::now(),
