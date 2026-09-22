@@ -240,6 +240,17 @@ pub fn run() {
                 log::error!("Transfer recovery is unavailable: {error}");
             }
 
+            let jobs_path = data_dir.join("saved-jobs.json");
+            let jobs =
+                commands::jobs::JobStore::open(jobs_path.clone(), chrono::Utc::now().timestamp())
+                    .unwrap_or_else(|error| {
+                        log::error!("Saved jobs unavailable: {error}");
+                        commands::jobs::JobStore::unavailable(jobs_path, error.to_string())
+                    });
+            let jobs = Arc::new(tokio::sync::Mutex::new(jobs));
+            app.manage(jobs.clone());
+            commands::jobs::start_scheduler(app.handle().clone(), jobs);
+
             // Show the main window after initialization to prevent white flash
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -316,6 +327,12 @@ pub fn run() {
             // Transfer commands
             commands::sync::preview_folder_sync,
             commands::sync::start_folder_sync,
+            commands::jobs::list_saved_jobs,
+            commands::jobs::save_sync_job,
+            commands::jobs::run_saved_job,
+            commands::jobs::cancel_saved_job,
+            commands::jobs::set_saved_job_enabled,
+            commands::jobs::delete_saved_job,
             commands::cross_copy::copy_between_profiles,
             commands::versions::list_object_versions,
             commands::versions::restore_object_version,

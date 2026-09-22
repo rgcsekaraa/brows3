@@ -24,6 +24,7 @@ import {
   Home as HomeIcon,
   Info as InfoIcon,
   Storage as StorageIcon,
+  Schedule as ScheduleIcon,
 } from '@mui/icons-material';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import AboutDialog from '@/components/dialogs/AboutDialog';
@@ -39,6 +40,7 @@ const navItems = [
   { label: 'Recent', icon: <HistoryIcon />, path: '/recent' },
   { label: 'Downloads', icon: <DownloadIcon />, path: '/downloads' },
   { label: 'Uploads', icon: <UploadIcon />, path: '/uploads' },
+  { label: 'Jobs', icon: <ScheduleIcon />, path: '/jobs' },
 ];
 
 export default function Sidebar() {
@@ -83,7 +85,7 @@ export default function Sidebar() {
   };
 
   const handleNavClick = (item: typeof navItems[0]) => {
-    if (!hasProfiles) return;
+    if (!hasProfiles && item.path !== '/jobs') return;
     addTab({ title: item.label, path: item.path, icon: item.label.toLowerCase() });
     router.push(item.path);
   };
@@ -109,10 +111,10 @@ export default function Sidebar() {
           {navItems.map((item) => (
             <Tooltip 
               key={item.label} 
-              title={!hasProfiles ? "Create a profile first" : ""} 
+              title={!hasProfiles && item.path !== '/jobs' ? "Create a profile first" : ""}
               placement="right"
             >
-              <ListItem disablePadding sx={!hasProfiles ? disabledStyles : {}}>
+              <ListItem disablePadding sx={!hasProfiles && item.path !== '/jobs' ? disabledStyles : {}}>
                 <ListItemButton 
                   onClick={() => handleNavClick(item)}
                   selected={
@@ -120,7 +122,7 @@ export default function Sidebar() {
                       ? (pathname === '/' && !searchParams.get('view'))
                       : (pathname + (searchParams.toString() ? `?${searchParams.toString()}` : '') === item.path || pathname === item.path)
                   }
-                  disabled={!hasProfiles}
+                  disabled={!hasProfiles && item.path !== '/jobs'}
                   sx={{ mx: 1, my: 0.5 }}
                 >
                   <ListItemIcon sx={{ 

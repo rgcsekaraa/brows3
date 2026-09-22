@@ -10,6 +10,8 @@ import { syncApi, SyncPreview } from '@/lib/tauri';
 import { useTransferStore } from '@/store/transferStore';
 import { toast } from '@/store/toastStore';
 import { formatSize } from '@/lib/utils';
+import SaveSyncJob from './SaveSyncJob';
+import { useSettingsStore } from '@/store/settingsStore';
 
 interface Props { bucket: string; region?: string; prefix: string; profileId: string; onClose: () => void }
 
@@ -17,7 +19,9 @@ interface Props { bucket: string; region?: string; prefix: string; profileId: st
 export default function FolderSyncDialog({ bucket, region, prefix, profileId, onClose }: Props) {
   const [folder, setFolder] = useState('');
   const [preview, setPreview] = useState<SyncPreview | null>(null);
-  const [busy, setBusy] = useState<'preview' | 'start' | null>(null);
+  const [busy, setBusy] = useState<'preview' | 'start' | 'save' | null>(null);
+  const [savingJob, setSavingJob] = useState(false);
+  const bandwidth = useSettingsStore(state => state.transferBandwidthKiB) * 1024;
   const [error, setError] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [page, setPage] = useState(0);
@@ -56,8 +60,8 @@ export default function FolderSyncDialog({ bucket, region, prefix, profileId, on
     finally { if (alive.current) setBusy(null); }
   }
 
-  return <BaseDialog open title="Sync local folder to S3" onClose={() => { if (busy !== 'start') onClose(); }} maxWidth="md" actions={<>
-    <Button size="small" sx={secondarySx} disabled={busy === 'start'} onClick={onClose}>Close</Button>
+  return <BaseDialog open title="Sync local folder to S3" onClose={() => { if (busy !== 'start' && busy !== 'save') onClose(); }} maxWidth="md" actions={<>
+    <Button size="small" sx={secondarySx} disabled={busy === 'start' || busy === 'save'} onClick={onClose}>Close</Button>
     <Button size="small" sx={secondarySx} variant="outlined" disabled={!folder || !!busy} onClick={compare}>{preview ? 'Refresh preview' : 'Preview changes'}</Button>
     <Button size="small" sx={buttonSx} variant="contained" disabled={!preview || !!busy || uploads === 0 || (replacements > 0 && !confirmed)} onClick={start}>Start sync</Button>
   </>}>
@@ -76,7 +80,9 @@ export default function FolderSyncDialog({ bucket, region, prefix, profileId, on
       <MenuItem value="replace">Replace changed files after confirmation</MenuItem>
       <MenuItem value="skip">Skip all existing objects</MenuItem>
     </TextField>
-    {busy && <Box role="status" sx={{ mb: 2 }}><LinearProgress /><Typography variant="body2" sx={{ mt: 1 }}>{busy === 'preview' ? 'Reading local files and comparing S3 objects. Large folders may take a few minutes.' : 'Queueing sync uploads...'}</Typography></Box>}
+    {folder && <Button size="small" sx={{ ...secondarySx, mb: 2 }} disabled={!!busy} onClick={() => setSavingJob(value => !value)}>{savingJob ? 'Hide job settings' : 'Save as a job'}</Button>}
+    {folder && savingJob && <SaveSyncJob blocked={busy === 'preview' || busy === 'start'} key={JSON.stringify([folder, include, exclude, skipExisting, bandwidth])} config={{ local_path: folder, profile_id: profileId, bucket, region: region ?? null, prefix, options: { include: include.split('\n').filter(Boolean), exclude: exclude.split('\n').filter(Boolean), skip_existing: skipExisting }, bandwidth }} onBusy={value => setBusy(value ? 'save' : null)} />}
+    {busy && <Box role="status" sx={{ mb: 2 }}><LinearProgress /><Typography variant="body2" sx={{ mt: 1 }}>{busy === 'preview' ? 'Reading local files and comparing S3 objects. Large folders may take a few minutes.' : busy === 'save' ? 'Saving job...' : 'Queueing sync uploads...'}</Typography></Box>}
     {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
     {preview && <>
       <Typography variant="body2" sx={{ mb: 1 }}>{preview.new_files} new, {preview.changed_files} changed, {preview.unverified_files} unverified, {preview.unchanged_files} unchanged, {preview.filtered_files ?? 0} filtered, {preview.skipped_files ?? 0} skipped. Upload: {formatSize(preview.upload_bytes)}.</Typography>

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest';
 import AppShell from '@/components/layout/AppShell';
 import { useAppStore } from '@/store/appStore';
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => '/' }));
 
 vi.mock('@/hooks/useTransferEvents', () => ({ useTransferEvents: vi.fn() }));
 vi.mock('@/hooks/useClipboardShortcuts', () => ({ useClipboardShortcuts: vi.fn() }));

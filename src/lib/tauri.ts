@@ -51,6 +51,34 @@ const invoke = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T
 };
 
 // Cache invalidation helper - hooks can subscribe to write-driven invalidation
+export interface SavedJobConfig {
+  name: string;
+  local_path: string;
+  profile_id: string;
+  bucket: string;
+  region: string | null;
+  prefix: string;
+  options: { include: string[]; exclude: string[]; skip_existing: boolean };
+  bandwidth: number;
+  interval_minutes: number | null;
+  allow_replacement: boolean;
+}
+export interface SavedJob {
+  id: string;
+  config: SavedJobConfig;
+  enabled: boolean;
+  next_run: number | null;
+  last_run: null | { id: string; started_at: number; finished_at: number | null; status: string; message: string; transfer_ids: string[]; cancel_requested: boolean };
+}
+export const jobsApi = {
+  list: () => invoke<SavedJob[]>('list_saved_jobs'),
+  save: (config: SavedJobConfig, approved: boolean) => invoke<SavedJob>('save_sync_job', { config, approved }),
+  run: (id: string) => invoke<void>('run_saved_job', { id }),
+  cancel: (id: string) => invoke<void>('cancel_saved_job', { id }),
+  setEnabled: (id: string, enabled: boolean) => invoke<void>('set_saved_job_enabled', { id, enabled }),
+  delete: (id: string) => invoke<void>('delete_saved_job', { id }),
+};
+
 export interface SyncPreview {
   id: string;
   entries: { key: string; size: number; action: 'New' | 'Changed' | 'Unverified' | 'Unchanged' | 'Filtered' | 'Skipped' }[];

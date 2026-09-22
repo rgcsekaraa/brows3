@@ -32,6 +32,8 @@ import { toast } from '@/store/toastStore';
 import { profileApi, transferApi } from '@/lib/tauri';
 import { useClipboardShortcuts } from '@/hooks/useClipboardShortcuts';
 import { preloadMonaco } from '@/lib/monaco-config';
+import { useSavedJobEvents } from '@/hooks/useSavedJobEvents';
+import { usePathname } from 'next/navigation';
 
 const drawerWidth = 260; 
 
@@ -40,6 +42,8 @@ interface AppShellProps {
 }
 
 export default function AppShell({ children }: AppShellProps) {
+  const pathname = usePathname();
+  useSavedJobEvents();
   const { themeMode, sidebarOpen, setSidebarOpen } = useAppStore();
   const { profiles, setProfiles, setActiveProfileId } = useProfileStore();
   const maxConcurrentTransfers = useSettingsStore((state) => state.maxConcurrentTransfers);
@@ -259,7 +263,7 @@ export default function AppShell({ children }: AppShellProps) {
               <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <CircularProgress size={32} />
               </Box>
-            ) : profiles.length === 0 ? (
+            ) : profiles.length === 0 && pathname !== '/jobs' ? (
               <Box sx={{ 
                 height: 'calc(100vh - 150px)', 
                 display: 'flex', 
