@@ -42,6 +42,9 @@ test('public URL overrides are per file and never change connection defaults', a
 });
 
 test('URL import reviews paste, CSV and JSON with independent configuration before queueing', async ({ page, backend }) => {
+  // This spans import, transfer cancellation, source replacement and history removal.
+  // Linux WebKit needs more than the default 30s for the complete journey.
+  test.setTimeout(60_000);
   await page.goto('/bucket?name=demo-bucket&region=us-east-1');
   await page.getByRole('button', { name: 'Upload', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Import from URLs' }).click();
@@ -100,6 +103,7 @@ test('URL import reviews paste, CSV and JSON with independent configuration befo
 });
 
 test('dark connection configuration persists and import validation prevents writes', async ({ page, backend }) => {
+  test.setTimeout(60_000);
   await page.addInitScript(() => localStorage.setItem('brows3-app-v2', JSON.stringify({ state: { themeMode: 'dark' }, version: 0 })));
   await page.goto('/bucket?name=demo-bucket&region=us-east-1');
   await page.getByRole('combobox').filter({ hasText: 'Development' }).click();
