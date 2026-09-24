@@ -7,6 +7,7 @@ pub mod operations;
 pub mod profiles;
 pub mod sync;
 pub mod transfer;
+pub mod urls;
 pub mod versions;
 
 #[cfg(test)]

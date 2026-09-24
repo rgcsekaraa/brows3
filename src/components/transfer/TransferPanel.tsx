@@ -158,11 +158,12 @@ export function TransferPanel({ filterType }: TransferPanelProps) {
                                 </Typography>
                               </Tooltip>
                               <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap', ml: 1, fontVariantNumeric: 'tabular-nums' }}>
-                                {job.status === 'InProgress' ? `${formatTransferSpeed(transferSpeed(job))} · ` : ''}{Math.round(progress)}%
+                                {job.status === 'InProgress' ? `${formatTransferSpeed(transferSpeed(job))} · ` : ''}{job.url_import && !job.total_bytes && job.status !== 'Completed' ? 'Unknown' : `${Math.round(progress)}%`}
                               </Typography>
                             </Box>
+                            {job.phase && job.status === 'InProgress' && <Typography variant="caption" color="text.secondary" display="block">{job.phase}</Typography>}
                             <LinearProgress
-                              variant="determinate"
+                              variant={job.url_import && !job.total_bytes && job.status === 'InProgress' ? 'indeterminate' : 'determinate'}
                               value={progress}
                               color={isError ? 'error' : job.status === 'Completed' ? 'success' : 'primary'}
                               sx={{ height: 2, borderRadius: 1 }}

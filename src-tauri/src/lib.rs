@@ -325,6 +325,9 @@ pub fn run() {
             operations::get_object_permissions,
             operations::set_object_permissions,
             // Transfer commands
+            commands::urls::get_public_urls,
+            commands::urls::check_public_url,
+            commands::urls::queue_url_imports,
             commands::sync::preview_folder_sync,
             commands::sync::start_folder_sync,
             commands::jobs::list_saved_jobs,

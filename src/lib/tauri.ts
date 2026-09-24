@@ -151,6 +151,7 @@ export type CredentialType =
   | { type: 'CustomEndpoint'; endpoint_url: string; access_key_id: string; secret_access_key: string };
 
 export interface Profile {
+  public_urls?: PublicUrlSettings;
   id: string;
   name: string;
   credential_type: CredentialType;
@@ -159,6 +160,17 @@ export interface Profile {
   created_at?: string;
   updated_at?: string;
 }
+
+export interface PublicUrlSettings {
+  base_url: string;
+  include_bucket: boolean;
+  bucket_overrides: Record<string, string>;
+}
+export const urlApi = {
+  publicUrls: (bucket: string, region: string | undefined, keys: string[], expectedProfileId: string, overrides?: Record<string,string>) => invoke<string[]>('get_public_urls', { bucket, region, keys, overrides, expectedProfileId }),
+  checkPublicUrl: (bucket: string, region: string | undefined, key: string, expectedProfileId: string, urlOverride?: string) => invoke<string>('check_public_url', { bucket, region, key, expectedProfileId, urlOverride }),
+  importUrls: (bucket: string, region: string | undefined, prefix: string, entries: import('./urlImport').UrlImportEntry[], expectedProfileId: string) => invoke<number>('queue_url_imports', { bucket, region, prefix, entries, expectedProfileId }),
+};
 
 export interface TestConnectionResult {
   success: boolean;
@@ -482,6 +494,8 @@ export interface SetObjectPermissionsResult {
 }
 
 export interface TransferJob {
+  phase?: string | null;
+  url_import?: { max_bytes: number; max_attempts?: number; sha256: string | null; expected_etag: string | null } | null;
   id: string;
   profile_id: string;
   transfer_type: 'Upload' | 'Download';
@@ -501,6 +515,7 @@ export interface TransferJob {
 }
 
 export interface TransferEvent {
+  phase?: string | null;
   job_id: string;
   processed_bytes: number;
   bytes_per_second?: number;
