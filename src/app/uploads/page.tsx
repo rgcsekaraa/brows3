@@ -33,9 +33,11 @@ import {
 } from '@mui/icons-material';
 
 import { useTransferStore } from '@/store/transferStore';
+import { toast } from '@/store/toastStore';
 import { TransferJob } from '@/lib/tauri';
 import { transferColumnWidths, transferTableSx } from '@/components/transfer/tableLayout';
 import { CancelTransferButton } from '@/components/transfer/CancelTransferButton';
+import UrlImportActions from '@/components/transfer/UrlImportActions';
 import { TransferActivityIcon } from '@/components/transfer/TransferActivityIcon';
 import { formatTransferSpeed, transferSpeed, totalTransferSpeed } from '@/lib/transferSpeed';
 
@@ -288,7 +290,12 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
     const { retryJob } = useTransferStore();
     
     // Actions
-    const handleRetry = () => retryJob(job.id);
+    const [retrying, setRetrying] = useState(false);
+    const handleRetry = async () => {
+      if (retrying) return;
+      setRetrying(true);
+      try { await retryJob(job.id); } catch (error) { toast.error('Could not retry transfer', String(error)); } finally { setRetrying(false); }
+    };
 
     return (
         <TableRow sx={{ '&:last-child td, &:last-child th': { border: 0 }, bgcolor: isNested ? 'action.hover' : 'inherit' }}>
@@ -298,6 +305,7 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                         <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>{job.key.split('/').pop()}</Typography>
                     </Tooltip>
                     {!isNested && <Typography variant="caption" color="text.secondary" noWrap display="block">{job.bucket}</Typography>}
+                    {job.phase && job.status === 'InProgress' && <Typography variant="caption" color="text.secondary" display="block">{job.phase}</Typography>}
                     {job.status === 'InProgress' && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontVariantNumeric: 'tabular-nums' }}>{formatTransferSpeed(transferSpeed(job))}</Typography>}
                     {status.detail && <Typography variant="caption" color="error" display="block" sx={{ overflowWrap: 'anywhere', maxWidth: 360 }}>{status.detail}</Typography>}
                 </Box>
@@ -318,9 +326,9 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
             <TableCell>
                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
                     <Box sx={{ flex: 1, minWidth: 0, mr: 0.5 }}>
-                        <LinearProgress variant="determinate" value={progress} color={toProgressColor(status.color)} sx={{ height: 4, borderRadius: 1 }} />
+                        <LinearProgress variant={job.url_import && !job.total_bytes && job.status === 'InProgress' ? 'indeterminate' : 'determinate'} value={progress} color={toProgressColor(status.color)} sx={{ height: 4, borderRadius: 1 }} />
                     </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{Math.round(progress)}%</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{job.url_import && !job.total_bytes && !isCompleted ? 'Unknown' : `${Math.round(progress)}%`}</Typography>
                 </Box>
             </TableCell>
             <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{job.status === 'InProgress' ? formatTransferSpeed(transferSpeed(job)) : '-'}</TableCell>
@@ -356,9 +364,10 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
                         <span>
                             <IconButton 
                                 onClick={handleRetry} 
+                                aria-label="Retry upload"
                                 size="small" 
                                 color="primary"
-                                disabled={!((typeof job.status === 'object' && 'Failed' in job.status) || job.status === 'Cancelled')}
+                                disabled={retrying || !((typeof job.status === 'object' && 'Failed' in job.status) || job.status === 'Cancelled')}
                             >
                                 <ReplayIcon fontSize="small" />
                             </IconButton>
@@ -367,6 +376,7 @@ function SingleRow({ job, isNested = false }: { job: TransferJob; isNested?: boo
 
                     {/* Cancel Button */}
                     <CancelTransferButton job={job} />
+                    <UrlImportActions job={job} />
                 </Box>
             </TableCell>
         </TableRow>

@@ -44,6 +44,7 @@ import { useClipboardStore } from '@/store/clipboardStore';
 import { toast } from '@/store/toastStore';
 import { useRouter } from 'next/navigation';
 import { BaseDialog } from '../common/BaseDialog';
+import PublicUrlFields, { emptyPublicUrlForm, publicUrlSettings, PublicUrlForm } from './PublicUrlFields';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
 
 const AWS_REGIONS = [
@@ -69,6 +70,7 @@ const AWS_REGIONS = [
 type CredentialTypeKey = 'Environment' | 'SharedConfig' | 'Manual' | 'CustomEndpoint';
 
 type ProfileFormData = {
+  publicUrls: PublicUrlForm;
   name: string;
   credentialType: CredentialTypeKey;
   region: string;
@@ -97,6 +99,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   
   const [mode, setMode] = useState<'list' | 'add' | 'edit'>('list');
   const [formData, setFormData] = useState<ProfileFormData>({
+    publicUrls: emptyPublicUrlForm(),
     name: '',
     credentialType: 'Environment' as CredentialTypeKey,
     region: 'us-east-1',
@@ -171,6 +174,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
 
   const resetForm = useCallback(() => {
     setFormData({
+      publicUrls: emptyPublicUrlForm(),
       name: '',
       credentialType: 'Environment',
       region: defaultRegion || 'us-east-1',
@@ -222,6 +226,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     const endpointUrl = cred.type === 'CustomEndpoint' ? cred.endpoint_url : '';
 
     setFormData({
+      publicUrls: profile.public_urls ? { base: profile.public_urls.base_url, includeBucket: profile.public_urls.include_bucket, overrides: Object.entries(profile.public_urls.bucket_overrides).map(([bucket, url]) => ({ bucket, url })) } : emptyPublicUrlForm(),
       name: profile.name,
       credentialType: cred.type as CredentialTypeKey,
       region: profile.region || 'us-east-1',
@@ -336,6 +341,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     try {
       const profileData: Partial<Profile> = {
         name: formData.name,
+        public_urls: publicUrlSettings(formData.publicUrls),
         credential_type: buildCredentialType(),
         region: formData.region,
         is_default: false,
@@ -773,6 +779,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
           )}
         />
         
+        <PublicUrlFields value={formData.publicUrls} onChange={value => updateField('publicUrls', value)} />
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Button

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-25T00:00:00Z",
+  "title": "Design System: S3 Browser",
+  "extensions": {
+    "colorMeta": {
+      "primary-light": { "role": "primary", "displayName": "Light mode orange" },
+      "primary-dark": { "role": "primary", "displayName": "Dark mode orange" },
+      "url-text-action-light": { "role": "primary", "displayName": "Local URL text action orange" },
+      "secondary": { "role": "secondary", "displayName": "Dark blue" }
+    },
+    "shadows": [
+      { "name": "dialog-light", "value": "0 24px 48px -12px rgba(0, 0, 0, 0.1)", "purpose": "BaseDialog in light mode." },
+      { "name": "dialog-dark", "value": "0 24px 48px -12px rgba(0, 0, 0, 0.5)", "purpose": "BaseDialog in dark mode." }
+    ],
+    "motion": [
+      { "name": "theme-duration", "value": "0ms", "purpose": "All configured theme transition durations." },
+      { "name": "control-transition", "value": "none", "purpose": "Buttons, icon buttons, list items, and list item buttons." }
+    ],
+    "breakpoints": [
+      { "name": "xs", "value": "0px" },
+      { "name": "sm", "value": "600px" },
+      { "name": "md", "value": "900px" },
+      { "name": "lg", "value": "1200px" },
+      { "name": "xl", "value": "1536px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "URL text action, light",
+      "kind": "button",
+      "refersTo": "button-url-text-light",
+      "description": "Local contrast color for enabled URL workflow text actions.",
+      "html": "<button class=\"ds-url-text\">Check access</button>",
+      "css": ".ds-url-text{font-family:Inter,Roboto,Helvetica,Arial,sans-serif;font-size:.8125rem;font-weight:700;letter-spacing:-.01em;line-height:1.75;padding:4px 5px;border:0;border-radius:999px;background:transparent;color:#995700;transition:none}.ds-url-text:hover{background:rgba(234,141,0,.08)}.ds-url-text:focus-visible{outline:auto}.ds-url-text:disabled{color:rgba(0,0,0,.26)}"
+    },
+    {
+      "name": "Primary URL action, light",
+      "kind": "button",
+      "refersTo": "button-primary-light",
+      "description": "Compact footer confirmation action using the existing theme fill.",
+      "html": "<button class=\"ds-url-primary\">Import files</button>",
+      "css": ".ds-url-primary{font-family:Inter,Roboto,Helvetica,Arial,sans-serif;font-size:.8125rem;font-weight:700;letter-spacing:-.01em;line-height:1.75;padding:4px 10px;border:0;border-radius:999px;background:#EA8D00;color:#000;transition:none}.ds-url-primary:hover{background:#CC7A00}.ds-url-primary:focus-visible{outline:auto}.ds-url-primary:disabled{background:rgba(0,0,0,.12);color:rgba(0,0,0,.26)}"
+    },
+    {
+      "name": "URL outlined action, light",
+      "kind": "button",
+      "description": "Add source links to the review list, with local contrast text and the existing theme border.",
+      "html": "<button class=\"ds-url-outline\">Add links</button>",
+      "css": ".ds-url-outline{font-family:Inter,Roboto,Helvetica,Arial,sans-serif;font-size:.8125rem;font-weight:700;letter-spacing:-.01em;line-height:1.75;padding:3px 9px;border:1px solid rgba(234,141,0,.5);border-radius:999px;background:transparent;color:#995700;transition:none}.ds-url-outline:hover{background:rgba(234,141,0,.08);border-color:#EA8D00}.ds-url-outline:focus-visible{outline:auto}"
+    },
+    {
+      "name": "Public URL field, light",
+      "kind": "input",
+      "description": "Static HTML translation of the compact outlined MUI URL field.",
+      "html": "<fieldset class=\"ds-url-field\"><legend>Public URL 1</legend><input aria-label=\"Public URL 1\" value=\"https://cdn.example.com/file.txt\" /></fieldset>",
+      "css": ".ds-url-field{font-family:Inter,Roboto,Helvetica,Arial,sans-serif;border:1px solid rgba(0,0,0,.23);border-radius:4px;color:#111827;padding:0 14px}.ds-url-field legend{font-size:.75rem;color:#374151}.ds-url-field input{font:inherit;font-size:.925rem;line-height:1.6;color:inherit;background:transparent;border:0;padding:8.5px 0;width:100%;outline:none}.ds-url-field:hover{border-color:#111827}.ds-url-field:focus-within{border:2px solid #EA8D00}"
+    },
+    {
+      "name": "BaseDialog surface, light",
+      "kind": "custom",
+      "refersTo": "dialog-light",
+      "description": "Shared dialog surface, title, and content treatment.",
+      "html": "<section class=\"ds-dialog\" aria-label=\"Copy public URL\"><header>Copy public URL</header><div>Connection and bucket settings provide defaults.</div></section>",
+      "css": ".ds-dialog{font-family:Inter,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111827;border:1px solid rgba(0,0,0,.1);border-radius:4px;box-shadow:0 24px 48px -12px rgba(0,0,0,.1);backdrop-filter:blur(12px);overflow:hidden}.ds-dialog header{padding:20px;border-bottom:1px solid rgba(0,0,0,.05);font-size:1.1rem;font-weight:800;letter-spacing:-.02em;background:linear-gradient(45deg,#000 30%,rgba(0,0,0,.7) 90%);background-clip:text;-webkit-text-fill-color:transparent}.ds-dialog>div{padding:32px 24px 24px;font-size:.85rem;font-weight:500}"
+    }
+  ],
+  "narrative": {
+    "overview": "This document records the incumbent interface, with the existing theme and components as authority. It uses compact MUI controls, orange actions, and light or dark neutral surfaces. No new visual identity or metaphor is introduced.",
+    "keyCharacteristics": [
+      "Compact controls and small text for operational screens.",
+      "Pill action buttons alongside gently rounded dialogs and fields.",
+      "Shared light and dark modes with semantic feedback colors."
+    ],
+    "rules": [],
+    "dos": [
+      "Do reuse the theme and BaseDialog for additional workflow surfaces.",
+      "Do keep URL workflow controls compact and use the shared local action style.",
+      "Do preserve both light and dark appearances and visible disabled, error, and busy states."
+    ],
+    "donts": [
+      "Don't replace the existing dark, orange, and light visual system.",
+      "Don't promote the local URL text-action contrast adjustment into an unrequested global palette change."
+    ]
+  }
+}

@@ -67,6 +67,8 @@ import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
 import { canObjectBeEdited, getObjectName } from '@/lib/objectCapabilities';
 import { usePreviewNavigation } from '@/hooks/usePreviewNavigation';
 import PresignedUrlDialog from '@/components/dialogs/PresignedUrlDialog';
+import PublicUrlsDialog from '@/components/dialogs/PublicUrlsDialog';
+import UrlImportDialog from '@/components/dialogs/UrlImportDialog';
 import { VirtualizedObjectTable } from '@/components/common/VirtualizedObjectTable';
 import { toast } from '@/store/toastStore';
 import { useHistoryStore } from '@/store/historyStore';
@@ -285,6 +287,9 @@ function BucketContent() {
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMenuAnchor, setUploadMenuAnchor] = useState<null | HTMLElement>(null);
+  const [urlImportScope, setUrlImportScope] = useState<string | null>(null);
+  const [publicLinks, setPublicLinks] = useState<{ scope: string; keys: string[] } | null>(null);
+  useEffect(() => { setUrlImportScope(null); setPublicLinks(null); }, [viewKey]);
   const [syncDestination, setSyncDestination] = useState<string | null>(null);
   const [versionHistory, setVersionHistory] = useState<{ viewKey: string; key: string } | null>(null);
   useEffect(() => { setVersionHistory(null); }, [viewKey]);
@@ -1192,6 +1197,7 @@ function BucketContent() {
               >
                 Download
               </Button>
+              <Button size="small" variant="outlined" startIcon={<LinkIcon />} sx={{ borderRadius: '999px' }} disabled={!activeProfileId || Array.from(selectedKeys).some(key => currentFolderKeys.has(key))} onClick={() => setPublicLinks({ scope: viewKey, keys: Array.from(selectedKeys) })}>Copy public URLs</Button>
                <Button
                 variant="contained"
                 color="error"
@@ -1244,6 +1250,7 @@ function BucketContent() {
                 <ListItemIcon><FolderIcon fontSize="small" /></ListItemIcon>
                 Folder
             </MenuItem>
+            <MenuItem disabled={!activeProfileId} onClick={() => { setUploadMenuAnchor(null); setUrlImportScope(viewKey); }}><ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>Import from URLs</MenuItem>
             <MenuItem onClick={() => { setUploadMenuAnchor(null); setSyncDestination(`${activeProfileId}:${bucketName}:${prefix}`); }} disabled={!activeProfileId}>
                 <ListItemIcon><FolderIcon fontSize="small" /></ListItemIcon>
                 Sync local folder...
@@ -1415,6 +1422,7 @@ function BucketContent() {
            Properties
         </MenuItem>
         {!selectedObject?.isFolder && <MenuItem onClick={() => { if (selectedObject) setVersionHistory({ viewKey, key: selectedObject.key }); handleMenuClose(); }}><ListItemIcon><HistoryIcon fontSize="small" /></ListItemIcon>Version history</MenuItem>}
+        {!selectedObject?.isFolder && <MenuItem onClick={() => { if (selectedObject) setPublicLinks({ scope: viewKey, keys: [selectedObject.key] }); handleMenuClose(); }}><ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>Copy public URL</MenuItem>}
         <MenuItem onClick={handlePermissionsOpen}>
            <ListItemIcon><LockIcon fontSize="small" /></ListItemIcon>
            Permissions
@@ -1634,6 +1642,8 @@ function BucketContent() {
       />
 
       {/* Presigned URL Dialog */}
+      {activeProfileId && urlImportScope === viewKey && <UrlImportDialog key={`url-import:${viewKey}`} bucket={bucketName} region={bucketRegion} prefix={prefix} profileId={activeProfileId} onClose={() => setUrlImportScope(null)} />}
+      {activeProfileId && publicLinks?.scope === viewKey && <PublicUrlsDialog key={`public-links:${viewKey}`} bucket={bucketName} region={bucketRegion} keys={publicLinks.keys} profileId={activeProfileId} onClose={() => setPublicLinks(null)} />}
       <PresignedUrlDialog
         open={presignedUrlOpen}
         onClose={() => { setPresignedUrlOpen(false); setPresignedUrlKey(null); }}

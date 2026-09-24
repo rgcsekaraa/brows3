@@ -57,6 +57,7 @@ export default function PresignedUrlDialog({
   const [customUnit, setCustomUnit] = useState<'seconds' | 'minutes' | 'hours' | 'days'>('hours');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+  const [generatedExpiry, setGeneratedExpiry] = useState<{ seconds: number; at: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const generateRequestIdRef = useRef(0);
@@ -92,6 +93,7 @@ export default function PresignedUrlDialog({
       setCustomExpiry('');
       setCustomUnit('hours');
       setGeneratedUrl(null);
+      setGeneratedExpiry(null);
       setError(null);
       setCopied(false);
       setIsGenerating(false);
@@ -124,11 +126,13 @@ export default function PresignedUrlDialog({
     setError(null);
     setGeneratedUrl(null);
     const requestId = ++generateRequestIdRef.current;
+    const requestedAt = Date.now();
 
     try {
       const url = await objectApi.getPresignedUrl(bucketName, bucketRegion, objectKey, expirySeconds);
       if (requestId === generateRequestIdRef.current) {
         setGeneratedUrl(url);
+        setGeneratedExpiry({ seconds: expirySeconds, at: requestedAt + expirySeconds * 1000 });
       }
     } catch (err) {
       if (requestId === generateRequestIdRef.current) {
@@ -287,7 +291,7 @@ export default function PresignedUrlDialog({
             <Stack direction="row" spacing={1} alignItems="center">
               <Chip
                 icon={<TimeIcon />}
-                label={`Expires in ${formatExpiry(getExpirySeconds())}`}
+                label={`Requested lifetime: ${formatExpiry(generatedExpiry?.seconds || 0)}`}
                 size="small"
                 color="primary"
                 variant="outlined"
@@ -303,6 +307,8 @@ export default function PresignedUrlDialog({
                 Generate Another
               </Button>
             </Stack>
+
+            {generatedExpiry && <Typography variant="caption" color="text.secondary">Requested expiry: {new Date(generatedExpiry.at).toLocaleString()}. Temporary credentials can expire sooner.</Typography>}
 
             <Alert severity="warning" sx={{ py: 0.5 }}>
               <Typography variant="caption">

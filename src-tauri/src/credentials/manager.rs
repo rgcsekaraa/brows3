@@ -34,6 +34,8 @@ pub enum CredentialType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     #[serde(default)]
+    pub public_urls: crate::transfer::public_url::PublicUrls,
+    #[serde(default)]
     pub id: String,
     #[serde(default)]
     pub secret_ref: Option<String>,
@@ -61,6 +63,7 @@ impl Profile {
     pub fn new(name: String, credential_type: CredentialType, region: Option<String>) -> Self {
         let now = chrono::Utc::now();
         Self {
+            public_urls: Default::default(),
             id: Uuid::new_v4().to_string(),
             name,
             secret_ref: None,
@@ -251,6 +254,7 @@ impl ProfileManager {
     }
 
     pub async fn add_profile(&mut self, mut profile: Profile) -> Result<Profile> {
+        profile.public_urls.validate()?;
         // Generate ID if not provided
         if profile.id.is_empty() {
             profile.id = Uuid::new_v4().to_string();
@@ -297,6 +301,7 @@ impl ProfileManager {
     }
 
     pub async fn update_profile(&mut self, id: &str, mut profile: Profile) -> Result<Profile> {
+        profile.public_urls.validate()?;
         let existing_profile = self
             .data
             .profiles
@@ -751,6 +756,7 @@ mod tests {
         profiles.insert(
             "legacy-key".to_string(),
             Profile {
+                public_urls: Default::default(),
                 secret_ref: None,
                 id: String::new(),
                 name: "Legacy".to_string(),

@@ -348,6 +348,9 @@ impl TransferManager {
             // Can only retry Failed or Cancelled jobs
             match &job.status {
                 TransferStatus::Failed(_) | TransferStatus::Cancelled => {
+                    if job.url_import.as_ref().is_some_and(|s| s.url.is_empty()) {
+                        return None;
+                    }
                     if job
                         .remote_source
                         .as_ref()
@@ -369,6 +372,7 @@ impl TransferManager {
                     new_job.download_destination = job.download_destination.clone();
                     new_job.sync_source = job.sync_source.clone();
                     new_job.remote_source = job.remote_source.clone();
+                    new_job.url_import = job.url_import.clone();
                     new_job.restore_guard = job.restore_guard.clone();
                     new_job.bandwidth_limit = job.bandwidth_limit;
 
@@ -393,6 +397,7 @@ impl TransferManager {
     async fn emit_update(&self, job: &TransferJob) {
         if let Some(app) = self.app_handle.read().await.as_ref() {
             let event = TransferEvent {
+                phase: job.phase.clone(),
                 job_id: job.id.clone(),
                 bytes_per_second: job.bytes_per_second,
                 processed_bytes: job.processed_bytes,
@@ -633,6 +638,22 @@ impl TransferManager {
         }
         if let Some(job) = self.get_job(id).await {
             self.emit_update(&job).await;
+        }
+    }
+
+    pub(super) async fn set_job_phase(&self, id: &str, phase: &str, size: u64, position: u64) {
+        let mut jobs = self.jobs.write().await;
+        if let Some(job) = jobs.get_mut(id) {
+            job.phase = Some(phase.into());
+            job.total_bytes = size;
+            job.processed_bytes = position;
+            job.bytes_per_second = 0.0;
+            {
+                let mut progress = job.progress.lock().unwrap();
+                progress.position = position;
+                progress.attempt += 1;
+            }
+            self.emit_update(job).await;
         }
     }
 
@@ -1013,6 +1034,42 @@ impl TransferManager {
         profiles: Arc<RwLock<ProfileManager>>,
     ) -> crate::error::Result<()> {
         super::controls::validate_bandwidth(job.bandwidth_limit.unwrap_or(0))?;
+        if let Some(source) = &job.url_import {
+            if source.profile_identity != destination.cache_identity() {
+                return Err(crate::error::AppError::ConfigError(
+                    "Connection settings changed. Import the URLs again.".into(),
+                ));
+            }
+            let client = {
+                let mut s3 = s3_manager.write().await;
+                match &job.bucket_region {
+                    Some(region) => s3.get_client_for_region(destination, region).await?.clone(),
+                    None => s3.get_client(destination).await?.clone(),
+                }
+            };
+            let temporary = super::url_import::stage(source, job, self).await?;
+            self.ensure_multipart_job_active(&job.id).await?;
+            let mut prepared = job.clone();
+            prepared.local_path = temporary.path().to_string_lossy().into_owned();
+            prepared.total_bytes = temporary.as_file().metadata()?.len();
+            let attributes = if let Some(etag) = &source.expected_etag {
+                Some(super::sync::attributes(&client, &job.bucket, &job.key, etag).await?)
+            } else {
+                None
+            };
+            self.upload_prepared(
+                &client,
+                &prepared,
+                &crate::s3::infer_content_type(&job.key),
+                attributes.as_ref(),
+            )
+            .await?;
+            s3_manager
+                .write()
+                .await
+                .remove_bucket_cache(&destination.id, &job.bucket);
+            return Ok(());
+        }
         let Some(source) = &job.remote_source else {
             return self.execute_job(job, s3_manager, destination).await;
         };
@@ -2553,6 +2610,148 @@ mod tests {
         assert!(results.into_iter().all(|result| result.is_ok()));
         assert!(peak.load(Ordering::Acquire) <= 3);
         assert_eq!(manager.active_count.load(Ordering::Acquire), 0);
+    }
+
+    #[tokio::test]
+    async fn url_import_retry_retains_guards_and_recovery_requires_fresh_source() {
+        let manager = TransferManager::new();
+        let mut job = test_job(TransferStatus::Failed("interrupted".into()));
+        job.url_import = Some(crate::transfer::url_import::UrlSource {
+            url: "https://example.com/file?session=private".into(),
+            headers: std::collections::BTreeMap::from([("Authorization".into(), "secret".into())]),
+            expected_etag: Some("\"approved\"".into()),
+            max_bytes: 100,
+            max_attempts: 4,
+            ..Default::default()
+        });
+        manager.add_job(job.clone()).await;
+        let retry = manager.retry_job(&job.id).await.unwrap();
+        let retried = manager.get_job(&retry).await.unwrap();
+        let source = retried.url_import.as_ref().unwrap();
+        assert_eq!(source.url, job.url_import.as_ref().unwrap().url);
+        assert_eq!(source.headers.get("Authorization").unwrap(), "secret");
+        assert_eq!(source.expected_etag.as_deref(), Some("\"approved\""));
+        assert_eq!(source.max_attempts, 4);
+        assert_eq!(retried.key, job.key);
+        let mut recovered: TransferJob =
+            serde_json::from_str(&serde_json::to_string(&job).unwrap()).unwrap();
+        recovered.id = "recovered-url-test".into();
+        manager.add_job(recovered.clone()).await;
+        assert!(manager.retry_job(&recovered.id).await.is_none());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a disposable S3-compatible endpoint and public internet"]
+    async fn url_import_real_http_to_s3_round_trip_and_conflict() {
+        use sha2::{Digest, Sha256};
+        let profile = Profile::new(
+            "url-import-test".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: std::env::var("BROWS3_URL_TEST_ENDPOINT")
+                    .expect("disposable endpoint required"),
+                access_key_id: "minioadmin".into(),
+                secret_access_key: "minioadmin".into(),
+            },
+            Some("us-east-1".into()),
+        );
+        let sdk = crate::s3::client::load_sdk_config(&profile, None).await;
+        let client = crate::s3::client::client_from_sdk_config(&sdk, &profile);
+        let bucket = format!("brows3-url-test-{}", uuid::Uuid::new_v4().simple());
+        client.create_bucket().bucket(&bucket).send().await.unwrap();
+        let manager = TransferManager::new();
+        let mut job = test_job(TransferStatus::InProgress);
+        job.bucket = bucket.clone();
+        job.key = "imports/example.html".into();
+        job.total_bytes = 0;
+        job.url_import = Some(crate::transfer::url_import::UrlSource {
+            url: "https://example.com/".into(),
+            max_bytes: 1024 * 1024,
+            max_attempts: 2,
+            ..Default::default()
+        });
+        manager.add_job(job.clone()).await;
+        let temp =
+            crate::transfer::url_import::stage(job.url_import.as_ref().unwrap(), &job, &manager)
+                .await
+                .unwrap();
+        let bytes = std::fs::read(temp.path()).unwrap();
+        assert!(!bytes.is_empty());
+        job.local_path = temp.path().to_string_lossy().into_owned();
+        job.total_bytes = bytes.len() as u64;
+        manager
+            .upload_prepared(&client, &job, "text/html", None)
+            .await
+            .unwrap();
+        let downloaded = client
+            .get_object()
+            .bucket(&bucket)
+            .key(&job.key)
+            .send()
+            .await
+            .unwrap()
+            .body
+            .collect()
+            .await
+            .unwrap()
+            .into_bytes();
+        assert_eq!(Sha256::digest(&bytes), Sha256::digest(&downloaded));
+        // The same job cannot overwrite an existing destination without approval.
+        assert!(manager
+            .upload_prepared(&client, &job, "text/html", None)
+            .await
+            .is_err());
+        let path = temp.path().to_owned();
+        drop(temp);
+        assert!(!path.exists());
+        // Exercise the actual queued-job dispatcher as well as its staging helpers.
+        let root = tempfile::tempdir().unwrap();
+        let profiles = Arc::new(RwLock::new(
+            crate::credentials::ProfileManager::new(root.path().into(), true).unwrap(),
+        ));
+        let s3 = Arc::new(RwLock::new(S3ClientManager::new()));
+        let mut queued = job.clone();
+        queued.id = uuid::Uuid::new_v4().to_string();
+        queued.key = "imports/queued-example.html".into();
+        queued.local_path.clear();
+        queued.total_bytes = 0;
+        queued.url_import.as_mut().unwrap().profile_identity = profile.cache_identity();
+        queued.url_import.as_mut().unwrap().sha256 = Some(format!("{:x}", Sha256::digest(&bytes)));
+        manager.add_job(queued.clone()).await;
+        manager
+            .execute_queued_job(&queued, s3, &profile, profiles)
+            .await
+            .unwrap();
+        let current = manager.get_job(&queued.id).await.unwrap();
+        assert_eq!(current.total_bytes, bytes.len() as u64);
+        assert_eq!(current.phase.as_deref(), Some("Uploading to S3"));
+        let actual = client
+            .get_object()
+            .bucket(&bucket)
+            .key(&queued.key)
+            .send()
+            .await
+            .unwrap()
+            .body
+            .collect()
+            .await
+            .unwrap()
+            .into_bytes();
+        assert_eq!(actual.as_ref(), bytes.as_slice());
+        client
+            .delete_object()
+            .bucket(&bucket)
+            .key(&queued.key)
+            .send()
+            .await
+            .unwrap();
+        client
+            .delete_object()
+            .bucket(&bucket)
+            .key(&job.key)
+            .send()
+            .await
+            .unwrap();
+        client.delete_bucket().bucket(&bucket).send().await.unwrap();
     }
 
     /// Run with BROWS3_S3_TEST_ENDPOINT=http://127.0.0.1:<port> against MinIO.

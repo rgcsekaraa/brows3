@@ -9,7 +9,7 @@ interface TransferState {
   isPanelHidden: boolean;
   addJob: (job: TransferJob) => void;
   upsertJob: (job: TransferJob) => void;
-  updateJob: (event: { job_id: string; processed_bytes: number; bytes_per_second?: number; total_bytes: number; status: TransferJob['status']; finished_at?: number }) => void;
+  updateJob: (event: { job_id: string; processed_bytes: number; bytes_per_second?: number; total_bytes: number; status: TransferJob['status']; finished_at?: number; phase?: string | null }) => void;
   setJobs: (jobs: TransferJob[]) => void;
   togglePanel: () => void;
   hidePanel: () => void;
@@ -79,6 +79,7 @@ export const useTransferStore = create<TransferState>((set, get) => ({
     
     if (
       job.processed_bytes === event.processed_bytes &&
+      job.phase === event.phase &&
       job.total_bytes === event.total_bytes &&
       job.bytes_per_second === event.bytes_per_second &&
       job.status === event.status &&
@@ -89,6 +90,7 @@ export const useTransferStore = create<TransferState>((set, get) => ({
     
     const updatedJob = { 
       ...job, 
+      phase: event.phase ?? job.phase,
       processed_bytes: event.processed_bytes,
       bytes_per_second: event.status === 'InProgress' ? (event.bytes_per_second ?? 0) : 0,
       total_bytes: event.total_bytes, 

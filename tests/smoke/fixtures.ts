@@ -25,6 +25,7 @@ export class DesktopBackend {
   etag = '"v1"';
   conflict = false;
   objects = [object('notes.txt'), object('sound.wav', 1644), object('nested/match.txt')];
+  folders = ['nested/'];
 
   async invoke(command: string, args: Args = {}): Promise<unknown> {
     this.calls.push({ command, args });
@@ -33,6 +34,33 @@ export class DesktopBackend {
       case 'plugin:path|resolve_directory': return '/virtual/config';
       case 'get_log_file_info': return { log_file_path: '/virtual/logs/brows3.log', log_dir_path: '/virtual/logs', panic_log_path: '/virtual/logs/panic.log', panic_log_exists: false };
       case 'list_profiles': return this.profiles;
+      case 'get_profile': return this.profiles.find(p => p.id === args.id);
+      case 'discover_local_profiles': return [];
+      case 'check_aws_environment': return { has_access_key: true, has_secret_key: true, has_session_token: false, region: 'us-east-1' };
+      case 'update_profile': { const p = args.profile as Profile; this.profiles = this.profiles.map(v => v.id === args.id ? p : v); return p; }
+      case 'get_public_urls': {
+        const p = this.profiles.find(p => p.id === args.expectedProfileId);
+        if (!p || p.id !== this.activeProfile) throw new Error('Profile changed');
+        const settings = p.public_urls;
+        return (args.keys as string[]).map(key => {
+          const override = (args.overrides as Record<string,string> | undefined)?.[key];
+          if (override) return override;
+          const root = settings?.bucket_overrides[String(args.bucket)];
+          const base = root || settings?.base_url || 'https://s3.us-east-1.amazonaws.com';
+          const includeBucket = !root && (!settings?.base_url || settings.include_bucket);
+          return `${base.replace(/\/$/, '')}/${includeBucket ? `${args.bucket}/` : ''}${key.split('/').map(encodeURIComponent).join('/')}`;
+        });
+      }
+      case 'check_public_url': return 'Anonymous HEAD request succeeded. Access may differ for other users or change later.';
+      case 'queue_url_imports': {
+        if (args.expectedProfileId !== this.activeProfile) throw new Error('Profile changed');
+        const entries = args.entries as { path: string; max_bytes: number; max_attempts: number; sha256: string | null }[];
+        for (const entry of entries) {
+          this.transfers.push({ id: `url-${this.transfers.length}`, profile_id: this.activeProfile, transfer_type: 'Upload', bucket: String(args.bucket), bucket_region: String(args.region), key: `${args.prefix}${entry.path}`, local_path: '', total_bytes: 4096, processed_bytes: 1024, bytes_per_second: 1024, status: 'InProgress', phase: 'Fetching source', url_import: { max_bytes: entry.max_bytes, max_attempts: entry.max_attempts, sha256: entry.sha256, expected_etag: null }, created_at: Date.now() });
+        }
+        return entries.length;
+      }
+      case 'remove_transfer': { const previous = this.transfers.length; this.transfers = this.transfers.filter(job => job.id !== args.jobId); return this.transfers.length < previous; }
       case 'get_active_profile': return this.profiles.find(profile => profile.id === this.activeProfile);
       case 'set_active_profile': this.activeProfile = String(args.id); return null;
       case 'refresh_s3_client':
@@ -59,6 +87,7 @@ export class DesktopBackend {
         this.bucketPolicy = args.policy as string | null;
         return null;
       case 'get_bucket_region': return 'us-east-1';
+      case 'put_object': this.folders.push(String(args.key)); return null;
       case 'list_objects': {
         if (this.emptyListingPages > 0) {
           this.emptyListingPages -= 1;
@@ -66,7 +95,7 @@ export class DesktopBackend {
         }
         const prefix = String(args.prefix || '');
         const objects = this.activeProfile === 'a' ? this.objects : [object('production.txt')];
-        return { objects: objects.filter(item => item.key.startsWith(prefix) && !item.key.slice(prefix.length).includes('/')), common_prefixes: prefix ? [] : ['nested/'], next_continuation_token: null, is_truncated: false, prefix, bucket_region: 'us-east-1' };
+        return { objects: objects.filter(item => item.key.startsWith(prefix) && !item.key.slice(prefix.length).includes('/')), common_prefixes: this.folders.filter(folder => folder.startsWith(prefix) && folder !== prefix && !folder.slice(prefix.length, -1).includes('/')), next_continuation_token: null, is_truncated: false, prefix, bucket_region: 'us-east-1' };
       }
       case 'search_objects': return { objects: this.objects.filter(item => item.key.includes(String(args.query))), scanned_objects: this.objects.length, is_truncated: false };
       case 'get_object_metadata': return { key: args.key, size: this.content.length, content_type: String(args.key).endsWith('.wav') ? 'audio/wav' : String(args.key).endsWith('.svg') ? 'image/svg+xml' : this.contentType, e_tag: this.etag, last_modified: null, storage_class: null, user_metadata: {} };
