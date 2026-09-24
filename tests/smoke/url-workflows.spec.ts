@@ -11,6 +11,7 @@ test('URL imports target a newly created folder without changing the existing fo
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('Destination: s3://demo-bucket/imports/');
   await dialog.getByLabel('Source URLs', { exact: true }).fill('https://example.com/new.txt');
+  await expect(dialog.getByRole('button', { name: 'Add links', exact: true })).toHaveCSS('color', 'rgb(153, 87, 0)');
   await dialog.getByRole('button', { name: 'Add links', exact: true }).click();
   if (process.env.CAPTURE_URL_UI && test.info().project.name === 'chromium') await page.screenshot({ path: '.impeccable/review/url-import-folder.png', fullPage: true, animations: 'disabled' });
   await dialog.getByRole('button', { name: 'Import files', exact: true }).click();

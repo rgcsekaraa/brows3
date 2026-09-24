@@ -95,7 +95,7 @@ Sources: `src/lib/theme.ts`, `src/components/common/BaseDialog.tsx`, `src/compon
 
 Primary orange identifies filled actions. The primary foreground is black. The theme's secondary color is dark blue. Neutral backgrounds, paper, text, and divider tokens vary by mode; feedback uses the existing success, error, warning, and info palette.
 
-URL workflow text buttons use the local darker orange token in light mode and the theme primary in dark mode. This adjustment applies to enabled text buttons only. Filled and outlined buttons continue using the theme palette.
+URL workflow text and outlined buttons use the local darker orange token for their labels in light mode and the theme primary in dark mode. This adjustment applies to enabled labels only. Filled buttons and outlined borders continue using the theme palette.
 
 ## Typography
 

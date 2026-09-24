@@ -45,9 +45,9 @@
     {
       "name": "URL outlined action, light",
       "kind": "button",
-      "description": "Add source links to the review list.",
+      "description": "Add source links to the review list, with local contrast text and the existing theme border.",
       "html": "<button class=\"ds-url-outline\">Add links</button>",
-      "css": ".ds-url-outline{font-family:Inter,Roboto,Helvetica,Arial,sans-serif;font-size:.8125rem;font-weight:700;letter-spacing:-.01em;line-height:1.75;padding:3px 9px;border:1px solid rgba(234,141,0,.5);border-radius:999px;background:transparent;color:#EA8D00;transition:none}.ds-url-outline:hover{background:rgba(234,141,0,.08);border-color:#EA8D00}.ds-url-outline:focus-visible{outline:auto}"
+      "css": ".ds-url-outline{font-family:Inter,Roboto,Helvetica,Arial,sans-serif;font-size:.8125rem;font-weight:700;letter-spacing:-.01em;line-height:1.75;padding:3px 9px;border:1px solid rgba(234,141,0,.5);border-radius:999px;background:transparent;color:#995700;transition:none}.ds-url-outline:hover{background:rgba(234,141,0,.08);border-color:#EA8D00}.ds-url-outline:focus-visible{outline:auto}"
     },
     {
       "name": "Public URL field, light",
