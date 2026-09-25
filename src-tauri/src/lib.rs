@@ -23,6 +23,26 @@ fn configure_linux_webkit_environment() {
     }
 }
 
+/// Tiling compositors manage window placement and controls themselves, so the
+/// GTK header bar and menu bar only waste vertical space there.
+#[cfg(target_os = "linux")]
+fn linux_uses_tiling_compositor() -> bool {
+    const TILING_DESKTOPS: &[&str] = &["hyprland", "sway", "niri", "river", "i3"];
+
+    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+        || std::env::var_os("SWAYSOCK").is_some()
+        || std::env::var_os("NIRI_SOCKET").is_some()
+    {
+        return true;
+    }
+
+    std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktops| {
+        desktops
+            .split(':')
+            .any(|desktop| TILING_DESKTOPS.contains(&desktop.to_ascii_lowercase().as_str()))
+    })
+}
+
 #[derive(Serialize)]
 struct LogFileInfo {
     log_file_path: String,
@@ -63,9 +83,14 @@ pub fn run() {
         .manage(Arc::new(TransferManager::new()))
         .manage(commands::sync::SyncPlans::default())
         .setup(|app| {
+            #[cfg(target_os = "linux")]
+            let bare_window = linux_uses_tiling_compositor();
+            #[cfg(not(target_os = "linux"))]
+            let bare_window = false;
+
             // Add native menu on macOS to enable Copy/Paste/Cut/SelectAll/Undo/Redo shortcuts
             // Add native menu to enable standard shortcuts and window controls
-            {
+            if !bare_window {
                 use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
 
                 let handle = app.handle();
@@ -253,6 +278,9 @@ pub fn run() {
 
             // Show the main window after initialization to prevent white flash
             if let Some(window) = app.get_webview_window("main") {
+                if bare_window {
+                    let _ = window.set_decorations(false);
+                }
                 let _ = window.show();
                 let _ = window.maximize();
             }
