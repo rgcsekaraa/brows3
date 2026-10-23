@@ -121,6 +121,35 @@ test('uploads use the current folder and appear on the upload page', async ({ pa
   await expect(page.getByRole('row').filter({ hasText: 'upload.txt' })).toBeVisible();
 });
 
+test('files dropped onto a folder upload there', async ({ page, backend }) => {
+  await page.goto(`${bucketUrl}&prefix=nested%2F`);
+  await expect(page.getByRole('row').filter({ hasText: 'match.txt' })).toBeVisible();
+  const emit = (type: string, paths?: string[]) => page.evaluate(([type, paths]) => (window as unknown as { __smokeEmit: (e: string, p: unknown) => void })
+    .__smokeEmit(`tauri://drag-${type}`, { type, paths, position: { x: 10, y: 10 } }), [type, paths] as const);
+  await emit('enter', ['/virtual/dropped.txt']);
+  await expect(page.getByTestId('upload-drop-zone')).toBeVisible();
+  await emit('drop', ['/virtual/dropped.txt']);
+  await expect(page.getByTestId('upload-drop-zone')).toBeHidden();
+  await expect.poll(() => backend.transfers.length).toBe(1);
+  expect(backend.transfers[0]).toMatchObject({ transfer_type: 'Upload', key: 'nested/dropped.txt' });
+});
+
+test('uploading over an existing object asks before overwriting it', async ({ page, backend }) => {
+  backend.objects.push({ key: 'upload.txt', size: 20, last_modified: '2026-01-01T00:00:00Z', storage_class: 'STANDARD' });
+  for (const [choice, expected] of [['Cancel', undefined], ['Skip existing', undefined], ['Overwrite', backend.etag]] as const) {
+    const before = backend.calls.filter(c => c.command === 'queue_upload').length;
+    await page.goto(bucketUrl);
+    await page.getByRole('button', { name: 'Upload', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Files', exact: true }).click();
+    await expect(page.getByText('File already exists')).toBeVisible();
+    await page.getByRole('button', { name: choice, exact: true }).click();
+    await expect(page.getByText('File already exists')).toBeHidden();
+    const queued = backend.calls.filter(c => c.command === 'queue_upload').slice(before);
+    if (expected) expect(queued).toMatchObject([{ args: { key: 'upload.txt', replaceEtag: expected } }]);
+    else expect(queued).toEqual([]);
+  }
+});
+
 test('deletion requires confirmation and refreshes the listing afterwards', async ({ page, backend }) => {
   await page.goto(bucketUrl);
   await page.getByRole('checkbox', { name: 'Select notes.txt', exact: true }).check();

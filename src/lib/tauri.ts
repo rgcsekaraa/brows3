@@ -514,6 +514,12 @@ export interface TransferJob {
   is_group_root?: boolean;
 }
 
+export interface UploadPlan {
+  sources: { local_path: string; is_dir: boolean; file_count: number }[];
+  /** Destination objects that already exist; `etag` is null when the provider omits it. */
+  existing: { key: string; etag: string | null; size: number }[];
+}
+
 export interface TransferEvent {
   phase?: string | null;
   job_id: string;
@@ -528,16 +534,21 @@ export const transferApi = {
   async setBandwidth(bytesPerSecond: number): Promise<void> {
     return invoke<void>('set_transfer_bandwidth', { bytesPerSecond });
   },
-  async queueUpload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<string> {
-    return invoke<string>('queue_upload', { bucketName, bucketRegion, key, localPath, totalBytes, expectedProfileId });
+  async planUpload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPaths: string[], expectedProfileId = useProfileStore.getState().activeProfileId): Promise<UploadPlan> {
+    return invoke<UploadPlan>('plan_upload', { bucketName, bucketRegion, prefix, localPaths, expectedProfileId });
+  },
+
+  /** `replaceEtag` approves overwriting that exact existing version; without it the upload is create-only. */
+  async queueUpload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number, expectedProfileId = useProfileStore.getState().activeProfileId, replaceEtag?: string): Promise<string> {
+    return invoke<string>('queue_upload', { bucketName, bucketRegion, key, localPath, totalBytes, replaceEtag, expectedProfileId });
   },
 
   async queueDownload(bucketName: string, bucketRegion: string | undefined, key: string, localPath: string, totalBytes: number, overwrite = false, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<string> {
     return invoke<string>('queue_download', { bucketName, bucketRegion, key, localPath, totalBytes, overwrite, expectedProfileId });
   },
 
-  async queueFolderUpload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<number> {
-    return invoke<number>('queue_folder_upload', { bucketName, bucketRegion, prefix, localPath, expectedProfileId });
+  async queueFolderUpload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string, expectedProfileId = useProfileStore.getState().activeProfileId, existing?: { replace?: Record<string, string>; skip?: string[] }): Promise<number> {
+    return invoke<number>('queue_folder_upload', { bucketName, bucketRegion, prefix, localPath, replace: existing?.replace, skip: existing?.skip, expectedProfileId });
   },
 
   async queueFolderDownload(bucketName: string, bucketRegion: string | undefined, prefix: string, localPath: string, expectedProfileId = useProfileStore.getState().activeProfileId): Promise<number> {

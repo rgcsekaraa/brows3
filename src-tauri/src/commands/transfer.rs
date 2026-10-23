@@ -4,8 +4,12 @@ use crate::error::Result;
 use crate::s3::S3State;
 use crate::transfer::download::DownloadDestination;
 use crate::transfer::{TransferJob, TransferManager, TransferType};
+use futures::{stream, StreamExt, TryStreamExt};
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, State};
 
 // We need to store the TransferManager in Tauri state
@@ -127,6 +131,7 @@ pub async fn queue_upload(
     key: String,
     local_path: String,
     total_bytes: u64,
+    replace_etag: Option<String>,
     expected_profile_id: String,
     app_handle: AppHandle,
     profile_state: State<'_, ProfileState>,
@@ -148,7 +153,7 @@ pub async fn queue_upload(
         }
     }
 
-    let job = TransferJob::new(
+    let mut job = TransferJob::new(
         TransferType::Upload,
         profile_id,
         bucket_name,
@@ -157,6 +162,7 @@ pub async fn queue_upload(
         path,
         actual_size,
     );
+    job.replace_etag = replace_etag;
 
     let job_id = job.id.clone();
 
@@ -292,6 +298,185 @@ fn collect_upload_files(
     Ok(files)
 }
 
+#[derive(Debug, Serialize)]
+pub struct UploadSource {
+    pub local_path: String,
+    pub is_dir: bool,
+    pub file_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExistingUploadTarget {
+    pub key: String,
+    pub etag: Option<String>,
+    pub size: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UploadPlan {
+    pub sources: Vec<UploadSource>,
+    pub existing: Vec<ExistingUploadTarget>,
+}
+
+struct ClassifiedUpload {
+    sources: Vec<UploadSource>,
+    file_keys: Vec<String>,
+    /// Destination prefix of each folder with the keys it will write.
+    folders: Vec<(String, HashSet<String>)>,
+}
+
+fn utf8_name(path: &std::path::Path) -> Result<&str> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            crate::error::AppError::IoError(format!(
+                "Name is not valid Unicode: {}",
+                path.display()
+            ))
+        })
+}
+
+fn classify_upload_sources(local_paths: Vec<String>, prefix: &str) -> Result<ClassifiedUpload> {
+    let mut plan = ClassifiedUpload {
+        sources: Vec::with_capacity(local_paths.len()),
+        file_keys: Vec::new(),
+        folders: Vec::new(),
+    };
+    let mut keys = HashSet::new();
+    let duplicate =
+        |key: &str| crate::error::AppError::IoError(format!("Multiple files map to {key}"));
+    for local_path in local_paths {
+        let path = PathBuf::from(&local_path);
+        validate_path(&path)?;
+        let metadata = std::fs::metadata(&path).map_err(|error| {
+            crate::error::AppError::IoError(format!("Cannot read '{local_path}': {error}"))
+        })?;
+        if metadata.is_dir() {
+            let folder_keys: HashSet<String> = collect_upload_files(&path, prefix)?
+                .into_iter()
+                .map(|(_, _, key)| key)
+                .collect();
+            if let Some(key) = folder_keys.iter().find(|key| keys.contains(*key)) {
+                return Err(duplicate(key));
+            }
+            keys.extend(folder_keys.iter().cloned());
+            plan.folders.push((
+                format!("{prefix}{}/", utf8_name(&path)?),
+                folder_keys.clone(),
+            ));
+            plan.sources.push(UploadSource {
+                local_path,
+                is_dir: true,
+                file_count: folder_keys.len() as u32,
+            });
+        } else if metadata.is_file() {
+            let key = format!("{prefix}{}", utf8_name(&path)?);
+            if !keys.insert(key.clone()) {
+                return Err(duplicate(&key));
+            }
+            plan.file_keys.push(key);
+            plan.sources.push(UploadSource {
+                local_path,
+                is_dir: false,
+                file_count: 1,
+            });
+        } else {
+            return Err(crate::error::AppError::IoError(format!(
+                "'{local_path}' is not a regular file or folder"
+            )));
+        }
+    }
+    Ok(plan)
+}
+
+/// Classifies local paths (files or folders) and reports which destination keys already
+/// exist, so the user can choose to overwrite or skip them before anything is queued.
+#[tauri::command]
+pub async fn plan_upload(
+    bucket_name: String,
+    bucket_region: Option<String>,
+    prefix: String,
+    local_paths: Vec<String>,
+    expected_profile_id: String,
+    profile_state: State<'_, ProfileState>,
+    s3_state: State<'_, S3State>,
+) -> Result<UploadPlan> {
+    let profile = require_active_profile(profile_state.inner(), &expected_profile_id).await?;
+    let upload_prefix = prefix.clone();
+    let classified = tauri::async_runtime::spawn_blocking(move || {
+        classify_upload_sources(local_paths, &upload_prefix)
+    })
+    .await
+    .map_err(|e| crate::error::AppError::IoError(e.to_string()))??;
+
+    let client = {
+        let mut s3 = s3_state.write().await;
+        let region = s3
+            .get_bucket_region(&profile, &bucket_name)
+            .or(bucket_region);
+        match region {
+            Some(region) => s3.get_client_for_region(&profile, &region).await?.clone(),
+            None => s3.get_client(&profile).await?.clone(),
+        }
+    };
+
+    let mut existing = Vec::new();
+    for (folder_prefix, folder_keys) in &classified.folders {
+        let objects =
+            crate::s3::listing::list_recursive(&client, &bucket_name, folder_prefix).await?;
+        existing.extend(objects.into_iter().filter_map(|object| {
+            let key = object.key.filter(|key| folder_keys.contains(key))?;
+            Some(ExistingUploadTarget {
+                key,
+                etag: object.e_tag.filter(|etag| !etag.is_empty()),
+                size: object.size.unwrap_or(0).max(0) as u64,
+            })
+        }));
+    }
+    let heads = stream::iter(classified.file_keys.into_iter().map(|key| {
+        let (client, bucket) = (client.clone(), bucket_name.clone());
+        async move {
+            match client.head_object().bucket(&bucket).key(&key).send().await {
+                Ok(head) => Ok(Some(ExistingUploadTarget {
+                    etag: head
+                        .e_tag()
+                        .filter(|etag| !etag.is_empty())
+                        .map(str::to_owned),
+                    size: head.content_length().unwrap_or(0).max(0) as u64,
+                    key,
+                })),
+                Err(error)
+                    if error
+                        .raw_response()
+                        .is_some_and(|r| r.status().as_u16() == 404) =>
+                {
+                    Ok(None)
+                }
+                Err(error) => Err(crate::error::AppError::S3Error(format!(
+                    "Cannot check whether s3://{bucket}/{key} already exists: {}",
+                    super::operations::s3_error_message(&error)
+                ))),
+            }
+        }
+    }))
+    .buffer_unordered(8)
+    .try_collect::<Vec<_>>();
+    let heads = tokio::time::timeout(Duration::from_secs(120), heads)
+        .await
+        .map_err(|_| {
+            crate::error::AppError::S3Error(
+                "Checking for existing objects timed out. Nothing was uploaded.".into(),
+            )
+        })??;
+    existing.extend(heads.into_iter().flatten());
+    existing.sort_by(|a, b| a.key.cmp(&b.key));
+
+    Ok(UploadPlan {
+        sources: classified.sources,
+        existing,
+    })
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn queue_folder_upload(
@@ -299,6 +484,8 @@ pub async fn queue_folder_upload(
     bucket_region: Option<String>,
     prefix: String,
     local_path: String,
+    replace: Option<HashMap<String, String>>,
+    skip: Option<HashSet<String>>,
     expected_profile_id: String,
     app_handle: AppHandle,
     profile_state: State<'_, ProfileState>,
@@ -319,13 +506,20 @@ pub async fn queue_folder_upload(
     let current_manager = transfer_state.clone();
     current_manager.set_app_handle(app_handle.clone()).await;
 
+    let skip = skip.unwrap_or_default();
+    let mut replace = replace.unwrap_or_default();
+    let jobs_data: Vec<_> = jobs_data
+        .into_iter()
+        .filter(|(_, _, key)| !skip.contains(key))
+        .collect();
     let count = jobs_data.len() as u32;
     let group_id = uuid::Uuid::new_v4().to_string();
     let group_name = format!("s3://{}/{}", bucket_name, prefix);
 
     let mut queued = Vec::with_capacity(jobs_data.len());
     for (path, size, key) in jobs_data {
-        let job = TransferJob::new(
+        let replace_etag = replace.remove(&key);
+        let mut job = TransferJob::new(
             TransferType::Upload,
             profile_id.clone(),
             bucket_name.clone(),
@@ -335,6 +529,7 @@ pub async fn queue_folder_upload(
             size,
         )
         .with_group(group_id.clone(), group_name.clone());
+        job.replace_etag = replace_etag;
 
         queued.push(job);
     }
@@ -586,6 +781,39 @@ mod tests {
         assert_eq!(files[0].2, "folder/a\\b");
         std::os::unix::fs::symlink(folder.join("a\\b"), folder.join("link")).unwrap();
         assert!(super::collect_upload_files(&folder, "").is_err());
+    }
+
+    #[test]
+    fn dropped_paths_are_classified_and_colliding_keys_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("photos");
+        std::fs::create_dir_all(folder.join("nested")).unwrap();
+        std::fs::write(folder.join("nested").join("a.jpg"), "a").unwrap();
+        std::fs::write(root.path().join("notes.txt"), "n").unwrap();
+        let path = |p: &std::path::Path| p.to_string_lossy().into_owned();
+
+        let plan = super::classify_upload_sources(
+            vec![path(&folder), path(&root.path().join("notes.txt"))],
+            "docs/",
+        )
+        .unwrap();
+        assert!(plan.sources[0].is_dir && plan.sources[0].file_count == 1);
+        assert!(!plan.sources[1].is_dir);
+        assert_eq!(plan.file_keys, ["docs/notes.txt"]);
+        assert_eq!(plan.folders[0].0, "docs/photos/");
+        assert!(plan.folders[0].1.contains("docs/photos/nested/a.jpg"));
+
+        let other = root.path().join("other");
+        std::fs::create_dir(&other).unwrap();
+        std::fs::write(other.join("notes.txt"), "n").unwrap();
+        assert!(super::classify_upload_sources(
+            vec![
+                path(&root.path().join("notes.txt")),
+                path(&other.join("notes.txt"))
+            ],
+            "",
+        )
+        .is_err());
     }
 
     #[test]

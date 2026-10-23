@@ -339,6 +339,7 @@ pub fn run() {
             commands::cross_copy::copy_between_profiles,
             commands::versions::list_object_versions,
             commands::versions::restore_object_version,
+            transfer_cmd::plan_upload,
             transfer_cmd::queue_upload,
             transfer_cmd::queue_download,
             transfer_cmd::list_transfers,
