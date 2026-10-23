@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Select or deselect files inside the existing preview, with previous/next navigation across previewable files in table order, keyboard controls, pagination safeguards, and unsaved-edit protection. Selection stays in the table after closing. Adapted from @antonp2k's contribution in PR [#39](https://github.com/rgcsekaraa/brows3/pull/39), retaining the current image viewer and zoom controls.
 - Saved local-folder-to-S3 sync jobs with manual runs or in-app interval schedules, explicit future-upload approval, filters, saved bandwidth limits, pause/resume, confirmed cancellation and deletion, and completion/failure notifications.
 - Durable job recovery that pauses interrupted, failed, or missed-while-closed runs, prevents overlapping runs, and prevents multiple Brows3 instances from executing the same schedules. Jobs always compare fresh content and retain the existing guarded upload behavior.
+- Drag and drop files and folders onto a bucket folder to upload them there.
+- Uploads check for existing objects first and offer Overwrite, Skip existing, or Cancel. Overwrites are conditional on the version that was reviewed, so an object changed in the meantime is left untouched.
+
+### Fixed
+- Uploading a file whose name already exists no longer fails with an opaque precondition error; the failure explains how to overwrite.
 
 ## [0.2.46] - 2026-09-21
 

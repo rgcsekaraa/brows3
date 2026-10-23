@@ -51,6 +51,10 @@ pub struct TransferJob {
     pub restore_guard: Option<crate::s3::versions::RestoreGuard>,
     #[serde(default)]
     pub bandwidth_limit: Option<u64>,
+    /// ETag of an existing object the user approved replacing; the upload is
+    /// conditional on it so a concurrently changed object is never clobbered.
+    #[serde(default)]
+    pub replace_etag: Option<String>,
     #[serde(skip)]
     pub download_destination: Option<std::sync::Arc<download::DownloadDestination>>,
     pub transfer_type: TransferType,
@@ -85,6 +89,9 @@ impl TransferJob {
         if let Some(source) = &self.url_import {
             return source.expected_etag.as_deref();
         }
+        if let Some(etag) = &self.replace_etag {
+            return Some(etag);
+        }
         match &self.restore_guard {
             Some(guard) => guard.current_etag.as_deref(),
             None => self
@@ -115,6 +122,7 @@ impl TransferJob {
             remote_source: None,
             restore_guard: None,
             bandwidth_limit: None,
+            replace_etag: None,
             download_destination: None,
             transfer_type,
             status: TransferStatus::Pending,

@@ -168,6 +168,14 @@ export class DesktopBackend {
         return 2;
       case 'plugin:dialog|save': return '/virtual/downloads/notes.txt';
       case 'plugin:dialog|open': return (args.options as Args)?.directory ? '/virtual/downloads' : ['/virtual/upload.txt'];
+      case 'plan_upload': {
+        const paths = args.localPaths as string[];
+        const keys = paths.map(path => `${args.prefix}${path.split('/').pop()}`);
+        return {
+          sources: paths.map(local_path => ({ local_path, is_dir: false, file_count: 1 })),
+          existing: keys.filter(key => this.objects.some(o => o.key === key)).map(key => ({ key, etag: this.etag, size: 20 })),
+        };
+      }
       case 'queue_download':
       case 'queue_upload': {
         const id = `transfer-${this.transfers.length + 1}`;
@@ -201,12 +209,14 @@ export const test = base.extend<{ backend: DesktopBackend }>({
     await page.exposeFunction('__smokeInvoke', (command: string, args: Args) => backend.invoke(command, args));
     await page.addInitScript(() => {
       const callbacks = new Map<number, (event: unknown) => void>();
+      const listeners: { event: string; handler: number }[] = [];
       let nextId = 0;
       const host = window as unknown as { __smokeInvoke: (command: string, args: Record<string, unknown>) => Promise<unknown> };
       const violations: string[] = [];
       document.addEventListener('securitypolicyviolation', event => violations.push(`${event.violatedDirective}: ${event.blockedURI}`));
       Object.assign(window, {
         __smokeCspViolations: violations,
+        __smokeEmit: (event: string, payload: unknown) => listeners.filter(l => l.event === event).forEach(l => callbacks.get(l.handler)?.({ event, id: l.handler, payload })),
         __TAURI__: {},
         __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
         __TAURI_INTERNALS__: {
@@ -214,7 +224,7 @@ export const test = base.extend<{ backend: DesktopBackend }>({
           transformCallback: (callback: (event: unknown) => void) => { callbacks.set(++nextId, callback); return nextId; },
           unregisterCallback: (id: number) => callbacks.delete(id),
           invoke: (command: string, args: Record<string, unknown>) => {
-            if (command === 'plugin:event|listen') return Promise.resolve(args.handler);
+            if (command === 'plugin:event|listen') { listeners.push({ event: String(args.event), handler: Number(args.handler) }); return Promise.resolve(args.handler); }
             if (command === 'plugin:event|unlisten') { callbacks.delete(Number(args.eventId)); return Promise.resolve(); }
             return host.__smokeInvoke(command, args);
           },

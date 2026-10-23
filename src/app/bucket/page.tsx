@@ -24,6 +24,7 @@ import {
   Divider,
   InputAdornment,
   Fade,
+  alpha,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -52,8 +53,10 @@ import {
   History as HistoryIcon,
 } from '@mui/icons-material';
 import { useObjects } from '@/hooks/useObjects';
-import { operationsApi, transferApi, objectApi, S3Object, copyToClipboard } from '@/lib/tauri';
+import { operationsApi, transferApi, objectApi, S3Object, copyToClipboard, type UploadPlan } from '@/lib/tauri';
 import { open, save } from '@tauri-apps/plugin-dialog';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
+import UploadConflictDialog, { type UploadConflictChoice } from '@/components/dialogs/UploadConflictDialog';
 import { useTransferStore } from '@/store/transferStore';
 import { useClipboardStore } from '@/store/clipboardStore';
 import { useProfileStore } from '@/store/profileStore';
@@ -626,78 +629,130 @@ function BucketContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []); // Empty deps - we use refs for latest values
 
-  // Restored Actions
-  const handleUploadFiles = async () => {
-    setUploadMenuAnchor(null);
-    if (!bucketName) return;
+  // Uploads: dialog picks and drag-and-drop share one path that checks for existing
+  // objects first, so the user decides whether to overwrite or skip them.
+  const uploadBusyRef = useRef(false);
+  const uploadConflictRef = useRef<((choice: UploadConflictChoice | null) => void) | null>(null);
+  const [uploadConflict, setUploadConflict] = useState<UploadPlan | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const resolveUploadConflict = (choice: UploadConflictChoice | null) => {
+    uploadConflictRef.current?.(choice);
+    uploadConflictRef.current = null;
+    setUploadConflict(null);
+  };
+  // A pending conflict decision belongs to the folder and profile it was planned for.
+  useEffect(() => () => {
+    uploadConflictRef.current?.(null);
+    uploadConflictRef.current = null;
+    setUploadConflict(null);
+  }, [viewKey]);
+
+  const uploadPaths = async (paths: string[]) => {
+    if (!bucketName || paths.length === 0) return;
+    if (uploadBusyRef.current) {
+      displayError('Another upload is still being prepared. Try again in a moment.');
+      return;
+    }
+    uploadBusyRef.current = true;
+    setIsUploading(true);
     try {
-      const selected = await open({
-        multiple: true,
-        title: 'Select files to upload'
-      });
+      const plan = await transferApi.planUpload(bucketName, bucketRegion, prefix, paths, activeProfileId);
+      const totalFiles = plan.sources.reduce((sum, source) => sum + source.file_count, 0);
+      let choice: UploadConflictChoice | null = null;
+      if (plan.existing.length > 0) {
+        choice = await new Promise<UploadConflictChoice | null>(resolve => {
+          uploadConflictRef.current = resolve;
+          setUploadConflict(plan);
+        });
+        if (!choice) return;
+      }
+      const replace: Record<string, string> = {};
+      const skip: string[] = [];
+      for (const item of plan.existing) {
+        if (choice === 'skip') skip.push(item.key);
+        // Without an ETag the replacement cannot be guarded, so the upload stays create-only and reports the conflict.
+        else if (item.etag) replace[item.key] = item.etag;
+      }
+      const skipped = new Set(skip);
 
-      if (selected) {
-        setIsUploading(true);
-        const files = Array.isArray(selected) ? selected : [selected];
-        let count = 0;
-
-        for (const file of files) {
-           const filename = file.split(/[/\\]/).pop() || 'uploaded-file';
-           const key = prefix + filename;
-
-           const jobId = await transferApi.queueUpload(bucketName, bucketRegion, key, file, 0, activeProfileId);
-
-           addJob({
-              id: jobId,
-              profile_id: activeProfileId || '',
-              transfer_type: 'Upload',
-              bucket: bucketName,
-              bucket_region: bucketRegion,
-              key: key,
-              local_path: file,
-              total_bytes: 0,
-              processed_bytes: 0,
-              status: 'Pending',
-              created_at: Date.now()
-           });
-           count++;
+      let count = 0;
+      for (const source of plan.sources) {
+        if (source.is_dir) {
+          count += await transferApi.queueFolderUpload(bucketName, bucketRegion, prefix, source.local_path, activeProfileId, { replace, skip });
+          continue;
         }
-        displaySuccess(`Queued ${count} files for upload`, '/uploads');
+        const key = prefix + (source.local_path.split(/[/\\]/).pop() || 'uploaded-file');
+        if (skipped.has(key)) continue;
+        const jobId = await transferApi.queueUpload(bucketName, bucketRegion, key, source.local_path, 0, activeProfileId, replace[key]);
+        addJob({
+          id: jobId,
+          profile_id: activeProfileId || '',
+          transfer_type: 'Upload',
+          bucket: bucketName,
+          bucket_region: bucketRegion,
+          key,
+          local_path: source.local_path,
+          total_bytes: 0,
+          processed_bytes: 0,
+          status: 'Pending',
+          created_at: Date.now()
+        });
+        count++;
+      }
+      if (count === 0) {
+        toast.info(`Nothing uploaded: all ${totalFiles} files already exist`);
+      } else {
+        displaySuccess(skip.length > 0 ? `Queued ${count} files for upload, skipped ${skip.length} existing` : `Queued ${count} files for upload`, '/uploads');
       }
     } catch (err) {
       displayError(`Upload failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
+      uploadBusyRef.current = false;
       setIsUploading(false);
     }
+  };
+
+  const uploadPathsRef = useRef(uploadPaths);
+  useEffect(() => {
+    uploadPathsRef.current = uploadPaths;
+  });
+
+  // The desktop shell delivers OS file drops as native paths rather than HTML5 drop events.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    try {
+      getCurrentWebview().onDragDropEvent(({ payload }) => {
+        if (payload.type === 'enter') setIsDragOver(payload.paths.length > 0);
+        else if (payload.type === 'leave') setIsDragOver(false);
+        else if (payload.type === 'drop') {
+          setIsDragOver(false);
+          void uploadPathsRef.current(payload.paths);
+        }
+      }).then(stop => {
+        if (disposed) stop();
+        else unlisten = stop;
+      }).catch(() => { /* Not running inside the desktop shell. */ });
+    } catch { /* Not running inside the desktop shell. */ }
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  const handleUploadFiles = async () => {
+    setUploadMenuAnchor(null);
+    if (!bucketName) return;
+    const selected = await open({ multiple: true, title: 'Select files to upload' });
+    if (selected) await uploadPaths(Array.isArray(selected) ? selected : [selected]);
   };
 
   const handleUploadFolder = async () => {
     setUploadMenuAnchor(null);
     if (!bucketName) return;
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: true,
-        title: 'Select folders to upload'
-      });
-
-      if (selected) {
-         setIsUploading(true);
-         const folders = Array.isArray(selected) ? selected : [selected];
-         let totalFiles = 0;
-
-         for (const folder of folders) {
-             const count = await transferApi.queueFolderUpload(bucketName, bucketRegion, prefix, folder, activeProfileId);
-             totalFiles += count;
-         }
-
-         displaySuccess(`Queued ${totalFiles} files from ${folders.length} folders`, '/uploads');
-      }
-    } catch (err) {
-      displayError(`Folder upload failed: ${err}`);
-    } finally {
-        setIsUploading(false);
-    }
+    const selected = await open({ directory: true, multiple: true, title: 'Select folders to upload' });
+    if (selected) await uploadPaths(Array.isArray(selected) ? selected : [selected]);
   };
 
   const handleCreateFolder = async () => {
@@ -1081,7 +1136,26 @@ function BucketContent() {
   }
 
   return (
-    <Box sx={{ p: 1, mt: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ p: 1, mt: 1, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      {isDragOver && (
+        <Box
+          data-testid="upload-drop-zone"
+          sx={{
+            position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '2px dashed', borderColor: 'primary.main', borderRadius: 2,
+            bgcolor: theme => alpha(theme.palette.primary.main, 0.08),
+          }}
+        >
+          <Box sx={{ textAlign: 'center', color: 'primary.main' }}>
+            <CloudUploadIcon sx={{ fontSize: 48 }} />
+            <Typography variant="h6">Drop to upload</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
+              s3://{bucketName}/{prefix}
+            </Typography>
+          </Box>
+        </Box>
+      )}
       {/* Header & Breadcrumbs */}
       <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
         <IconButton onClick={handleBack} size="small">
@@ -1651,6 +1725,14 @@ function BucketContent() {
         bucketRegion={bucketRegion}
         objectKey={presignedUrlKey || ''}
       />
+
+      {uploadConflict && (
+        <UploadConflictDialog
+          existing={uploadConflict.existing}
+          totalFiles={uploadConflict.sources.reduce((sum, source) => sum + source.file_count, 0)}
+          onResolve={resolveUploadConflict}
+        />
+      )}
 
       <ConfirmDialog
         open={deleteConfirmOpen}

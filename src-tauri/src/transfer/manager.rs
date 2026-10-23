@@ -25,6 +25,29 @@ fn transfer_timeout_for(size_bytes: u64) -> Duration {
     Duration::from_secs(scaled_secs).clamp(MIN_TRANSFER_TIMEOUT, MAX_TRANSFER_TIMEOUT)
 }
 
+/// Explains a rejected conditional write for plain uploads, whose only condition is
+/// "create only" or "replace the approved version".
+fn ordinary_upload_conflict<E: aws_sdk_s3::error::ProvideErrorMetadata>(
+    job: &TransferJob,
+    error: &aws_sdk_s3::error::SdkError<E>,
+) -> Option<String> {
+    let ordinary = job.sync_source.is_none()
+        && job.restore_guard.is_none()
+        && job.url_import.is_none()
+        && job.remote_source.is_none();
+    let rejected = error.as_service_error().and_then(|e| e.code()) == Some("PreconditionFailed");
+    (ordinary && rejected).then(|| match job.replace_etag {
+        Some(_) => format!(
+            "s3://{}/{} changed after you chose to overwrite it, so it was left untouched. Upload again to review the newer object.",
+            job.bucket, job.key
+        ),
+        None => format!(
+            "s3://{}/{} already exists. Upload again and choose Overwrite to replace it.",
+            job.bucket, job.key
+        ),
+    })
+}
+
 fn upload_timeout_for(size: u64, rate: u64) -> Duration {
     if rate == 0 {
         return transfer_timeout_for(size);
@@ -809,6 +832,9 @@ impl TransferManager {
             match tokio::time::timeout(timeout, send).await {
                 Ok(Ok(_)) => {}
                 Ok(Err(error)) => {
+                    if let Some(message) = ordinary_upload_conflict(job, &error) {
+                        return Err(crate::error::AppError::S3Error(message));
+                    }
                     return Err(crate::error::AppError::S3Error(format!(
                         "Single-part upload failed for s3://{}/{}: {}",
                         job.bucket,
@@ -993,6 +1019,9 @@ impl TransferManager {
             match tokio::time::timeout(METADATA_REQUEST_TIMEOUT, complete_send).await {
                 Ok(Ok(_)) => {}
                 Ok(Err(error)) => {
+                    if let Some(message) = ordinary_upload_conflict(job, &error) {
+                        return Err(crate::error::AppError::S3Error(message));
+                    }
                     return Err(crate::error::AppError::S3Error(format!(
                         "Could not complete multipart upload for s3://{}/{}: {}",
                         job.bucket,
@@ -2237,6 +2266,45 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("changed since preview"));
+    }
+
+    #[tokio::test]
+    async fn approved_overwrite_is_conditional_on_the_reviewed_etag() {
+        use crate::commands::test_s3::{response, scripted_client};
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("file"), b"hello").unwrap();
+        let mut job = TransferJob::new(
+            TransferType::Upload,
+            "p".into(),
+            "bucket".into(),
+            None,
+            "file".into(),
+            root.path().join("file"),
+            5,
+        );
+        let (client, server) = scripted_client(vec![response(
+            412,
+            "",
+            "<Error><Code>PreconditionFailed</Code></Error>",
+        )])
+        .await;
+        let error = TransferManager::new()
+            .upload_file(&client, &job, "text/plain")
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("already exists"), "{error}");
+        server.await.unwrap();
+
+        job.replace_etag = Some("\"old\"".into());
+        let (client, server) = scripted_client(vec![response(200, "", "")]).await;
+        TransferManager::new()
+            .upload_file(&client, &job, "text/plain")
+            .await
+            .unwrap();
+        let request = server.await.unwrap()[0].to_lowercase();
+        assert!(request.contains("if-match: \"old\""));
+        assert!(!request.contains("if-none-match"));
     }
 
     #[tokio::test]
