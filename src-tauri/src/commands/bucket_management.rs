@@ -10,7 +10,7 @@ use tauri::State;
 static POLICY_WRITES: std::sync::LazyLock<tokio::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
-async fn selected_client(
+pub(super) async fn selected_client(
     expected_profile_id: &str,
     region: Option<&str>,
     profiles: &ProfileState,
@@ -65,7 +65,7 @@ fn validate_bucket_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-async fn create_with_client(
+pub(super) async fn create_with_client(
     client: &Client,
     name: &str,
     region: &str,
@@ -118,6 +118,7 @@ pub async fn create_bucket(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     if region.trim().is_empty() {
         return Err(AppError::ConfigError(
             "Enter a region for the bucket.".into(),
@@ -142,6 +143,7 @@ pub async fn delete_bucket(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     if bucket_name.is_empty() || confirmation != bucket_name {
         return Err(AppError::ConfigError(
             "Type the bucket name exactly to confirm deletion.".into(),
@@ -194,6 +196,7 @@ pub async fn get_bucket_policy(
     expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
 ) -> Result<Option<String>> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let (_, client, _) = selected_client(
         &expected_profile_id,
         bucket_region.as_deref(),
@@ -266,6 +269,7 @@ pub async fn put_bucket_policy(
     expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let (_, client, _) = selected_client(
         &expected_profile_id,
         bucket_region.as_deref(),

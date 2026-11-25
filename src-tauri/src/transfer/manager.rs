@@ -1,4 +1,6 @@
 use super::{TransferEvent, TransferJob, TransferStatus, TransferType};
+#[cfg(test)]
+pub(crate) mod transfer_profile;
 use crate::credentials::{Profile, ProfileManager};
 use crate::s3::{
     plan_multipart_upload, MultipartUploadGuard, S3ClientManager, MULTIPART_UPLOAD_THRESHOLD,
@@ -1034,6 +1036,10 @@ impl TransferManager {
         profiles: Arc<RwLock<ProfileManager>>,
     ) -> crate::error::Result<()> {
         super::controls::validate_bandwidth(job.bandwidth_limit.unwrap_or(0))?;
+        crate::s3::bucket_mode::require_plain(&job.bucket)?;
+        if let Some(source) = &job.remote_source {
+            crate::s3::bucket_mode::require_plain(&source.bucket)?;
+        }
         if let Some(source) = &job.url_import {
             if source.profile_identity != destination.cache_identity() {
                 return Err(crate::error::AppError::ConfigError(
@@ -1154,6 +1160,7 @@ impl TransferManager {
         s3_manager: Arc<RwLock<S3ClientManager>>,
         profile: &Profile,
     ) -> crate::error::Result<()> {
+        crate::s3::bucket_mode::require_plain(&job.bucket)?;
         if job
             .sync_source
             .as_ref()

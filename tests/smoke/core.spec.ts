@@ -170,6 +170,7 @@ test('buckets can be created and deleted with explicit confirmation', async ({ p
   await page.goto('/?view=discovery');
   await page.getByRole('button', { name: 'Create bucket', exact: true }).click();
   await page.getByRole('textbox', { name: 'Bucket name', exact: true }).fill('new-bucket');
+  await page.getByRole('radio', { name: 'No, use ordinary transfers' }).check();
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByRole('table', { name: 'buckets table' }).getByText('new-bucket', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Add new-bucket to Favorites', exact: true })).toBeVisible();

@@ -248,7 +248,25 @@ export interface BucketWithRegion {
 }
 
 // Bucket API wrapper functions
+const sensitiveInvoke = async <T>(cmd: string, args: Record<string, unknown> & { expectedProfileId: string }) => {
+  const desktopInvoke = await getTauriInvoke();
+  if (useProfileStore.getState().activeProfileId !== args.expectedProfileId) throw new Error('The active profile changed.');
+  return desktopInvoke<T>(cmd, args);
+};
+
 export const bucketApi = {
+  async createEncryptedBucket(bucketName: string, region: string, expectedProfileId: string, passphrase: string) {
+    const physical = await sensitiveInvoke<string>('create_encrypted_bucket', { bucketName, region, expectedProfileId, passphrase });
+    invalidateCache('buckets');
+    return physical;
+  },
+  unlockEncryptedBucket(bucketName: string, bucketRegion: string, expectedProfileId: string, passphrase: string) {
+    return sensitiveInvoke<{ sessionToken: string; label: string; expiresAtMs: number }>('unlock_encrypted_bucket', { bucketName, bucketRegion, expectedProfileId, passphrase });
+  },
+  async lockEncryptedBucket(sessionToken: string) {
+    const desktopInvoke = await getTauriInvoke();
+    await desktopInvoke<void>('lock_encrypted_bucket', { sessionToken });
+  },
   async createBucket(bucketName: string, region: string, expectedProfileId: string): Promise<void> {
     await invoke<void>('create_bucket', { bucketName, region, expectedProfileId });
     invalidateCache('buckets');
@@ -308,6 +326,13 @@ export interface SearchObjectsResult {
 }
 
 export const objectApi = {
+  async listProtectedObjects(bucketName: string, bucketRegion: string | undefined, prefix: string, continuationToken: string | undefined, expectedProfileId: string, sessionToken: string): Promise<ListObjectsResult> {
+    try {
+      return await sensitiveInvoke<ListObjectsResult>('list_objects', { bucketName, bucketRegion, prefix: prefix || null, delimiter: '/', continuationToken: continuationToken || null, bypassCache: true, sortField: 'name', sortDirection: 'asc', expectedProfileId, sessionToken });
+    } catch {
+      throw new Error('Protected folder listing failed. Unlock the bucket again.');
+    }
+  },
   async listObjects(
     bucketName: string,
     bucketRegion?: string,
@@ -525,6 +550,10 @@ export interface TransferEvent {
 }
 
 export const transferApi = {
+  async encryptedFile(mode: 'upload' | 'download', args: { bucketName: string; bucketRegion: string; key: string; localPath: string; expectedProfileId: string; sessionToken: string }): Promise<void> {
+    await sensitiveInvoke<void>(mode === 'upload' ? 'upload_encrypted_file' : 'download_encrypted_file', args);
+    if (mode === 'upload') invalidateCache();
+  },
   async setBandwidth(bytesPerSecond: number): Promise<void> {
     return invoke<void>('set_transfer_bandwidth', { bytesPerSecond });
   },

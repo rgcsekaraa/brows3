@@ -195,5 +195,6 @@ pub async fn get_bucket_region(
 pub async fn refresh_s3_client(s3_state: State<'_, S3State>) -> Result<(), String> {
     let mut s3_manager = s3_state.write().await;
     s3_manager.clear_cache();
+    super::encrypted::clear_session().await;
     Ok(())
 }

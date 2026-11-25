@@ -50,6 +50,15 @@ function search() {
   fireEvent.click(screen.getByRole('checkbox', { name: 'Deep search' }));
 }
 
+test.each(['b3e1-invalid', 'b3e1-' + 'a'.repeat(32)])('reserved bucket %s cannot mount the ordinary browser', physical => {
+  route.params = `name=${physical}&region=us-east-1`;
+  render(<BucketPage />);
+  expect(screen.queryByPlaceholderText('Search current folder...')).toBeNull();
+  expect(screen.queryByText('root.txt')).toBeNull();
+  if (physical.endsWith('invalid')) expect(screen.getByRole('alert').textContent).toContain('Ordinary transfers are disabled');
+  else expect(screen.getByRole('button', { name: 'Unlock bucket' })).toBeTruthy();
+});
+
 test.each(['bucket', 'prefix', 'profile'])('discards search results and selections after changing %s', async change => {
   const view = render(<BucketPage />);
   search();

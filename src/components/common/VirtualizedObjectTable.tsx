@@ -29,6 +29,7 @@ import {
   Archive as ArchiveIcon,
   Visibility as PreviewIcon,
   Edit as EditIcon,
+  Download as DownloadIcon,
   MoreVert as MoreVertIcon,
   OpenInNew as OpenIcon,
 } from '@mui/icons-material';
@@ -122,26 +123,31 @@ interface RowData {
 
 // Context type for Virtuoso table
 interface ContextType {
+  onDownload?: (key: string) => void;
   selectedKeys: Set<string>;
-  onSelect: (key: string, checked: boolean) => void;
+  onSelect?: (key: string, checked: boolean) => void;
   onNavigate: (prefix: string) => void;
+  actionsDisabled?: boolean;
   onPreview?: (key: string, size: number) => void;
   onEdit?: (key: string) => void;
-  onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
+  onMenuOpen?: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
 }
+
+const emptySelection = new Set<string>();
 
 interface Props {
   folders: string[];
   objects: S3Object[];
-  selectedKeys: Set<string>;
+  selectedKeys?: Set<string>;
   sortField: 'name' | 'size' | 'date' | 'class';
   sortDirection: 'asc' | 'desc';
   isLoading: boolean;
   onNavigate: (prefix: string) => void;
-  onSelect: (key: string, checked: boolean) => void;
-  onSelectAll: (checked: boolean) => void;
-  onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
-  onSortChange: (field: 'name' | 'size' | 'date' | 'class') => void;
+  actionsDisabled?: boolean;
+  onSelect?: (key: string, checked: boolean) => void;
+  onSelectAll?: (checked: boolean) => void;
+  onMenuOpen?: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
+  onSortChange?: (field: 'name' | 'size' | 'date' | 'class') => void;
   onDownload?: (key: string) => void;
   onDelete?: (key: string) => void;
   onPreview?: (key: string, size: number) => void;
@@ -202,6 +208,8 @@ const RowContent = memo(function RowContent({
   row,
   rowIndex,
   isSelected,
+  actionsDisabled,
+  onDownload,
   onSelect,
   onNavigate,
   onPreview,
@@ -210,12 +218,14 @@ const RowContent = memo(function RowContent({
 }: {
   row: RowData;
   rowIndex: number;
+  onDownload?: (key: string) => void;
   isSelected: boolean;
-  onSelect: (key: string, checked: boolean) => void;
+  onSelect?: (key: string, checked: boolean) => void;
   onNavigate: (prefix: string) => void;
+  actionsDisabled?: boolean;
   onPreview?: (key: string, size: number) => void;
   onEdit?: (key: string) => void;
-  onMenuOpen: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
+  onMenuOpen?: (event: React.MouseEvent<HTMLElement>, key: string, isFolder: boolean) => void;
 }) {
   const ext = getExt(row.name);
   const canPreview = !row.isFolder && canObjectBePreviewed(row.name);
@@ -224,7 +234,7 @@ const RowContent = memo(function RowContent({
   // Debounce checkbox to prevent rapid clicking
   const handleCheckboxChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     e.stopPropagation();
-    onSelect(row.key, e.target.checked);
+    onSelect?.(row.key, e.target.checked);
   }, [onSelect, row.key]);
 
   return (
@@ -233,26 +243,26 @@ const RowContent = memo(function RowContent({
       <TableCell sx={{ width: 40, py: 0.5, textAlign: 'center', color: 'text.secondary', fontSize: '0.75rem', fontFamily: 'monospace', bgcolor: 'background.paper' }}>
         {rowIndex + 1}
       </TableCell>
-      <TableCell sx={{ width: 40, minWidth: 40, maxWidth: 40, p: 0, bgcolor: 'background.paper', textAlign: 'center', verticalAlign: 'middle' }}>
+      {onSelect && <TableCell sx={{ width: 40, minWidth: 40, maxWidth: 40, p: 0, bgcolor: 'background.paper', textAlign: 'center', verticalAlign: 'middle' }}>
         <StyledCheckbox
           aria-label={`Select ${row.key}`}
           checked={isSelected}
           onChange={handleCheckboxChange}
         />
-      </TableCell>
+      </TableCell>}
       <TableCell sx={{ width: 32, py: 0.5, bgcolor: 'background.paper' }}>
         {getIcon(row.name, row.isFolder)}
       </TableCell>
       <TableCell 
         sx={{ 
           py: 0.5,
-          cursor: row.isFolder ? 'pointer' : 'default',
+          cursor: row.isFolder && !actionsDisabled ? 'pointer' : 'default',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
           bgcolor: 'background.paper',
         }}
-        onClick={row.isFolder ? () => onNavigate(row.key) : undefined}
+        onClick={row.isFolder && !actionsDisabled ? () => onNavigate(row.key) : undefined}
       >
         <Typography 
           variant="body2" 
@@ -287,7 +297,7 @@ const RowContent = memo(function RowContent({
       <TableCell sx={{ width: 80, py: 0.25, bgcolor: 'background.paper' }}>
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', opacity: 0.7, '&:hover': { opacity: 1 } }}>
           {row.isFolder ? (
-            <IconButton size="small" onClick={() => onNavigate(row.key)} sx={{ p: 0.5 }}>
+            <IconButton size="small" disabled={actionsDisabled} aria-label={`Open ${row.key}`} onClick={() => onNavigate(row.key)} sx={{ p: 0.5 }}>
               <OpenIcon sx={{ fontSize: 16 }} />
             </IconButton>
           ) : (
@@ -304,26 +314,28 @@ const RowContent = memo(function RowContent({
               )}
             </>
           )}
-          <IconButton size="small" onClick={(e) => onMenuOpen(e, row.key, row.isFolder)} sx={{ p: 0.5 }}>
-            <MoreVertIcon sx={{ fontSize: 16 }} />
-          </IconButton>
+          {onMenuOpen && (
+            <IconButton size="small" onClick={(e) => onMenuOpen(e, row.key, row.isFolder)} sx={{ p: 0.5 }}>
+              <MoreVertIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          )}
+          {!onMenuOpen && !row.isFolder && onDownload && (
+            <IconButton size="small" disabled={actionsDisabled} aria-label={`Download ${row.key}`} onClick={() => onDownload(row.key)}>
+              <DownloadIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          )}
         </Box>
       </TableCell>
     </>
   );
-}, (prevProps, nextProps) => {
-  // Custom comparison - only re-render if these specific props changed
-  return prevProps.isSelected === nextProps.isSelected &&
-         prevProps.row.key === nextProps.row.key &&
-         prevProps.rowIndex === nextProps.rowIndex &&
-         prevProps.row.size === nextProps.row.size &&
-         prevProps.row.modifiedTimestamp === nextProps.row.modifiedTimestamp;
 });
 
 export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   folders = [],
   objects = [],
-  selectedKeys,
+  selectedKeys = emptySelection,
+  actionsDisabled,
+  onDownload,
   sortField,
   sortDirection,
   isLoading,
@@ -393,32 +405,32 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
   const headerContent = useCallback(() => (
     <TableRow sx={{ bgcolor: 'background.default' }}>
       <TableCell sx={{ width: 40, bgcolor: 'background.default', textAlign: 'center', fontWeight: 600, fontSize: '0.75rem' }}>#</TableCell>
-      <TableCell sx={{ width: 40, minWidth: 40, maxWidth: 40, p: 0, bgcolor: 'background.default', textAlign: 'center', verticalAlign: 'middle' }}>
+      {onSelectAll && <TableCell sx={{ width: 40, minWidth: 40, maxWidth: 40, p: 0, bgcolor: 'background.default', textAlign: 'center', verticalAlign: 'middle' }}>
         <StyledCheckbox
           aria-label="Select all objects"
           indeterminate={someSelected}
           checked={allSelected}
           onChange={(e) => onSelectAll(e.target.checked)}
         />
-      </TableCell>
+      </TableCell>}
       <TableCell sx={{ width: 32, bgcolor: 'background.default' }} />
       <TableCell 
-        sx={{ bgcolor: 'background.default', cursor: 'pointer', fontWeight: 600 }}
-        onClick={() => onSortChange('name')}
+        sx={{ bgcolor: 'background.default', cursor: onSortChange ? 'pointer' : 'default', fontWeight: 600 }}
+        onClick={() => onSortChange?.('name')}
       >
         Name {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
       </TableCell>
       <TableCell 
         align="right"
-        sx={{ width: 80, bgcolor: 'background.default', cursor: 'pointer', fontWeight: 600 }}
-        onClick={() => onSortChange('size')}
+        sx={{ width: 80, bgcolor: 'background.default', cursor: onSortChange ? 'pointer' : 'default', fontWeight: 600 }}
+        onClick={() => onSortChange?.('size')}
       >
         Size {sortField === 'size' && (sortDirection === 'asc' ? '↑' : '↓')}
       </TableCell>
       <TableCell 
         align="right"
-        sx={{ width: 140, bgcolor: 'background.default', cursor: 'pointer', fontWeight: 600 }}
-        onClick={() => onSortChange('date')}
+        sx={{ width: 140, bgcolor: 'background.default', cursor: onSortChange ? 'pointer' : 'default', fontWeight: 600 }}
+        onClick={() => onSortChange?.('date')}
       >
         Modified {sortField === 'date' && (sortDirection === 'asc' ? '↑' : '↓')}
       </TableCell>
@@ -428,12 +440,14 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
 
   const context = useMemo<ContextType>(() => ({
     selectedKeys,
+    onDownload,
+    actionsDisabled,
     onSelect,
     onNavigate,
     onPreview,
     onEdit,
     onMenuOpen,
-  }), [selectedKeys, onSelect, onNavigate, onPreview, onEdit, onMenuOpen]);
+  }), [selectedKeys, onDownload, actionsDisabled, onSelect, onNavigate, onPreview, onEdit, onMenuOpen]);
 
   const rowContent = useCallback((index: number, row: RowData, ctx: ContextType) => (
     <RowContent
@@ -441,6 +455,8 @@ export const VirtualizedObjectTable = memo(function VirtualizedObjectTable({
       row={row}
       rowIndex={index}
       isSelected={ctx.selectedKeys.has(row.key)}
+      onDownload={ctx.onDownload}
+      actionsDisabled={ctx.actionsDisabled}
       onSelect={ctx.onSelect}
       onNavigate={ctx.onNavigate}
       onPreview={ctx.onPreview}

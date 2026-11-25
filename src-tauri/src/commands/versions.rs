@@ -45,6 +45,7 @@ pub async fn list_object_versions(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<History> {
+    crate::s3::bucket_mode::require_plain(&bucket)?;
     versions::validate_key(&key)?;
     let profile = selected(profile_state.inner(), &expected_profile_id).await?;
     let client = client(s3_state.inner(), &profile, &region).await?;
@@ -118,6 +119,7 @@ pub async fn restore_object_version(
     transfer_state: State<'_, TransferState>,
     app_handle: AppHandle,
 ) -> Result<String> {
+    crate::s3::bucket_mode::require_plain(&bucket)?;
     let profile = selected(profile_state.inner(), &expected_profile_id).await?;
     let client = client(s3_state.inner(), &profile, &region).await?;
     let (guard, etag, size) = prepare_restore(

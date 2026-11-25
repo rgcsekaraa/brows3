@@ -493,6 +493,7 @@ pub async fn put_object(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     // Get active profile
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
@@ -634,6 +635,7 @@ pub async fn get_object(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     // Get active profile
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
@@ -733,6 +735,7 @@ pub async fn delete_object(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     // Get active profile
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
@@ -827,6 +830,8 @@ pub async fn copy_object(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&source_bucket)?;
+    crate::s3::bucket_mode::require_plain(&destination_bucket)?;
     if source_bucket == destination_bucket && source_key == destination_key {
         return Ok(());
     }
@@ -1205,6 +1210,7 @@ pub async fn delete_objects(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     if keys.is_empty() {
         return Ok(());
     }
@@ -1338,6 +1344,8 @@ pub async fn move_object(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&source_bucket)?;
+    crate::s3::bucket_mode::require_plain(&destination_bucket)?;
     if source_bucket == destination_bucket && source_key == destination_key {
         return Ok(());
     }
@@ -1655,6 +1663,7 @@ pub async fn set_object_content_type(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<()> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     const MAX_SINGLE_COPY_SIZE: u64 = 5 * 1024 * 1024 * 1024;
 
     let content_type = crate::s3::validate_content_type(&content_type)?;
@@ -1877,6 +1886,7 @@ pub async fn get_object_permissions(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<ObjectPermissions> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
         .get_active_profile()
@@ -2010,6 +2020,7 @@ pub async fn set_object_permissions(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<SetObjectPermissionsResult> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let acl = parse_object_canned_acl(&canned_acl)?;
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
@@ -2093,6 +2104,7 @@ pub async fn get_object_metadata(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<ObjectMetadata> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
         .get_active_profile()

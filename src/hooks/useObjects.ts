@@ -3,6 +3,7 @@ import { ListObjectsResult, objectApi, subscribeCacheInvalidation } from '@/lib/
 import { useProfileStore } from '@/store/profileStore';
 import { useAppStore } from '@/store/appStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { reservedBucket } from '@/lib/encryptedTransfer';
 
 interface BucketStats {
   isCached: boolean;
@@ -24,7 +25,8 @@ export function useObjects(
   bucketRegion?: string,
   prefix = '',
   sortField: 'name' | 'size' | 'date' | 'class' = 'name',
-  sortDirection: 'asc' | 'desc' = 'asc'
+  sortDirection: 'asc' | 'desc' = 'asc',
+  sessionToken?: string
 ): UseObjectsResult {
   const [data, setData] = useState<ListObjectsResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -46,6 +48,14 @@ export function useObjects(
   const loadedViewKeyRef = useRef<string>('');
   const fetchInProgress = useRef(false);
   const loadMoreRequest = useRef<object | null>(null);
+
+  const listPage = useCallback((region: string | undefined, cursor: string | undefined, bypassCache: boolean) => {
+    if (sessionToken !== undefined || reservedBucket(bucketName)) {
+      if (!activeProfileId || !sessionToken) throw new Error('Protected bucket is locked.');
+      return objectApi.listProtectedObjects(bucketName, region, prefix, cursor, activeProfileId, sessionToken);
+    }
+    return objectApi.listObjects(bucketName, region, prefix, '/', cursor, bypassCache, sortField, sortDirection);
+  }, [activeProfileId, bucketName, prefix, sessionToken, sortDirection, sortField]);
 
   // Core fetch function
   const fetchItems = useCallback(async (bypassCache = false) => {
@@ -72,7 +82,7 @@ export function useObjects(
     }
 
     try {
-      const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', undefined, bypassCache, sortField, sortDirection);
+      const result = await listPage(activeRegion, undefined, bypassCache);
       
       // RACING CONDITION FIX:
       // If a new fetch started while we were awaiting, ignore this result.
@@ -104,7 +114,7 @@ export function useObjects(
         fetchInProgress.current = false;
       }
     }
-  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection, listPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,7 +194,7 @@ export function useObjects(
     setIsLoadingMore(true);
     setError(null);
     try {
-       const result = await objectApi.listObjects(bucketName, activeRegion, prefix, '/', requestToken, false, sortField, sortDirection);
+       const result = await listPage(activeRegion, requestToken, false);
        if (currentViewKey !== viewKeyRef.current || currentFetchId !== fetchIdRef.current) {
          return null;
        }
@@ -217,7 +227,7 @@ export function useObjects(
          setIsLoadingMore(false);
        }
     }
-  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection]);
+  }, [bucketName, bucketRegion, prefix, activeProfileId, sortField, sortDirection, listPage]);
 
   const refresh = useCallback(async () => {
     if (!bucketName || !activeProfileId) return;

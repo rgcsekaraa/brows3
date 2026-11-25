@@ -31,7 +31,7 @@ async fn list_folder_objects(
     )
 }
 
-fn validate_path(path: &std::path::Path) -> Result<()> {
+pub(super) fn validate_path(path: &std::path::Path) -> Result<()> {
     // Basic check for path traversal
     for component in path.components() {
         if matches!(component, std::path::Component::ParentDir) {
@@ -109,7 +109,10 @@ fn safe_relative_download_path(key: &str) -> Result<PathBuf> {
     Ok(relative_path)
 }
 
-async fn require_active_profile(profile_state: &ProfileState, expected: &str) -> Result<Profile> {
+pub(super) async fn require_active_profile(
+    profile_state: &ProfileState,
+    expected: &str,
+) -> Result<Profile> {
     let profile_manager = profile_state.read().await;
     let profile = profile_manager
         .get_active_profile()
@@ -133,6 +136,7 @@ pub async fn queue_upload(
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<String> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     // Basic validation
     let path = PathBuf::from(&local_path);
     validate_path(&path)?;
@@ -191,6 +195,7 @@ pub async fn queue_download(
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<String> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let path = PathBuf::from(&local_path);
     validate_path(&path)?;
     let profile_id = require_active_profile(profile_state.inner(), &expected_profile_id)
@@ -305,6 +310,7 @@ pub async fn queue_folder_upload(
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<u32> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let root = PathBuf::from(&local_path);
     validate_path(&root)?;
     let profile_id = require_active_profile(profile_state.inner(), &expected_profile_id)
@@ -365,6 +371,7 @@ pub async fn queue_folder_download(
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<u32> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let root_path = PathBuf::from(&local_path);
     validate_path(&root_path)?;
 
@@ -514,6 +521,12 @@ pub async fn retry_transfer(
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<Option<String>> {
+    if let Some(job) = transfer_state.get_job(&job_id).await {
+        crate::s3::bucket_mode::require_plain(&job.bucket)?;
+        if let Some(source) = job.remote_source {
+            crate::s3::bucket_mode::require_plain(&source.bucket)?;
+        }
+    }
     if transfer_state
         .get_job(&job_id)
         .await

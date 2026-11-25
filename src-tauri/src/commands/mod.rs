@@ -1,6 +1,7 @@
 pub mod bucket_management;
 pub mod buckets;
 pub mod cross_copy;
+pub mod encrypted;
 pub mod jobs;
 pub mod objects;
 pub mod operations;

@@ -49,6 +49,14 @@ impl DownloadDestination {
     }
 
     pub fn begin(&self) -> io::Result<PendingDownload> {
+        self.begin_with_privacy(false)
+    }
+
+    pub(crate) fn begin_private(&self) -> io::Result<PendingDownload> {
+        self.begin_with_privacy(true)
+    }
+
+    fn begin_with_privacy(&self, _private: bool) -> io::Result<PendingDownload> {
         let relative_parent = self.relative_path.parent().unwrap_or(Path::new(""));
         let parent = if relative_parent.as_os_str().is_empty() {
             self.root.try_clone()?
@@ -70,10 +78,14 @@ impl DownloadDestination {
             ));
         }
         let temporary_name = format!(".brows3-{}.part", uuid::Uuid::new_v4());
-        let file = parent.open_with(
-            &temporary_name,
-            OpenOptions::new().write(true).create_new(true),
-        )?;
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        if _private {
+            use cap_std::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = parent.open_with(&temporary_name, &options)?;
         Ok(PendingDownload {
             file: Some(tokio::fs::File::from_std(file.into_std())),
             parent,
@@ -93,6 +105,15 @@ pub struct PendingDownload {
 }
 
 impl PendingDownload {
+    pub(crate) async fn take_blocking_writer(&mut self) -> io::Result<std::fs::File> {
+        Ok(self
+            .file
+            .take()
+            .ok_or_else(|| io::Error::other("Download is closed"))?
+            .into_std()
+            .await)
+    }
+
     pub async fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
         let file = self
             .file

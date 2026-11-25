@@ -7,7 +7,7 @@ import { useAppStore } from '@/store/appStore';
 
 vi.mock('@/lib/tauri', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/tauri')>();
-  return { ...actual, objectApi: { ...actual.objectApi, listObjects: vi.fn() } };
+  return { ...actual, objectApi: { ...actual.objectApi, listObjects: vi.fn(), listProtectedObjects: vi.fn() } };
 });
 
 const listing = (key: string): ListObjectsResult => ({
@@ -29,6 +29,20 @@ test('region changes reload the view and still allow refresh', async () => {
   await act(async () => view.result.current.refresh());
   expect(view.result.current.data?.objects[0].key).toBe('us-west-2');
   expect(objectApi.listObjects).toHaveBeenCalledTimes(3);
+});
+
+test('protected listing and pagination use only the scoped session', async () => {
+  const physical = 'b3e1-' + 'a'.repeat(32);
+  vi.mocked(objectApi.listProtectedObjects)
+    .mockResolvedValueOnce({ ...listing('one'), next_continuation_token: 'cursor' })
+    .mockResolvedValueOnce(listing('two'));
+  const view = renderHook(() => useObjects(physical, 'us-east-1', '', 'name', 'asc', 'session'));
+  await waitFor(() => expect(view.result.current.hasMore).toBe(true));
+  await act(async () => view.result.current.loadMore());
+  expect(vi.mocked(objectApi.listProtectedObjects).mock.calls).toEqual([
+    [physical, 'us-east-1', '', undefined, 'a', 'session'], [physical, 'us-east-1', '', 'cursor', 'a', 'session'],
+  ]);
+  expect(objectApi.listObjects).not.toHaveBeenCalled();
 });
 
 test('a response for the old region cannot replace the current view', async () => {

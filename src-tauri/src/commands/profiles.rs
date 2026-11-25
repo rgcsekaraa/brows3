@@ -64,6 +64,7 @@ pub async fn delete_profile(id: String, state: State<'_, ProfileState>) -> Resul
 #[tauri::command]
 pub async fn set_active_profile(id: String, state: State<'_, ProfileState>) -> Result<(), String> {
     let mut manager = state.write().await;
+    super::encrypted::clear_session().await;
     manager
         .set_active_profile(&id)
         .await

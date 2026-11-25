@@ -273,6 +273,60 @@ pub async fn list_objects(
     sort_field: Option<String>,
     sort_direction: Option<String>,
     expected_profile_id: String,
+    session_token: Option<String>,
+    profile_state: State<'_, ProfileState>,
+    s3_state: State<'_, S3State>,
+) -> Result<ListObjectsResult> {
+    super::encrypted::authorize_listing(
+        &profile_state,
+        &s3_state,
+        &expected_profile_id,
+        &bucket_name,
+        bucket_region.clone(),
+        session_token.as_deref(),
+    )
+    .await?;
+    let protected = crate::transfer::bucket_crypto::physical(&bucket_name);
+    let reserved = |key: &str| key == ".brows3" || key.starts_with(".brows3/");
+    if protected && prefix.as_deref().is_some_and(reserved) {
+        return Err(crate::error::AppError::ConfigError(
+            "Reserved bucket metadata".into(),
+        ));
+    }
+    let mut page = list_page(
+        bucket_name,
+        bucket_region,
+        prefix,
+        delimiter,
+        continuation_token,
+        max_keys,
+        bypass_cache,
+        sort_field,
+        sort_direction,
+        expected_profile_id,
+        profile_state,
+        s3_state,
+    )
+    .await?;
+    if protected {
+        page.objects.retain(|object| !reserved(&object.key));
+        page.common_prefixes.retain(|name| !reserved(name));
+    }
+    Ok(page)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn list_page(
+    bucket_name: String,
+    bucket_region: Option<String>,
+    prefix: Option<String>,
+    delimiter: Option<String>,
+    continuation_token: Option<String>,
+    max_keys: Option<i32>,
+    bypass_cache: Option<bool>,
+    sort_field: Option<String>,
+    sort_direction: Option<String>,
+    expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<ListObjectsResult> {
@@ -619,6 +673,7 @@ pub async fn search_objects(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<SearchObjectsResult> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
         .get_active_profile()
@@ -802,6 +857,7 @@ pub async fn get_presigned_url(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<String> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     use aws_sdk_s3::presigning::PresigningConfig;
     use std::time::Duration;
 
@@ -919,6 +975,7 @@ pub async fn get_object_content(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<ObjectText> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let max_bytes = normalized_text_preview_limit(max_bytes);
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
@@ -1052,6 +1109,7 @@ pub async fn put_object_content(
     profile_state: State<'_, ProfileState>,
     s3_state: State<'_, S3State>,
 ) -> Result<Option<String>> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let profile_manager = profile_state.read().await;
     let active_profile = profile_manager
         .get_active_profile()

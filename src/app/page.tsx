@@ -38,6 +38,7 @@ import { useBuckets } from '@/hooks/useBuckets';
 import { useHistoryStore } from '@/store/historyStore';
 import { useAppStore } from '@/store/appStore';
 import { toast } from '@/store/toastStore';
+import { lockedBucketTitle, reservedBucket } from '@/lib/encryptedTransfer';
 import BucketManagementDialog, { type BucketAction } from '@/components/dialogs/BucketManagementDialog';
 
 function HomeContent() {
@@ -153,7 +154,7 @@ function HomeContent() {
 
     const urlPath = `/bucket?name=${bucket}&region=${region}${finalPrefix ? `&prefix=${encodeURIComponent(finalPrefix)}` : ''}`;
     addPath(`s3://${bucket}${explicitRegion ? '@' + explicitRegion : ''}/${finalPrefix}`, activeProfileId || undefined);
-    addTab({ title: bucket, path: urlPath, icon: 'bucket' });
+    addTab({ title: reservedBucket(bucket) ? lockedBucketTitle(bucket) : bucket, path: urlPath, icon: 'bucket' });
     router.push(urlPath);
   };
 
@@ -258,7 +259,7 @@ function HomeContent() {
               hover
               onClick={() => {
                 const path = `/bucket?name=${bucket.name}&region=${bucket.region}`;
-                addTab({ title: bucket.name, path, icon: 'bucket' });
+                addTab({ title: reservedBucket(bucket.name) ? lockedBucketTitle(bucket.name) : bucket.name, path, icon: 'bucket' });
                 router.push(path);
               }}
               sx={{ 
@@ -271,7 +272,7 @@ function HomeContent() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <StorageIcon color="primary" sx={{ fontSize: 24, opacity: 0.8 }} />
                   <Typography variant="body1" fontWeight={500}>
-                    {bucket.name}
+                    {reservedBucket(bucket.name) ? lockedBucketTitle(bucket.name) : bucket.name}
                   </Typography>
                 </Box>
               </TableCell>
@@ -290,7 +291,7 @@ function HomeContent() {
                   {bucket.total_size_formatted || '—'}
               </TableCell>
               <TableCell align="right">
-                  <IconButton size="small" aria-label={`Manage ${bucket.name}`} onClick={event => {
+                  <IconButton size="small" disabled={reservedBucket(bucket.name)} aria-label={`Manage ${bucket.name}`} onClick={event => {
                     event.stopPropagation();
                     if (activeProfileId) setBucketMenu({ anchor: event.currentTarget, name: bucket.name, region: bucket.region, profileId: activeProfileId });
                   }}><MoreVertIcon fontSize="small" /></IconButton>

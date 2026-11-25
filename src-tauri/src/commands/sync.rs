@@ -71,6 +71,7 @@ pub async fn preview_folder_sync(
     s3_state: State<'_, S3State>,
     sync_plans: State<'_, SyncPlans>,
 ) -> Result<Preview> {
+    crate::s3::bucket_mode::require_plain(&bucket_name)?;
     let options = options.unwrap_or_default();
     Filters::new(&options)?;
     let profile = selected(profile_state.inner(), &expected_profile_id).await?;
@@ -264,6 +265,7 @@ pub async fn start_folder_sync(
     selected(profile_state.inner(), &expected_profile_id).await?;
     let mut plans = sync_plans.0.lock().await;
     let plan = take_plan(&mut plans, &plan_id, &expected_profile_id, replace_existing)?;
+    crate::s3::bucket_mode::require_plain(&plan.bucket)?;
     drop(plans);
     let jobs: Vec<_> = plan
         .files

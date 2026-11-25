@@ -59,6 +59,8 @@ import { useClipboardStore } from '@/store/clipboardStore';
 import { useProfileStore } from '@/store/profileStore';
 import PropertiesDialog from '@/components/dialogs/PropertiesDialog';
 import FolderSyncDialog from '@/components/dialogs/FolderSyncDialog';
+import ProtectedBucket from '@/components/transfer/ProtectedBucket';
+import { isUserObject, reservedBucket, validProtectedBucket } from '@/lib/encryptedTransfer';
 import CrossProfileCopyDialog from '@/components/dialogs/CrossProfileCopyDialog';
 import VersionHistoryDialog from '@/components/dialogs/VersionHistoryDialog';
 import type { ClipboardItem } from '@/store/clipboardStore';
@@ -1687,10 +1689,21 @@ function BucketContent() {
   );
 }
 
+function BucketRoute() {
+  const params = useSearchParams();
+  const expectedProfileId = useProfileStore(state => state.activeProfileId);
+  const bucketName = params.get('name') || '';
+  if (!reservedBucket(bucketName)) return <BucketContent />;
+  const bucketRegion = params.get('region') || 'us-east-1';
+  const prefix = params.get('prefix') || '';
+  if (!expectedProfileId || !validProtectedBucket(bucketName) || !isUserObject(prefix)) return <Alert severity="error">Protected bucket unavailable. Ordinary transfers are disabled.</Alert>;
+  return <ProtectedBucket key={JSON.stringify([expectedProfileId, bucketName, bucketRegion, prefix])} scope={{ expectedProfileId, bucketName, bucketRegion }} prefix={prefix} />;
+}
+
 export default function BucketPage() {
   return (
     <Suspense fallback={<Box sx={{ p: 4, textAlign: 'center' }}><CircularProgress /></Box>}>
-      <BucketContent />
+      <BucketRoute />
     </Suspense>
   );
 }

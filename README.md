@@ -63,6 +63,12 @@ Traditional S3 tools often suffer from latency when navigating deep folder struc
 - **Presigned URL Sharing**: Generate temporary object links with configurable expiry directly from the bucket view.
 - **Object Permissions**: View and apply S3 object ACLs for files and recursively for folder prefixes, with clear messages when a bucket or provider has ACLs disabled or unsupported.
 
+### Client-side encrypted buckets
+
+Choose **Yes, create** in the bucket creation dialog to create a protected bucket with a private display name and passphrase. Unlock the bucket to list folders, upload an encrypted file, or authenticate and download a file to a new local destination. Each file can be up to 1 GiB. The storage provider can see object names and sizes.
+
+Keep the passphrase and the bucket’s `.brows3/key-v1` object. Brows3 needs both to recover the file-encryption key. Sessions expire after 15 minutes and can also be locked manually. The [profiling notebook](docs/benchmarks/encryption-before-wire.ipynb) measures preparation from encryption entry to the signed PUT handoff.
+
 ### Rich Previews & Editing
 - **Built-in Editor**: Powered by **Monaco (VS Code's Engine)**. Edit text, JSON, and code files directly in S3.
 - **Direct Edit Action**: Quick "Edit" button in the file list and context menu for instant code/text modifications.

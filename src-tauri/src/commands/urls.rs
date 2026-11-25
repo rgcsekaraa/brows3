@@ -31,6 +31,7 @@ pub async fn get_public_urls(
     expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
 ) -> Result<Vec<String>> {
+    crate::s3::bucket_mode::require_plain(&bucket)?;
     if keys.is_empty()
         || keys.len() > 10_000
         || keys.iter().any(|key| key.is_empty() || key.ends_with('/'))
@@ -65,6 +66,7 @@ pub async fn check_public_url(
     expected_profile_id: String,
     profile_state: State<'_, ProfileState>,
 ) -> Result<String> {
+    crate::s3::bucket_mode::require_plain(&bucket)?;
     let p = profile(profile_state.inner(), &expected_profile_id).await?;
     let url = match url_override.filter(|s| !s.is_empty()) {
         Some(value) => crate::transfer::public_url::base_url(&value)?.to_string(),
@@ -93,6 +95,7 @@ pub async fn queue_url_imports(
     s3_state: State<'_, S3State>,
     transfer_state: State<'_, TransferState>,
 ) -> Result<usize> {
+    crate::s3::bucket_mode::require_plain(&bucket)?;
     if entries.is_empty() || entries.len() > MAX_BATCH {
         return Err(AppError::ConfigError(format!(
             "Import between 1 and {MAX_BATCH} URLs at a time."

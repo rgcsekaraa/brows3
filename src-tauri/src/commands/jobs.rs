@@ -36,6 +36,7 @@ pub struct JobConfig {
 }
 impl JobConfig {
     fn validate(&self) -> Result<()> {
+        crate::s3::bucket_mode::require_plain(&self.bucket)?;
         if self.name.trim().is_empty()
             || self.name.len() > 120
             || self.name.chars().any(char::is_control)
@@ -475,6 +476,7 @@ async fn prepare(
     profiles: &ProfileState,
     s3: &S3State,
 ) -> Result<Vec<TransferJob>> {
+    crate::s3::bucket_mode::require_plain(&job.config.bucket)?;
     let profile = profiles
         .read()
         .await
