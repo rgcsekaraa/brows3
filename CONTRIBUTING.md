@@ -14,6 +14,12 @@ Brows3 is built for speed. Every contribution should preserve performance as a f
 
 Brows3 is a **Tauri v2** application with a **Next.js** frontend and a **Rust** backend.
 
+### Building with Nix on x86-64 Linux
+
+From the repository root, `nix build` creates `result/bin/brows3` with the static frontend embedded. `nix run` opens the desktop app. Enable the Nix `nix-command` and `flakes` features to use these commands.
+
+For development, run `nix develop`, then `pnpm install --frozen-lockfile` and `pnpm tauri dev`. The shell supplies the CI Rust and pnpm versions, Node.js 22, and the GTK and WebKit development libraries. Run `nix flake check` to build the desktop app and run the native and frontend package checks.
+
 ### Prerequisites
 
 - **Node.js** 22 and **pnpm** 11.2.2

@@ -45,3 +45,12 @@ next-env.d.ts
 
 # Monaco editor (auto-generated from node_modules during build)
 /public/monaco-editor/
+
+# Nix build output
+/result
+
+# Local Jupyter state
+/.jupyter/
+/.jupyter_ystore.db*
+.ipynb_checkpoints/
+__pycache__/

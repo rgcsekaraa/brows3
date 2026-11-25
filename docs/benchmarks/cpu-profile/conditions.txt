@@ -1,0 +1,5 @@
+2026-11-25T02:29:12Z
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+32435ea3d8322e1e56051b37c3c491fa75ef6cc2
+Linux 7.2.7+rex-amd64 x86_64
+500 Hz requested, 3 seconds accumulated pre-transmit wall time per profile
